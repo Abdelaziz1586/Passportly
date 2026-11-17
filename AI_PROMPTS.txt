@@ -1,0 +1,33 @@
+================================================
+AI Prompt Log - Travel Planning & Booking Platform
+================================================
+Record prompts that materially contributed to the project
+using the format below (Section 11.1 of Project Description).
+
+Template:
+================================================
+Date: YYYY-MM-DD
+Student: <Student Name>
+Tool: <AI Tool>
+Related Requirement: <REQ-ID>
+
+Prompt:
+<Prompt text>
+
+How the output was used:
+<Summary of how the output was reviewed and used>
+================================================
+
+================================================
+Date: 2026-11-17
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: Milestone 1 Base Setup (Project Structure, DB Schemas, Core Auth/RBAC, Swagger)
+
+Prompt:
+[Attached: Software Project I Winter 2026 Project Description PDF]
+Finish the base required so we can directly work on the endpoints and their functionalitites without anything else, make the mongo schema and use the correct project structure
+
+How the output was used:
+Used the generated structure and code to initialize the repository layout (backend/, frontend/, docs/, .env.example, .gitignore, README.md), scaffold the NestJS backend with global /api prefix, Swagger UI (/api/docs), ValidationPipe, exception filter, httpOnly cookie JWT/RBAC guards, database seed script, and Mongoose schemas and controller skeletons across all domain modules (auth, users, admin, reference-data, flights, hotels, payments, itineraries, blog, notifications, reports, audit-logs, uploads). Verified with npm run lint, npm run build, and npm test.
+================================================
