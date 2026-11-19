@@ -18,8 +18,10 @@ import {
 import { ItineraryVisibility, Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
+import { CityDocument } from '../reference-data/schemas/city.schema';
 import { CreateItineraryDto } from './dto/create-itinerary.dto';
 import {
+  CreateItineraryDayDto,
   ListItinerariesQueryDto,
   UpdateItineraryDto,
 } from './dto/itinerary-endpoints.dto';
@@ -174,6 +176,26 @@ export class ItinerariesService {
     return { deleted: true, itineraryId: String(itineraryId) };
   }
 
+  async addDay(id: string, userId: string, dto: CreateItineraryDayDto) {
+    const itinerary = await this.findOwnedItinerary(id, userId);
+    const city = dto.cityId ? await this.findCity(dto.cityId) : undefined;
+    const dayNumber = itinerary.days.length + 1;
+    itinerary.days.push({
+      dayNumber,
+      date: this.addUtcDays(itinerary.startDate, dayNumber - 1),
+      ...(city ? { city: city._id } : {}),
+      ...(dto.cityName?.trim()
+        ? { cityName: dto.cityName.trim() }
+        : city
+          ? { cityName: city.name }
+          : {}),
+      ...(dto.title?.trim() ? { title: dto.title.trim() } : {}),
+      ...(dto.notes?.trim() ? { notes: dto.notes.trim() } : {}),
+    });
+    const saved = await this.saveItinerary(itinerary);
+    return saved.days[saved.days.length - 1];
+  }
+
   private async getItineraryDetails(
     itinerary: ItineraryDocument,
   ): Promise<Record<string, unknown>> {
@@ -232,6 +254,14 @@ export class ItinerariesService {
     if (String(itinerary.user) !== userId) {
       throw new ForbiddenException('You do not own this itinerary');
     }
+  }
+
+  private async findCity(id: string): Promise<CityDocument> {
+    const city = await this.referenceDataService.cityModel
+      .findById(this.objectId(id, 'cityId'))
+      .exec();
+    if (!city) throw new BadRequestException('cityId is not a valid city');
+    return city;
   }
 
   private async validateCountryIds(

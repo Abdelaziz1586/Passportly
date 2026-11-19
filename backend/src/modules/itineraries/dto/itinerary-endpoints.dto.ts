@@ -82,3 +82,28 @@ export class UpdateItineraryDto {
   @IsEnum(ItineraryVisibility)
   visibility?: ItineraryVisibility;
 }
+
+export class CreateItineraryDayDto {
+  @ApiPropertyOptional({ description: 'MongoDB city ID' })
+  @IsOptional()
+  @IsMongoId()
+  cityId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trimString)
+  @IsString()
+  cityName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trimString)
+  @IsString()
+  title?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trimString)
+  @IsString()
+  notes?: string;
+}
