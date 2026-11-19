@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { ClientSession, Model, Types } from 'mongoose';
 import { NotificationType } from '../../common/enums';
 import {
   Notification,
@@ -14,15 +14,18 @@ export class NotificationsService {
     readonly notificationModel: Model<NotificationDocument>,
   ) {}
 
-  async createNotification(params: {
-    recipient: string | Types.ObjectId;
-    type: NotificationType;
-    title: string;
-    message: string;
-    relatedEntityType?: string;
-    relatedEntityId?: string | Types.ObjectId;
-  }) {
-    return this.notificationModel.create({
+  async createNotification(
+    params: {
+      recipient: string | Types.ObjectId;
+      type: NotificationType;
+      title: string;
+      message: string;
+      relatedEntityType?: string;
+      relatedEntityId?: string | Types.ObjectId;
+    },
+    session?: ClientSession,
+  ) {
+    const notification = new this.notificationModel({
       recipient: new Types.ObjectId(params.recipient),
       type: params.type,
       title: params.title,
@@ -32,5 +35,6 @@ export class NotificationsService {
         ? new Types.ObjectId(params.relatedEntityId)
         : undefined,
     });
+    return notification.save({ session });
   }
 }

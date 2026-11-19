@@ -1,15 +1,20 @@
 import {
+  NotImplementedException,
+  Body,
   Controller,
   Get,
-  NotImplementedException,
+  Param,
   Patch,
   Post,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiCookieAuth, ApiTags } from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
+import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { FlightsService } from './flights.service';
+import { FlightUpdate } from './update-flight.dto';
 
 @ApiTags('Flights')
 @Controller('flights')
@@ -47,11 +52,12 @@ export class FlightsController {
   @ApiCookieAuth()
   @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
   @Patch(':id')
-  @ApiOperation({ summary: 'FLT-05: Update flight schedule or details' })
-  updateFlight() {
-    throw new NotImplementedException(
-      'PATCH /api/flights/:id not implemented yet',
-    );
+  updateFlight(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: FlightUpdate,
+  ) {
+    return this.flightsService.updateFlight(id, user, input);
   }
 
   @ApiCookieAuth()
