@@ -26,6 +26,7 @@ import {
   CreateItineraryDayDto,
   ListItinerariesQueryDto,
   ReorderItineraryDaysDto,
+  UpdateActivityDto,
   UpdateItineraryDayDto,
   UpdateItineraryDto,
 } from './dto/itinerary-endpoints.dto';
@@ -327,6 +328,38 @@ export class ItinerariesService {
     });
   }
 
+  async updateActivity(
+    id: string,
+    userId: string,
+    dto: UpdateActivityDto,
+  ): Promise<ActivityDocument> {
+    const activity = await this.findOwnedActivity(id, userId);
+    if (typeof dto.title === 'string') {
+      const title = dto.title.trim();
+      if (!title) throw new BadRequestException('title must not be empty');
+      activity.title = title;
+    }
+    if (typeof dto.description === 'string') {
+      activity.description = dto.description.trim() || undefined;
+    }
+    if (typeof dto.category === 'string') {
+      activity.category = dto.category.trim() || undefined;
+    }
+    if (typeof dto.attractionId === 'string') {
+      const attraction = await this.findAttraction(dto.attractionId);
+      activity.attraction = attraction._id;
+    }
+    if (typeof dto.locationName === 'string') {
+      activity.locationName = dto.locationName.trim() || undefined;
+    }
+    if (typeof dto.startTime === 'string') activity.startTime = dto.startTime;
+    if (typeof dto.endTime === 'string') activity.endTime = dto.endTime;
+    if (typeof dto.orderIndex === 'number')
+      activity.orderIndex = dto.orderIndex;
+    this.assertValidTimeRange(activity.startTime, activity.endTime);
+    return activity.save();
+  }
+
   private async getItineraryDetails(
     itinerary: ItineraryDocument,
   ): Promise<Record<string, unknown>> {
@@ -385,6 +418,20 @@ export class ItinerariesService {
     if (String(itinerary.user) !== userId) {
       throw new ForbiddenException('You do not own this itinerary');
     }
+  }
+
+  private async findOwnedActivity(
+    id: string,
+    userId: string,
+  ): Promise<ActivityDocument> {
+    const activity = await this.activityModel
+      .findById(this.objectId(id, 'id'))
+      .exec();
+    if (!activity) throw new NotFoundException('Activity not found');
+    if (String(activity.user) !== userId) {
+      throw new ForbiddenException('You do not own this activity');
+    }
+    return activity;
   }
 
   private findDay(itinerary: ItineraryDocument, dayId: string) {

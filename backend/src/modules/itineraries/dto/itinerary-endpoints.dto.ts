@@ -196,3 +196,58 @@ export class CreateActivityDto {
   @Min(0)
   orderIndex?: number;
 }
+
+export class UpdateActivityDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trimString)
+  @IsString()
+  @IsNotEmpty()
+  title?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trimString)
+  @IsString()
+  description?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trimString)
+  @IsString()
+  category?: string;
+
+  @ApiPropertyOptional({ description: 'Optional MongoDB attraction ID' })
+  @IsOptional()
+  @IsMongoId()
+  attractionId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trimString)
+  @IsString()
+  locationName?: string;
+
+  @ApiPropertyOptional({
+    example: '09:30',
+    pattern: '^([01]\\d|2[0-3]):[0-5]\\d$',
+  })
+  @IsOptional()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/)
+  startTime?: string;
+
+  @ApiPropertyOptional({
+    example: '11:00',
+    pattern: '^([01]\\d|2[0-3]):[0-5]\\d$',
+  })
+  @IsOptional()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/)
+  endTime?: string;
+
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  orderIndex?: number;
+}
