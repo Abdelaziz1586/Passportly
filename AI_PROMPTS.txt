@@ -157,5 +157,5 @@ Related Requirement: FLT-25 (GET /api/flight-bookings/:id)
 Prompt:
 Implement GET /api/flight-bookings/:id: the full details of one booking with legs (flight number, airline, cabin, UTC times, seats), passengers (passport masked, e-ticket numbers), prices, policies, status and timestamps, and a payment summary without card data. Readable by the owner, an admin, or the moderator of an operating airline; everyone else gets 404. An airline moderator only gets the manifest of their own legs, no prices, payment or personal details. A lapsed hold must be reported as EXPIRED. Then write unit tests and run live checks plus the Swagger page in a browser.
 How the output was used:
-The generated view service, mapper, response DTOs, controller wiring and tests were integrated and checked with lint, build, unit tests, 24 live checks and a Swagger "Try it out" run.
+The generated view service, mapper, response DTOs, controller wiring and tests were integrated and checked with lint, build, unit tests, 25 live checks and a Swagger "Try it out" run.
 ================================================
