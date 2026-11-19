@@ -1000,6 +1000,28 @@ describe('Itinerary endpoints and persistence', () => {
     await send('get', base, undefined, 404);
   });
 
+  it('SCRUM-116: streams a valid PDF for the owner or public audience and blocks private exports', async () => {
+    const { itinerary } = await itineraryWithDay();
+    const url = `/api/itineraries/${String(itinerary._id)}/pdf`;
+    await request(server()).get(url).expect(404);
+    const response = await request(server())
+      .get(url)
+      .set('x-test-user', ownerId)
+      .expect(200)
+      .expect('Content-Type', /application\/pdf/);
+    expect(Buffer.isBuffer(response.body)).toBe(true);
+    expect((response.body as Buffer).subarray(0, 5).toString()).toBe('%PDF-');
+    await service.updateItinerary(String(itinerary._id), ownerId, {
+      visibility: ItineraryVisibility.PUBLIC,
+    });
+    await request(server()).get(url).expect(200);
+    await service.itineraryModel.updateOne(
+      { _id: itinerary._id },
+      { isHidden: true },
+    );
+    await request(server()).get(url).expect(404);
+  });
+
   it('SCRUM-93: cascade-deletes activities, budgets and transport costs', async () => {
     const { itinerary, dayId } = await itineraryWithDay();
     const id = String(itinerary._id);
@@ -1052,6 +1074,28 @@ describe('Itinerary endpoints and persistence', () => {
       .set('x-test-user', ownerId)
       .send({ endTime: '12:30' })
       .expect(200);
+  });
+
+  it('Swagger publishes all 28 implemented endpoint operations', async () => {
+    const document = SwaggerModule.createDocument(
+      app,
+      new DocumentBuilder().build(),
+    );
+    const operations = Object.values(document.paths).reduce(
+      (sum, item) =>
+        sum +
+        Object.values(item ?? {}).filter(
+          (operation: unknown) =>
+            typeof operation === 'object' &&
+            operation !== null &&
+            'tags' in operation &&
+            Array.isArray(operation.tags) &&
+            operation.tags.includes('Itineraries & Budgeting'),
+        ).length,
+      0,
+    );
+    expect(operations).toBe(28);
+    await request(server()).get('/api/docs/').expect(200);
   });
   it('SCRUM-89: creates an owned private itinerary through HTTP', async () => {
     await request(server())

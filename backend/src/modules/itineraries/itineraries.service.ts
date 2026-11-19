@@ -16,6 +16,7 @@ import {
   Types,
   isValidObjectId,
 } from 'mongoose';
+import PDFDocument from 'pdfkit';
 import { firstValueFrom } from 'rxjs';
 import {
   BookingStatus,
@@ -986,6 +987,73 @@ export class ItinerariesService {
       if (!attached) itinerary.attachedHotelBookings.push(booking._id);
     }
     return this.saveItinerary(itinerary);
+  }
+
+  async exportPdf(
+    id: string,
+    user?: AuthenticatedUser,
+  ): Promise<InstanceType<typeof PDFDocument>> {
+    const itinerary = await this.findVisibleOrOwnedItinerary(id, user);
+    const details = await this.getItineraryDetails(itinerary);
+    const plain = itinerary.toObject();
+    const document = new PDFDocument({ size: 'A4', margin: 48 });
+    document.fontSize(22).text(plain.title, { align: 'center' });
+    document.moveDown(0.5);
+    if (plain.description) document.fontSize(11).text(plain.description);
+    document
+      .fontSize(10)
+      .text(`Start date: ${plain.startDate.toISOString().slice(0, 10)}`)
+      .text(`Display currency: ${plain.displayCurrency}`);
+    document.moveDown();
+
+    const detailDays = details.days as Array<{
+      dayNumber: number;
+      date: Date;
+      cityName?: string;
+      title?: string;
+      notes?: string;
+      activities: ActivityDocument[];
+      budgetEntries: BudgetEntryDocument[];
+    }>;
+    for (const day of detailDays) {
+      document
+        .fontSize(15)
+        .text(
+          `Day ${day.dayNumber} — ${new Date(day.date).toISOString().slice(0, 10)}`,
+        );
+      if (day.title) document.fontSize(11).text(day.title);
+      if (day.cityName) document.fontSize(10).text(`City: ${day.cityName}`);
+      if (day.notes) document.fontSize(10).text(day.notes);
+      for (const activity of day.activities) {
+        document
+          .fontSize(10)
+          .text(
+            `• ${activity.title}${activity.startTime ? ` (${activity.startTime})` : ''}`,
+          );
+      }
+      for (const entry of day.budgetEntries) {
+        document
+          .fontSize(9)
+          .text(`Budget: ${entry.title} — ${entry.amount} ${entry.currency}`);
+      }
+      document.moveDown(0.6);
+    }
+    const transportCosts = details.transportCosts as TransportCostDocument[];
+    if (transportCosts.length) {
+      document.fontSize(15).text('Intercity transport');
+      for (const cost of transportCosts) {
+        const route = [cost.fromCityName, cost.toCityName]
+          .filter(Boolean)
+          .join(' → ');
+        document
+          .fontSize(10)
+          .text(
+            `${route || cost.mode}: ${cost.amount} ${cost.currency}${cost.notes ? ` — ${cost.notes}` : ''}`,
+          );
+      }
+    }
+    document.end();
+    return document;
   }
 
   private async getItineraryDetails(
