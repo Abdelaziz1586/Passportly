@@ -47,6 +47,41 @@ export class ListItinerariesQueryDto extends PaginationQueryDto {
   search?: string;
 }
 
+export class PublicItinerarySearchQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional({
+    description: 'Search itinerary titles and descriptions',
+  })
+  @IsOptional()
+  @Transform(trimString)
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by a MongoDB country ID' })
+  @IsOptional()
+  @IsMongoId()
+  countryId?: string;
+
+  @ApiPropertyOptional({
+    minimum: 1,
+    description: 'Minimum number of itinerary days',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  minDays?: number;
+
+  @ApiPropertyOptional({
+    minimum: 1,
+    description: 'Maximum number of itinerary days',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  maxDays?: number;
+}
+
 export class UpdateItineraryDto {
   @ApiPropertyOptional({ example: 'Updated trip title' })
   @IsOptional()

@@ -34,6 +34,7 @@ import {
   CreateItineraryDayDto,
   CreateTransportCostDto,
   ListItinerariesQueryDto,
+  PublicItinerarySearchQueryDto,
   ReorderItineraryDaysDto,
   UpdateActivityDto,
   UpdateBudgetEntryDto,
@@ -51,10 +52,8 @@ export class ItinerariesController {
   @Public()
   @Get('itineraries/public/search')
   @ApiOperation({ summary: 'ITN-20, ITN-21: Search public itineraries' })
-  searchPublicItineraries() {
-    throw new NotImplementedException(
-      'GET /api/itineraries/public/search not implemented yet',
-    );
+  searchPublicItineraries(@Query() query: PublicItinerarySearchQueryDto) {
+    return this.itinerariesService.searchPublicItineraries(query);
   }
 
   @Public()
