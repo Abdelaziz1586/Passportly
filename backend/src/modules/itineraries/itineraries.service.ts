@@ -15,7 +15,7 @@ import {
   Types,
   isValidObjectId,
 } from 'mongoose';
-import { ItineraryVisibility, Role } from '../../common/enums';
+import { ItineraryVisibility, Role, TransportMode } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
 import { AttractionDocument } from '../reference-data/schemas/attraction.schema';
@@ -26,6 +26,7 @@ import {
   CreateActivityDto,
   CreateBudgetEntryDto,
   CreateItineraryDayDto,
+  CreateTransportCostDto,
   ListItinerariesQueryDto,
   ReorderItineraryDaysDto,
   UpdateActivityDto,
@@ -455,6 +456,44 @@ export class ItinerariesService {
     const entry = await this.findOwnedBudgetEntry(id, userId);
     await entry.deleteOne();
     return { deleted: true, budgetEntryId: id };
+  }
+
+  async addTransportCost(
+    itineraryId: string,
+    userId: string,
+    dto: CreateTransportCostDto,
+  ): Promise<TransportCostDocument> {
+    const itinerary = await this.findOwnedItinerary(itineraryId, userId);
+    const fromCity = dto.fromCityId
+      ? await this.findCity(dto.fromCityId)
+      : undefined;
+    const toCity = dto.toCityId ? await this.findCity(dto.toCityId) : undefined;
+    const departureDay = dto.departureDayId
+      ? this.findDay(itinerary, dto.departureDayId)
+      : undefined;
+    const currency = dto.currency.trim().toUpperCase();
+    await this.assertSupportedCurrency(currency);
+    return this.transportCostModel.create({
+      itinerary: itinerary._id,
+      user: this.objectId(userId, 'userId'),
+      ...(fromCity ? { fromCity: fromCity._id } : {}),
+      ...(toCity ? { toCity: toCity._id } : {}),
+      ...(dto.fromCityName?.trim()
+        ? { fromCityName: dto.fromCityName.trim() }
+        : fromCity
+          ? { fromCityName: fromCity.name }
+          : {}),
+      ...(dto.toCityName?.trim()
+        ? { toCityName: dto.toCityName.trim() }
+        : toCity
+          ? { toCityName: toCity.name }
+          : {}),
+      mode: dto.mode ?? TransportMode.OTHER,
+      ...(departureDay ? { departureDayId: departureDay._id } : {}),
+      amount: dto.amount,
+      currency,
+      ...(dto.notes?.trim() ? { notes: dto.notes.trim() } : {}),
+    });
   }
 
   private async getItineraryDetails(

@@ -18,7 +18,11 @@ import {
   Min,
 } from 'class-validator';
 
-import { BudgetCategory, ItineraryVisibility } from '../../../common/enums';
+import {
+  BudgetCategory,
+  ItineraryVisibility,
+  TransportMode,
+} from '../../../common/enums';
 
 import { PaginationQueryDto } from '../../../common/dto/pagination-query.dto';
 
@@ -317,4 +321,57 @@ export class UpdateBudgetEntryDto {
   @Length(3, 3)
   @Matches(/^[A-Z]{3}$/)
   currency?: string;
+}
+
+export class CreateTransportCostDto {
+  @ApiPropertyOptional({ enum: TransportMode, default: TransportMode.OTHER })
+  @IsOptional()
+  @IsEnum(TransportMode)
+  mode?: TransportMode;
+
+  @ApiProperty({ minimum: 0 })
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  amount: number;
+
+  @ApiProperty({ example: 'USD', minLength: 3, maxLength: 3 })
+  @Transform(normalizeCurrency)
+  @IsString()
+  @Length(3, 3)
+  @Matches(/^[A-Z]{3}$/)
+  currency: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsMongoId()
+  fromCityId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsMongoId()
+  toCityId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trimString)
+  @IsString()
+  fromCityName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trimString)
+  @IsString()
+  toCityName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsMongoId()
+  departureDayId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trimString)
+  @IsString()
+  notes?: string;
 }
