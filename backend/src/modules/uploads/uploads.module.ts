@@ -19,6 +19,6 @@ import { UploadsService } from './uploads.service';
     }),
   ],
   providers: [UploadsService],
-  exports: [UploadsService],
+  exports: [UploadsService, MulterModule],
 })
 export class UploadsModule {}

@@ -1,6 +1,7 @@
 import { HttpService } from '@nestjs/axios';
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -9,7 +10,13 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import PDFDocument from 'pdfkit';
-import { isValidObjectId, Model, QueryFilter, Types } from 'mongoose';
+import {
+  Error as MongooseError,
+  isValidObjectId,
+  Model,
+  QueryFilter,
+  Types,
+} from 'mongoose';
 import { firstValueFrom } from 'rxjs';
 import {
   BookingType,
@@ -20,6 +27,7 @@ import {
   TransportMode,
 } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
+import type { MediaItem } from '../../common/schemas/media-item.schema';
 import { FlightsService } from '../flights/flights.service';
 import { HotelsService } from '../hotels/hotels.service';
 import { AttractionDocument } from '../reference-data/schemas/attraction.schema';
@@ -121,7 +129,7 @@ export class ItinerariesService {
       visibility: ItineraryVisibility.PRIVATE,
     });
 
-    return itinerary.save();
+    return this.saveItinerary(itinerary);
   }
 
   async listMyItineraries(userId: string, query: ListItinerariesQueryDto) {
@@ -189,18 +197,27 @@ export class ItinerariesService {
     }
     if (dto.visibility) itinerary.visibility = dto.visibility;
 
-    return itinerary.save();
+    return this.saveItinerary(itinerary);
   }
 
   async deleteItinerary(id: string, userId: string) {
     const itinerary = await this.findOwnedItinerary(id, userId);
     const itineraryId = itinerary._id;
-    await Promise.all([
-      this.activityModel.deleteMany({ itinerary: itineraryId }).exec(),
-      this.budgetEntryModel.deleteMany({ itinerary: itineraryId }).exec(),
-      this.transportCostModel.deleteMany({ itinerary: itineraryId }).exec(),
-    ]);
-    await itinerary.deleteOne();
+    await this.itineraryModel.db.transaction(async (session) => {
+      await this.activityModel
+        .deleteMany({ itinerary: itineraryId })
+        .session(session)
+        .exec();
+      await this.budgetEntryModel
+        .deleteMany({ itinerary: itineraryId })
+        .session(session)
+        .exec();
+      await this.transportCostModel
+        .deleteMany({ itinerary: itineraryId })
+        .session(session)
+        .exec();
+      await itinerary.deleteOne({ session });
+    });
     return { deleted: true, itineraryId: String(itineraryId) };
   }
 
@@ -220,7 +237,7 @@ export class ItinerariesService {
       ...(dto.title?.trim() ? { title: dto.title.trim() } : {}),
       ...(dto.notes?.trim() ? { notes: dto.notes.trim() } : {}),
     });
-    const saved = await itinerary.save();
+    const saved = await this.saveItinerary(itinerary);
     return saved.days[saved.days.length - 1];
   }
 
@@ -240,33 +257,43 @@ export class ItinerariesService {
     if (typeof dto.cityName === 'string') day.cityName = dto.cityName.trim();
     if (typeof dto.title === 'string') day.title = dto.title.trim();
     if (typeof dto.notes === 'string') day.notes = dto.notes.trim();
-    const saved = await itinerary.save();
-    return saved.days.find((savedDay) => String(savedDay._id) === dayId);
+    const saved = await this.saveItinerary(itinerary);
+    return saved.days.find(
+      (savedDay) => String(savedDay._id) === String(day._id),
+    );
   }
 
   async deleteDay(id: string, dayId: string, userId: string) {
-    const itinerary = await this.findOwnedItinerary(id, userId);
-    const day = this.findDay(itinerary, dayId);
-    await Promise.all([
-      this.activityModel
+    await this.itineraryModel.db.transaction(async (session) => {
+      const itinerary = await this.itineraryModel
+        .findById(this.objectId(id, 'id'))
+        .session(session)
+        .exec();
+      if (!itinerary) throw new NotFoundException('Itinerary not found');
+      this.assertOwner(itinerary, userId);
+      const day = this.findDay(itinerary, dayId);
+      await this.activityModel
         .deleteMany({ itinerary: itinerary._id, dayId: day._id })
-        .exec(),
-      this.budgetEntryModel
+        .session(session)
+        .exec();
+      await this.budgetEntryModel
         .deleteMany({ itinerary: itinerary._id, dayId: day._id })
-        .exec(),
-      this.transportCostModel
+        .session(session)
+        .exec();
+      await this.transportCostModel
         .updateMany(
           { itinerary: itinerary._id, departureDayId: day._id },
           { $set: { departureDayId: null } },
         )
-        .exec(),
-    ]);
-    const dayIndex = itinerary.days.findIndex(
-      (currentDay) => String(currentDay._id) === dayId,
-    );
-    itinerary.days.splice(dayIndex, 1);
-    this.recalculateDayDates(itinerary);
-    await itinerary.save();
+        .session(session)
+        .exec();
+      const dayIndex = itinerary.days.findIndex(
+        (currentDay) => String(currentDay._id) === String(day._id),
+      );
+      itinerary.days.splice(dayIndex, 1);
+      this.recalculateDayDates(itinerary);
+      await this.saveItinerary(itinerary, session);
+    });
     return { deleted: true, dayId };
   }
 
@@ -276,15 +303,21 @@ export class ItinerariesService {
     dto: ReorderItineraryDaysDto,
   ): Promise<ItineraryDocument> {
     const itinerary = await this.findOwnedItinerary(id, userId);
-    if (dto.dayIds.length !== itinerary.days.length) {
+    const dayIds = dto.dayIds.map((dayId) =>
+      String(this.objectId(dayId, 'dayIds')),
+    );
+    if (dayIds.length !== itinerary.days.length) {
       throw new BadRequestException(
         'dayIds must include every itinerary day exactly once',
       );
     }
+    if (new Set(dayIds).size !== dayIds.length) {
+      throw new BadRequestException('dayIds must not contain duplicates');
+    }
     const daysById = new Map(
       itinerary.days.map((day) => [String(day._id), day]),
     );
-    const orderedDays = dto.dayIds.map((dayId) => {
+    const orderedDays = dayIds.map((dayId) => {
       const day = daysById.get(dayId);
       if (!day) {
         throw new BadRequestException(
@@ -295,7 +328,7 @@ export class ItinerariesService {
     });
     itinerary.days = orderedDays;
     this.recalculateDayDates(itinerary);
-    return itinerary.save();
+    return this.saveItinerary(itinerary);
   }
 
   async addActivity(
@@ -730,38 +763,51 @@ export class ItinerariesService {
       }
     });
 
+    const copiedImages: MediaItem[] = [];
     try {
       const [activities, budgetEntries, transportCosts] = await Promise.all([
         this.activityModel.find({ itinerary: source._id }).lean().exec(),
         this.budgetEntryModel.find({ itinerary: source._id }).lean().exec(),
         this.transportCostModel.find({ itinerary: source._id }).lean().exec(),
       ]);
-      const clonedActivities = activities.flatMap((activity) => {
+      const clonedActivities = [] as Array<{
+        itinerary: Types.ObjectId;
+        dayId: Types.ObjectId;
+        user: Types.ObjectId;
+        title: string;
+        description?: string;
+        category?: string;
+        attraction?: Types.ObjectId | null;
+        locationName?: string;
+        startTime?: string;
+        endTime?: string;
+        orderIndex: number;
+        images: MediaItem[];
+      }>;
+      for (const activity of activities) {
         const dayId = dayIdMap.get(String(activity.dayId));
-        if (!dayId) return [];
-        return [
-          {
-            itinerary: clone._id,
-            dayId,
-            user: clone.user,
-            title: activity.title,
-            description: activity.description,
-            category: activity.category,
-            attraction: activity.attraction,
-            locationName: activity.locationName,
-            startTime: activity.startTime,
-            endTime: activity.endTime,
-            orderIndex: activity.orderIndex,
-            images: activity.images.map((image) => ({
-              url: image.url,
-              filename: image.filename,
-              mimeType: image.mimeType,
-              sizeBytes: image.sizeBytes,
-              uploadedAt: image.uploadedAt,
-            })),
-          },
-        ];
-      });
+        if (!dayId) continue;
+        const images: MediaItem[] = [];
+        for (const image of activity.images) {
+          const copy = await this.uploadsService.copyImage(image);
+          copiedImages.push(copy);
+          images.push(copy);
+        }
+        clonedActivities.push({
+          itinerary: clone._id,
+          dayId,
+          user: clone.user,
+          title: activity.title,
+          description: activity.description,
+          category: activity.category,
+          attraction: activity.attraction,
+          locationName: activity.locationName,
+          startTime: activity.startTime,
+          endTime: activity.endTime,
+          orderIndex: activity.orderIndex,
+          images,
+        });
+      }
       const clonedBudgets = budgetEntries.flatMap((entry) => {
         const dayId = dayIdMap.get(String(entry.dayId));
         if (!dayId) return [];
@@ -812,6 +858,9 @@ export class ItinerariesService {
         this.budgetEntryModel.deleteMany({ itinerary: clone._id }).exec(),
         this.transportCostModel.deleteMany({ itinerary: clone._id }).exec(),
         clone.deleteOne(),
+        ...copiedImages.map((image) =>
+          this.uploadsService.removeImage(image.filename),
+        ),
       ]);
       throw error;
     }
@@ -834,7 +883,6 @@ export class ItinerariesService {
           .map((city) => String(city)),
       ),
     );
-    const hotels = await this.hotelsService.searchForCities(cityIds);
     const stays: Array<{
       cityId: string;
       cityName?: string;
@@ -865,7 +913,17 @@ export class ItinerariesService {
         endDay: day.dayNumber,
       });
     }
-    return { itineraryId: String(itinerary._id), cityIds, stays, hotels };
+    const suggestions = await Promise.all(
+      stays.map(async (stay) => ({
+        ...stay,
+        hotels: await this.hotelsService.searchForStay(
+          stay.cityId,
+          stay.checkInDate,
+          stay.checkOutDate,
+        ),
+      })),
+    );
+    return { itineraryId: String(itinerary._id), cityIds, stays: suggestions };
   }
 
   async searchFlightsForItinerary(
@@ -888,7 +946,7 @@ export class ItinerariesService {
         {
           departureCityId: String(day.city),
           arrivalCityId: String(nextDay.city),
-          departureDate: day.date,
+          departureDate: nextDay.date,
         },
       ];
     });
@@ -928,7 +986,7 @@ export class ItinerariesService {
       );
       if (!attached) itinerary.attachedHotelBookings.push(booking._id);
     }
-    return itinerary.save();
+    return this.saveItinerary(itinerary);
   }
 
   async exportPdf(
@@ -1043,7 +1101,8 @@ export class ItinerariesService {
         expiresAt: { $gt: now },
       })
       .exec();
-    if (cachedRate) return cachedRate.rate;
+    if (cachedRate && Number.isFinite(cachedRate.rate) && cachedRate.rate > 0)
+      return cachedRate.rate;
 
     const apiKey = this.configService.get<string>('fxRates.apiKey', '');
     const baseUrl = this.configService
@@ -1059,6 +1118,7 @@ export class ItinerariesService {
     try {
       const response = await firstValueFrom(
         this.httpService.get<FxRatesApiResponse>(`${baseUrl}/latest`, {
+          timeout: 10_000,
           params: {
             api_key: apiKey,
             base: baseCurrency,
@@ -1070,6 +1130,7 @@ export class ItinerariesService {
       const receivedRate = response.data.rates?.[targetCurrency];
       if (
         response.data.success === false ||
+        response.data.base !== baseCurrency ||
         typeof receivedRate !== 'number' ||
         !Number.isFinite(receivedRate) ||
         receivedRate <= 0
@@ -1089,7 +1150,7 @@ export class ItinerariesService {
       .findOneAndUpdate(
         { baseCurrency, targetCurrency },
         { $set: { rate, fetchedAt, expiresAt, source: 'FXRatesAPI' } },
-        { new: true, upsert: true, setDefaultsOnInsert: true },
+        { returnDocument: 'after', upsert: true, setDefaultsOnInsert: true },
       )
       .exec();
     if (!savedRate) {
@@ -1239,7 +1300,11 @@ export class ItinerariesService {
         'Currency must be a 3-letter ISO currency code',
       );
     }
-    if (!(await this.referenceDataService.isCurrencySupported(currency))) {
+    if (
+      !(await this.referenceDataService.countryModel.exists({
+        currencyCode: currency,
+      }))
+    ) {
       throw new BadRequestException(
         'Currency is not supported by reference data',
       );
@@ -1258,6 +1323,7 @@ export class ItinerariesService {
     if (Number.isNaN(date.getTime())) {
       throw new BadRequestException(`${fieldName} must be a valid date`);
     }
+    date.setUTCHours(0, 0, 0, 0);
     return date;
   }
 
@@ -1269,8 +1335,23 @@ export class ItinerariesService {
   }
 
   private recalculateDayDates(itinerary: ItineraryDocument): void {
-    for (const day of itinerary.days) {
-      day.date = this.addUtcDays(itinerary.startDate, day.dayNumber - 1);
+    for (const [index, day] of itinerary.days.entries()) {
+      day.dayNumber = index + 1;
+      day.date = this.addUtcDays(itinerary.startDate, index);
+    }
+  }
+
+  private async saveItinerary(
+    itinerary: ItineraryDocument,
+    session?: import('mongoose').ClientSession,
+  ): Promise<ItineraryDocument> {
+    try {
+      return await itinerary.save({ session });
+    } catch (error: unknown) {
+      if (error instanceof MongooseError.VersionError) {
+        throw new ConflictException('Itinerary changed; reload it and retry');
+      }
+      throw error;
     }
   }
 

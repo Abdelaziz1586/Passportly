@@ -278,7 +278,7 @@ export class UpdateActivityDto {
     pattern: '^([01]\\d|2[0-3]):[0-5]\\d$',
   })
   @IsOptional()
-  @Matches(/^([01]\d|2[0-3]):[0-5]\\d$/)
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/)
   endTime?: string;
 
   @ApiPropertyOptional({ minimum: 0 })

@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
 import { ItineraryVisibility } from '../../../common/enums';
 
 export type ItineraryDocument = HydratedDocument<Itinerary>;
@@ -14,7 +14,7 @@ export class ItineraryDay {
   @Prop({ required: true })
   date: Date;
 
-  @Prop({ type: Types.ObjectId, ref: 'City', default: null })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'City', default: null })
   city?: Types.ObjectId | null;
 
   @Prop({ trim: true })
@@ -29,9 +29,18 @@ export class ItineraryDay {
 
 export const ItineraryDaySchema = SchemaFactory.createForClass(ItineraryDay);
 
-@Schema({ timestamps: true, collection: 'itineraries' })
+@Schema({
+  timestamps: true,
+  collection: 'itineraries',
+  optimisticConcurrency: true,
+})
 export class Itinerary {
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  })
   user: Types.ObjectId;
 
   @Prop({ required: true, trim: true, index: true })
@@ -40,7 +49,10 @@ export class Itinerary {
   @Prop({ trim: true })
   description?: string;
 
-  @Prop({ type: [{ type: Types.ObjectId, ref: 'Country' }], default: [] })
+  @Prop({
+    type: [{ type: MongooseSchema.Types.ObjectId, ref: 'Country' }],
+    default: [],
+  })
   countries: Types.ObjectId[];
 
   @Prop({ required: true, index: true })
@@ -63,16 +75,26 @@ export class Itinerary {
   @Prop({ type: [ItineraryDaySchema], default: [] })
   days: ItineraryDay[];
 
-  @Prop({ type: Types.ObjectId, ref: 'Itinerary', default: null })
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'Itinerary',
+    default: null,
+  })
   clonedFromItinerary?: Types.ObjectId | null;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', default: null })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', default: null })
   clonedFromUser?: Types.ObjectId | null;
 
-  @Prop({ type: [{ type: Types.ObjectId, ref: 'FlightBooking' }], default: [] })
+  @Prop({
+    type: [{ type: MongooseSchema.Types.ObjectId, ref: 'FlightBooking' }],
+    default: [],
+  })
   attachedFlightBookings: Types.ObjectId[];
 
-  @Prop({ type: [{ type: Types.ObjectId, ref: 'HotelBooking' }], default: [] })
+  @Prop({
+    type: [{ type: MongooseSchema.Types.ObjectId, ref: 'HotelBooking' }],
+    default: [],
+  })
   attachedHotelBookings: Types.ObjectId[];
 
   @Prop({ trim: true })

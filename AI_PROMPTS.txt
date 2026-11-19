@@ -95,3 +95,16 @@ Implement all my assigned itinerary Jira tasks SCRUM-89 through SCRUM-116 in the
 How the output was used:
 Implemented SCRUM-89 through SCRUM-116 with validated DTOs and Swagger metadata, itinerary/day/activity/budget/transport CRUD, ownership checks, public visibility filters, cloning and attribution, FXRatesAPI caching, image storage via UploadsService, date-aware hotel/flight suggestions, confirmed booking attachment, and PDF export. Reused existing schemas and reference data, added optional authentication for public-or-owner summary/export routes, and recorded these changes in the repository prompt log. Verified with npm run lint, npm run build, and npm test (4 suites, 32 tests passed).
 ================================================
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-89 through SCRUM-116 (ITN-01, ITN-03, ITN-05, ITN-07, ITN-08, ITN-10, ITN-12, GEN-08, ITN-14, ITN-16, ITN-18, ITN-20, ITN-21, ITN-25, ITN-26, ITN-27, ITN-28)
+
+Prompt:
+Identify all Passportly Jira tasks assigned to me, read the repository Markdown workflow, then wait for my single approval to implement all tasks with commits and pull requests. Ignore the stale In Review statuses. First change the tasks to not done, then start working and change them to In Progress and In Review accordingly.
+
+How the output was used:
+Reset SCRUM-89 through SCRUM-116 to To Do and moved them to In Progress for implementation. Inspected the unmerged itinerary implementation from closed PR #87, brought it onto a new branch from the current develop, and reviewed every assigned requirement. Fixed day numbering and UTC dates, transactional cascade deletion, duplicate reorder validation, activity end-time validation, seeded currency validation, independent cloned image files, upload content/size checks and multipart configuration, hotel stay availability, destination-day flight context, FX response validation/timeouts and Mongoose ObjectId reference declarations in itinerary and booking schemas. Added API/Jira traceability documentation, isolated local MongoDB integration tests and guard regression tests. Verified lint, build, all 28 Swagger operations, HTTP workflows, authorization/privacy, rollback, cloning, uploads, FX behavior, hotel/flight suggestions, confirmed flight/hotel booking attachment and PDF output.
+================================================
