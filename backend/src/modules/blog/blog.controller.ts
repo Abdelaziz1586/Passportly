@@ -3,14 +3,26 @@ import {
   Delete,
   Get,
   NotImplementedException,
+  Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiCookieAuth,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+} from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import { BlogService } from './blog.service';
+import { AuthorPostsQueryDto } from './dto/author-posts-query.dto';
+import { AuthorProfileResponseDto } from './dto/blog-post-response.dto';
 
 @ApiTags('Blog & Community')
 @Controller()
@@ -157,10 +169,18 @@ export class BlogController {
   @ApiOperation({
     summary: 'BLG-12: View public author profile and published posts',
   })
-  getAuthorPage() {
-    throw new NotImplementedException(
-      'GET /api/authors/:id not implemented yet',
-    );
+  @ApiParam({ name: 'id', description: 'Author user MongoDB ObjectId' })
+  @ApiOkResponse({
+    description: 'Safe public author profile and paginated published posts',
+    type: AuthorProfileResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid author ID or query params' })
+  @ApiNotFoundResponse({ description: 'Author not found' })
+  getAuthorPage(
+    @Param('id') id: string,
+    @Query() query: AuthorPostsQueryDto,
+  ): Promise<AuthorProfileResponseDto> {
+    return this.blogService.getAuthorPage(id, query);
   }
 
   @ApiCookieAuth()
