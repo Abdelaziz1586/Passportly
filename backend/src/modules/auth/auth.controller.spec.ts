@@ -25,6 +25,7 @@ describe('AuthController (ACC-01 register, ACC-02 verify-email, ACC-04/05 login)
     register: jest.fn(),
     verifyEmail: jest.fn(),
     login: jest.fn(),
+    logout: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -246,6 +247,53 @@ describe('AuthController (ACC-01 register, ACC-02 verify-email, ACC-04/05 login)
           { type: 'body', metatype: LoginDto },
         ),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('logout', () => {
+    it('does not mark logout endpoint as @Public() (requires authentication)', () => {
+      const reflector = new Reflector();
+      const logoutHandler = Object.getOwnPropertyDescriptor(
+        AuthController.prototype,
+        'logout',
+      )?.value as (...args: never[]) => unknown;
+      const isPublic = reflector.get<boolean>(IS_PUBLIC_KEY, logoutHandler);
+      expect(isPublic).toBeUndefined();
+    });
+
+    it('revokes session and clears httpOnly auth cookie', async () => {
+      const clearCookieOptions = {
+        httpOnly: true,
+        sameSite: 'lax' as const,
+        secure: false,
+        path: '/',
+      };
+      mockAuthService.logout.mockResolvedValue({
+        response: { message: 'Logged out successfully' },
+        cookieName: 'access_token',
+        clearCookieOptions,
+      });
+
+      const clearCookieMock = jest.fn();
+      const res = {
+        clearCookie: clearCookieMock,
+      } as unknown as Response;
+
+      const user = {
+        userId: '507f1f77bcf86cd799439011',
+        email: 'traveler@example.com',
+        role: Role.REGISTERED_USER,
+        jti: 'session-jti-123',
+      };
+
+      const result = await controller.logout(user, res);
+
+      expect(mockAuthService.logout).toHaveBeenCalledWith(user);
+      expect(clearCookieMock).toHaveBeenCalledWith(
+        'access_token',
+        clearCookieOptions,
+      );
+      expect(result).toEqual({ message: 'Logged out successfully' });
     });
   });
 });
