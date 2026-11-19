@@ -48,3 +48,20 @@ Details: Validate unique email, enforce password rules, hash password with bcryp
 How the output was used:
 Implemented RegisterDto, SafeUserResponseDto, AuthService.register (email normalization, uniqueness check + Mongo duplicate key handling, preferredCurrency check via ReferenceDataService, bcryptjs hashing with 12 salt rounds, hardcoded REGISTERED_USER role and ACTIVE status, sanitized user profile response), AuthController.register Swagger/validation wiring, and unit tests in auth.service.spec.ts and auth.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
 ================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-02 (GET /api/auth/verify-email)
+
+Prompt:
+Endpoint: GET /api/auth/verify-email
+Controller: backend/src/modules/auth/auth.controller.ts
+Allowed Roles: Public
+Details: Validate emailVerificationToken query param, mark User.isEmailVerified = true, and clear verification token.
+Add the mail server in the .env.example and I'll fill it out in the .env, we're not using google mail server
+
+How the output was used:
+Added generic SMTP mail server env vars to .env.example and configuration.ts, created @Global() MailModule/MailService using nodemailer, updated AuthService.register to generate emailVerificationToken and trigger verification emails when SMTP is configured, implemented VerifyEmailQueryDto, VerifyEmailResponseDto, AuthService.verifyEmail, and AuthController.verifyEmail, and added unit tests in mail.service.spec.ts, auth.service.spec.ts, and auth.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
