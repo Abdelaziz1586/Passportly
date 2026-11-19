@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
@@ -6,10 +7,18 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiCookieAuth,
+  ApiCreatedResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
+import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
+import { CreateItineraryDto } from './dto/create-itinerary.dto';
 import { ItinerariesService } from './itineraries.service';
 
 @ApiTags('Itineraries & Budgeting')
@@ -39,10 +48,12 @@ export class ItinerariesController {
   @Roles(Role.REGISTERED_USER)
   @Post('itineraries')
   @ApiOperation({ summary: 'ITN-01: Create itinerary' })
-  createItinerary() {
-    throw new NotImplementedException(
-      'POST /api/itineraries not implemented yet',
-    );
+  @ApiCreatedResponse({ description: 'Private itinerary created successfully' })
+  createItinerary(
+    @Body() dto: CreateItineraryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.createItinerary(user.userId, dto);
   }
 
   @ApiCookieAuth()

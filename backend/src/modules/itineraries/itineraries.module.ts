@@ -1,6 +1,7 @@
 import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { ReferenceDataModule } from '../reference-data/reference-data.module';
 import { ItinerariesController } from './itineraries.controller';
 import { ItinerariesService } from './itineraries.service';
 import { Activity, ActivitySchema } from './schemas/activity.schema';
@@ -18,6 +19,7 @@ import {
 @Module({
   imports: [
     HttpModule,
+    ReferenceDataModule,
     MongooseModule.forFeature([
       { name: Itinerary.name, schema: ItinerarySchema },
       { name: Activity.name, schema: ActivitySchema },

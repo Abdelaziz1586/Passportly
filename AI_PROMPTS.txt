@@ -82,3 +82,17 @@ Details: Verify credentials, enforce failed-login lockout & AccountStatus.ACTIVE
 How the output was used:
 Implemented LoginDto, LoginResponseDto, AuthService.login (email normalization, bcrypt password check, 5-attempt / 15-minute failed-login lockout, AccountStatus.ACTIVE enforcement, UserSession creation with jti and JWT-aligned expiresAt, httpOnly cookie configuration), and AuthController.login wiring with @Public() and Swagger annotations. Added unit tests in auth.service.spec.ts and auth.controller.spec.ts and verified with npm run lint, npm run build, and npm test.
 ================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-89 (ITN-01)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Create a private itinerary. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Restored the uploads module already imported by AppModule but omitted from Git by an ignore rule, and added isolated database test infrastructure. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
