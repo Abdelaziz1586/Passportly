@@ -36,7 +36,7 @@ type StoredClaim = FlightSeatClaim & WithId;
 
 const STALE_CLAIM_BATCH = 500;
 
-/** A seat is only reserved by a booking that is Confirmed or still inside its hold. */
+/** A booking may receive seat changes while it is Confirmed or inside its hold. */
 export function isBookingHoldingSeats(
   booking: { status: BookingStatus; holdExpiresAt?: Date | null },
   now: Date,
@@ -54,6 +54,20 @@ export function isBookingHoldingSeats(
 }
 
 /**
+ * A seat claim stays alive until its booking is in a terminal state. A hold
+ * past its end is still alive until the expiry job flips it to Expired,
+ * because the payment webhook can still confirm it in that window (paid in
+ * time), and its seat must not be handed to somebody else meanwhile.
+ */
+export function isSeatClaimLive(booking: { status: BookingStatus }): boolean {
+  return (
+    booking.status === BookingStatus.CONFIRMED ||
+    booking.status === BookingStatus.PENDING_PAYMENT ||
+    booking.status === BookingStatus.HELD
+  );
+}
+
+/**
  * FLT-28: seat selection. The owner picks one seat per non-infant passenger per
  * leg, from the passenger's own cabin, before that leg departs, on a booking
  * that is Confirmed or a live hold with passenger details. Seats cost nothing
@@ -67,15 +81,16 @@ export function isBookingHoldingSeats(
  * cancellation or expiry (which also writes the booking) conflicts with it and
  * is serialised.
  *
- * Release: a claim only counts while its booking is active. The seat map, the
- * conflict check and a janitor job all treat the claims of Cancelled, Expired
- * and lapsed bookings as free, so cancellation and expiry free the seats
+ * Release: a claim only counts while its booking is live (see isSeatClaimLive).
+ * The seat map, the conflict check and a janitor job all treat the claims of
+ * Cancelled, Expired and Completed bookings as free, so cancellation and expiry free the seats
  * without those flows having to know about seats.
  */
 @Injectable()
 export class FlightSeatsService {
   private readonly logger = new Logger(FlightSeatsService.name);
   private janitorRunning = false;
+  private janitorCursor: Types.ObjectId | null = null;
 
   constructor(
     @InjectModel(FlightBooking.name)
@@ -104,11 +119,6 @@ export class FlightSeatsService {
         `This booking has no leg ${legIndex} (it has ${booking.legs.length})`,
       );
     }
-    if (leg.departureTime.getTime() <= now.getTime()) {
-      throw new ConflictException(
-        'This flight has already departed: its seats can no longer be changed',
-      );
-    }
     const passenger = isValidObjectId(dto.passengerId)
       ? booking.passengers.find((p) => p._id.equals(dto.passengerId))
       : undefined;
@@ -123,8 +133,20 @@ export class FlightSeatsService {
 
     const flight = await this.flightModel
       .findById(leg.flight)
-      .select('status')
+      .select('status departureTime')
       .lean();
+    // Both the booking's copy and the flight's own time count (the airline may move a flight).
+    const departure = flight
+      ? Math.min(
+          leg.departureTime.getTime(),
+          flight.departureTime?.getTime() ?? Infinity,
+        )
+      : leg.departureTime.getTime();
+    if (departure <= now.getTime()) {
+      throw new ConflictException(
+        'This flight has already departed: its seats can no longer be changed',
+      );
+    }
     if (!flight || flight.status === FlightStatus.CANCELLED) {
       throw new ConflictException(
         'This flight is cancelled: no seat can be chosen',
@@ -161,7 +183,7 @@ export class FlightSeatsService {
       if (mine) {
         return this.toResponse(booking, legIndex, passenger._id, seat, seat);
       }
-      if (!(await this.freeIfStale(holder, now))) {
+      if (!(await this.freeIfStale(holder))) {
         throw new ConflictException(
           `Seat ${seat} is already taken: choose a different seat`,
         );
@@ -255,7 +277,7 @@ export class FlightSeatsService {
     const [flights, cabins, claims] = await Promise.all([
       this.flightModel
         .find({ _id: { $in: flightIds } })
-        .select('flightNumber status')
+        .select('flightNumber status departureTime')
         .lean(),
       this.cabinModel.find({ flight: { $in: flightIds } }).lean(),
       this.claimModel
@@ -270,9 +292,7 @@ export class FlightSeatsService {
       .select('status holdExpiresAt')
       .lean();
     const active = new Set(
-      holders
-        .filter((h) => isBookingHoldingSeats(h, now))
-        .map((h) => h._id.toString()),
+      holders.filter((h) => isSeatClaimLive(h)).map((h) => h._id.toString()),
     );
 
     return {
@@ -318,7 +338,10 @@ export class FlightSeatsService {
               seat: c.seat,
             })),
           selectable:
-            leg.departureTime.getTime() > now.getTime() &&
+            Math.min(
+              leg.departureTime.getTime(),
+              flight?.departureTime?.getTime() ?? Infinity,
+            ) > now.getTime() &&
             !!flight &&
             flight.status !== FlightStatus.CANCELLED,
         };
@@ -326,18 +349,23 @@ export class FlightSeatsService {
     };
   }
 
-  /** Janitor: removes the claims of bookings that no longer hold seats (backs up the lazy checks). */
+  /** Janitor: removes the claims of bookings that are Cancelled, Expired or Completed (backs up the lazy checks). */
   @Cron(CronExpression.EVERY_5_MINUTES, { name: 'flight-seat-claim-janitor' })
   async releaseStaleClaims(): Promise<number> {
     if (this.janitorRunning) return 0;
     this.janitorRunning = true;
     try {
-      const now = new Date();
+      // Walk the collection in _id order, one slice per run, so old stale
+      // claims are reached even when the first claims are all live.
+      const slice = STALE_CLAIM_BATCH * 4;
       const claims = await this.claimModel
-        .find()
+        .find(this.janitorCursor ? { _id: { $gt: this.janitorCursor } } : {})
+        .sort({ _id: 1 })
         .select('booking')
-        .limit(STALE_CLAIM_BATCH * 4)
+        .limit(slice)
         .lean<Array<{ _id: Types.ObjectId; booking: Types.ObjectId }>>();
+      this.janitorCursor =
+        claims.length === slice ? claims[claims.length - 1]._id : null;
       if (claims.length === 0) return 0;
       const ids = [...new Set(claims.map((c) => c.booking.toString()))].map(
         (id) => new Types.ObjectId(id),
@@ -347,9 +375,7 @@ export class FlightSeatsService {
         .select('status holdExpiresAt')
         .lean();
       const active = new Set(
-        holders
-          .filter((h) => isBookingHoldingSeats(h, now))
-          .map((h) => h._id.toString()),
+        holders.filter((h) => isSeatClaimLive(h)).map((h) => h._id.toString()),
       );
       const stale = claims
         .filter((c) => !active.has(c.booking.toString()))
@@ -357,7 +383,7 @@ export class FlightSeatsService {
         .map((c) => c._id);
       if (stale.length === 0) return 0;
       // Safe to delete: a booking never comes back from Cancelled, Expired or
-      // Completed, and a lapsed hold is never extended (FLT-22).
+      // Completed.
       await this.claimModel.deleteMany({ _id: { $in: stale } });
       this.logger.log(
         `Released ${stale.length} seat claim(s) of inactive bookings`,
@@ -375,12 +401,12 @@ export class FlightSeatsService {
   }
 
   /** Frees the claim if its booking holds no seats any more. Returns false when the seat is really taken. */
-  private async freeIfStale(claim: StoredClaim, now: Date): Promise<boolean> {
+  private async freeIfStale(claim: StoredClaim): Promise<boolean> {
     const holder = await this.bookingModel
       .findById(claim.booking)
       .select('status holdExpiresAt')
       .lean();
-    if (holder && isBookingHoldingSeats(holder, now)) return false;
+    if (holder && isSeatClaimLive(holder)) return false;
     await this.claimModel.deleteOne({ _id: claim._id });
     return true;
   }

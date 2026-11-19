@@ -14,6 +14,7 @@ import {
 import {
   FlightSeatsService,
   isBookingHoldingSeats,
+  isSeatClaimLive,
 } from './flight-seats.service';
 
 interface Chain<T> extends PromiseLike<T> {
@@ -21,6 +22,7 @@ interface Chain<T> extends PromiseLike<T> {
   session(): Chain<T>;
   select(): Chain<T>;
   limit(): Chain<T>;
+  sort(): Chain<T>;
 }
 
 function query<T>(result: T): Chain<T> {
@@ -29,6 +31,7 @@ function query<T>(result: T): Chain<T> {
     session: () => q,
     select: () => q,
     limit: () => q,
+    sort: () => q,
     then: (onFulfilled, onRejected) =>
       Promise.resolve(result).then(onFulfilled, onRejected),
   };
@@ -306,13 +309,6 @@ describe('FlightSeatsService.selectSeat', () => {
   it.each([
     ['cancelled', { status: BookingStatus.CANCELLED }],
     ['expired', { status: BookingStatus.EXPIRED }],
-    [
-      'a lapsed hold',
-      {
-        status: BookingStatus.PENDING_PAYMENT,
-        holdExpiresAt: new Date(Date.now() - 1000),
-      },
-    ],
     ['missing', null],
   ])(
     'frees a seat whose holder is %s and then assigns it',
@@ -569,6 +565,56 @@ describe('isBookingHoldingSeats', () => {
     expect(isBookingHoldingSeats({ status, holdExpiresAt }, now)).toBe(
       expected,
     );
+  });
+});
+
+describe('isSeatClaimLive', () => {
+  it.each([
+    [BookingStatus.CONFIRMED, true],
+    [BookingStatus.PENDING_PAYMENT, true],
+    [BookingStatus.HELD, true],
+    [BookingStatus.CANCELLED, false],
+    [BookingStatus.EXPIRED, false],
+    [BookingStatus.COMPLETED, false],
+  ])('%s -> %s', (status, expected) => {
+    expect(isSeatClaimLive({ status })).toBe(expected);
+  });
+});
+
+describe('FlightSeatsService (lapsed hold that can still be paid)', () => {
+  it('does not hand the seat of a hold past its end to someone else until it is Expired', async () => {
+    const other = makeBooking();
+    const t = build({
+      holder: claimFor(other, 0, '3C'),
+      holderBooking: {
+        status: BookingStatus.PENDING_PAYMENT,
+        holdExpiresAt: new Date(Date.now() - 1000),
+      },
+    });
+    const booking = t.booking!;
+    await expect(
+      t.service.selectSeat(userId.toString(), booking._id.toString(), {
+        passengerId: booking.passengers[0]._id.toString(),
+        seat: '3C',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(t.claimModel.deleteOne).not.toHaveBeenCalled();
+  });
+
+  it('refuses when the flight itself departs earlier than the booking copy says', async () => {
+    const t = build({
+      flight: {
+        status: FlightStatus.SCHEDULED,
+        departureTime: new Date(Date.now() - 1000),
+      },
+    });
+    const booking = t.booking!;
+    await expect(
+      t.service.selectSeat(userId.toString(), booking._id.toString(), {
+        passengerId: booking.passengers[0]._id.toString(),
+        seat: '3C',
+      }),
+    ).rejects.toThrow(/already departed/);
   });
 });
 
