@@ -3,14 +3,30 @@ import {
   Delete,
   Get,
   NotImplementedException,
+  Param,
   Patch,
   Post,
+  Req,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiCookieAuth,
+  ApiForbiddenResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
+import type { Request } from 'express';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
+import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { BlogService } from './blog.service';
+import { DeleteCommentResponseDto } from './dto/blog-post-response.dto';
 
 @ApiTags('Blog & Community')
 @Controller()
@@ -97,10 +113,24 @@ export class BlogController {
   @Roles(Role.REGISTERED_USER, Role.ADMIN)
   @Delete('comments/:id')
   @ApiOperation({ summary: 'BLG-07: Delete comment' })
-  deleteComment() {
-    throw new NotImplementedException(
-      'DELETE /api/comments/:id not implemented yet',
-    );
+  @ApiParam({ name: 'id', description: 'Comment MongoDB ObjectId' })
+  @ApiOkResponse({
+    description: 'Comment deleted and post comment count updated',
+    type: DeleteCommentResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid comment ID' })
+  @ApiUnauthorizedResponse({ description: 'Authentication required' })
+  @ApiForbiddenResponse({
+    description:
+      'Only the comment author or an administrator can delete this comment',
+  })
+  @ApiNotFoundResponse({ description: 'Comment not found' })
+  deleteComment(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
+  ): Promise<DeleteCommentResponseDto> {
+    return this.blogService.deleteComment(id, user, req.ip);
   }
 
   @ApiCookieAuth()

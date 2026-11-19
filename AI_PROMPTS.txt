@@ -82,3 +82,17 @@ Details: Verify credentials, enforce failed-login lockout & AccountStatus.ACTIVE
 How the output was used:
 Implemented LoginDto, LoginResponseDto, AuthService.login (email normalization, bcrypt password check, 5-attempt / 15-minute failed-login lockout, AccountStatus.ACTIVE enforcement, UserSession creation with jti and JWT-aligned expiresAt, httpOnly cookie configuration), and AuthController.login wiring with @Public() and Swagger annotations. Added unit tests in auth.service.spec.ts and auth.controller.spec.ts and verified with npm run lint, npm run build, and npm test.
 ================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Abdullah Emam
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: BLG-07 (SCRUM-125, DELETE /api/comments/:id)
+
+Prompt:
+Implement SCRUM-125 [BLG-07] DELETE /api/comments/:id - Delete comment verifying Comment.author == CurrentUser.userId or ADMIN, deleting Comment, and decrementing BlogPost.commentsCount.
+
+How the output was used:
+Added DeleteCommentResponseDto, BlogService.deleteComment with author/ADMIN authorization, atomic deletion, guarded commentsCount decrement, and admin audit/notification hooks, BlogController.deleteComment Swagger/role wiring, and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
