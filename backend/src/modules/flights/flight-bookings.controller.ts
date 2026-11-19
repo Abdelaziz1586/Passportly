@@ -11,16 +11,20 @@ import {
   ApiConflictResponse,
   ApiCookieAuth,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOperation,
   ApiTags,
+  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
+import { CreateFlightBookingDto } from './dto/create-flight-booking.dto';
 import { HoldSeatsDto } from './dto/hold-seats.dto';
 import {
+  FlightBookingResponse,
   FlightBookingsService,
   FlightHoldResponse,
 } from './flight-bookings.service';
@@ -56,11 +60,29 @@ export class FlightBookingsController {
   @ApiOperation({
     summary:
       'FLT-19, FLT-21: Create flight booking with passenger & baggage details',
+    description:
+      'Takes the HELD booking from /flight-bookings/hold plus one entry per traveller, prices extra baggage, snapshots the airline policies and moves the booking to PENDING_PAYMENT. It is never CONFIRMED here: only a verified payment confirms it. The hold expiry is not extended, so pay before holdExpiresAt.',
   })
-  createBooking() {
-    throw new NotImplementedException(
-      'POST /api/flight-bookings not implemented yet',
-    );
+  @ApiCreatedResponse({
+    description:
+      'Booking is PENDING_PAYMENT with totals, passengers and the policies to accept',
+  })
+  @ApiBadRequestResponse({
+    description:
+      'Invalid body, or passengers do not match the held adults/children/infants',
+  })
+  @ApiUnauthorizedResponse({ description: 'Not signed in' })
+  @ApiForbiddenResponse({ description: 'Only registered users may book' })
+  @ApiNotFoundResponse({ description: 'Booking not found or not yours' })
+  @ApiConflictResponse({
+    description:
+      'Booking is not HELD (already submitted, cancelled or expired), the hold ran out, or a flight/airline can no longer be booked',
+  })
+  createBooking(
+    @Body() dto: CreateFlightBookingDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<FlightBookingResponse> {
+    return this.flightBookingsService.createBooking(user.userId, dto);
   }
 
   @Roles(Role.REGISTERED_USER, Role.ADMIN)

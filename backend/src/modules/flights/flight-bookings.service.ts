@@ -10,21 +10,39 @@ import { ConfigService } from '@nestjs/config';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { randomInt } from 'crypto';
-import { ClientSession, Connection, Model, Types } from 'mongoose';
+import {
+  ClientSession,
+  Connection,
+  isValidObjectId,
+  Model,
+  Types,
+} from 'mongoose';
 import {
   BookingStatus,
   CabinClass,
   FlightStatus,
   NotificationType,
+  PassengerType,
   TripType,
 } from '../../common/enums';
 import { NotificationsService } from '../notifications/notifications.service';
+import { CreateFlightBookingDto } from './dto/create-flight-booking.dto';
 import { HoldSeatsDto } from './dto/hold-seats.dto';
+import {
+  buildPolicySnapshot,
+  calculateBaggageFees,
+  FlightPolicySnapshot,
+  maskPassport,
+  normalizePassengers,
+  PolicyLegSource,
+  toCents,
+} from './flight-booking-details';
 import { Airline } from './schemas/airline.schema';
 import { CabinInventory } from './schemas/cabin-inventory.schema';
 import {
   FlightBooking,
   FlightBookingDocument,
+  Passenger,
 } from './schemas/flight-booking.schema';
 import { Flight } from './schemas/flight.schema';
 
@@ -70,6 +88,44 @@ export interface FlightHoldResponse {
   baseFareTotal: number;
   totalPrice: number;
   currency: string;
+}
+
+export interface FlightBookingPassengerResponse {
+  id: string | null;
+  firstName: string;
+  lastName: string;
+  type: PassengerType;
+  dateOfBirth: Date | null;
+  gender: string | null;
+  /** Masked: only the last 4 characters are returned. */
+  passportNumber: string;
+  passportExpiry: Date | null;
+  nationality: string | null;
+  extraBaggageCount: number;
+  extraBaggageFee: number;
+}
+
+export interface FlightBookingResponse {
+  id: string;
+  bookingReference: string;
+  status: BookingStatus;
+  tripType: TripType;
+  holdExpiresAt: Date;
+  passengerCounts: {
+    adults: number;
+    children: number;
+    infants: number;
+    totalSeatsRequired: number;
+  };
+  passengers: FlightBookingPassengerResponse[];
+  legs: FlightHoldLegResponse[];
+  baseFareTotal: number;
+  extraBaggageTotal: number;
+  taxesAndFees: number;
+  totalPrice: number;
+  currency: string;
+  /** Baggage and cancellation policies the user must accept before paying. */
+  policies: FlightPolicySnapshot;
 }
 
 interface HoldCandidate {
@@ -129,6 +185,207 @@ export class FlightBookingsService {
     throw new InternalServerErrorException(
       'Could not generate a unique booking reference',
     );
+  }
+
+  /**
+   * FLT-19, FLT-21: attach passenger and baggage details to a HELD booking,
+   * price the extras, snapshot the airline policies and move the booking to
+   * PENDING_PAYMENT (never CONFIRMED: only a verified payment may do that).
+   *
+   * The state change is one conditional update (owner + HELD + hold not yet
+   * expired), so it cannot race with the expiry cron or a double submit.
+   * holdExpiresAt is deliberately left untouched.
+   */
+  async createBooking(
+    userId: string,
+    dto: CreateFlightBookingDto,
+  ): Promise<FlightBookingResponse> {
+    if (!isValidObjectId(dto.bookingId) || !isValidObjectId(userId)) {
+      throw new NotFoundException('Flight booking not found');
+    }
+    const now = new Date();
+    const bookingId = new Types.ObjectId(dto.bookingId);
+    const owner = new Types.ObjectId(userId);
+
+    // Ownership: someone else's booking looks exactly like a missing one.
+    const booking = await this.bookingModel.findOne({
+      _id: bookingId,
+      user: owner,
+    });
+    if (!booking) throw new NotFoundException('Flight booking not found');
+    this.assertAwaitingDetails(booking, now);
+
+    const lastLeg = booking.legs[booking.legs.length - 1];
+    const passengers = normalizePassengers(
+      dto.passengers,
+      booking.passengerCounts,
+      lastLeg.arrivalTime,
+      now,
+    );
+
+    const legSources = await this.loadPolicySources(booking, now);
+    const fees = calculateBaggageFees(
+      passengers,
+      legSources.map(({ airline }) => airline.baggagePolicy),
+      booking.currency,
+    );
+    const snapshot = buildPolicySnapshot(legSources, now);
+
+    const baseCents = toCents(booking.baseFareTotal);
+    const taxesCents = toCents(booking.taxesAndFees ?? 0);
+    const extraBaggageTotal = fees.totalCents / 100;
+    const totalPrice = (baseCents + fees.totalCents + taxesCents) / 100;
+
+    const updated = await this.bookingModel.findOneAndUpdate(
+      {
+        _id: bookingId,
+        user: owner,
+        status: BookingStatus.HELD,
+        holdExpiresAt: { $gt: now },
+      },
+      {
+        $set: {
+          passengers: passengers.map((passenger, index) => ({
+            ...passenger,
+            extraBaggageFee: fees.perPassengerCents[index] / 100,
+          })),
+          extraBaggageTotal,
+          taxesAndFees: taxesCents / 100,
+          totalPrice,
+          policySnapshot: snapshot,
+          status: BookingStatus.PENDING_PAYMENT,
+        },
+      },
+      { returnDocument: 'after' },
+    );
+    if (!updated) {
+      // Another request submitted first, or the hold ran out in the meantime.
+      throw new ConflictException(
+        'This booking can no longer receive passenger details (already submitted or the seat hold expired)',
+      );
+    }
+    return this.toBookingResponse(updated, snapshot);
+  }
+
+  private assertAwaitingDetails(booking: FlightBookingDocument, now: Date) {
+    if (booking.status === BookingStatus.PENDING_PAYMENT) {
+      throw new ConflictException(
+        'Passenger details were already submitted for this booking',
+      );
+    }
+    if (booking.status !== BookingStatus.HELD) {
+      throw new ConflictException(
+        `A ${booking.status} booking cannot receive passenger details`,
+      );
+    }
+    if (
+      !booking.holdExpiresAt ||
+      booking.holdExpiresAt.getTime() <= now.getTime()
+    ) {
+      throw new ConflictException(
+        'The seat hold has expired; place a new hold to continue',
+      );
+    }
+  }
+
+  /** Loads flight, airline and cabin of every leg and re-checks they are still bookable. */
+  private async loadPolicySources(
+    booking: FlightBookingDocument,
+    now: Date,
+  ): Promise<PolicyLegSource[]> {
+    const flights = await this.flightModel.find({
+      _id: { $in: booking.legs.map((leg) => leg.flight) },
+    });
+    const airlines = await this.airlineModel.find({
+      _id: { $in: flights.map((flight) => flight.airline) },
+    });
+    const cabins = await this.cabinModel.find({
+      _id: { $in: booking.legs.map((leg) => leg.cabin) },
+    });
+    const flightById = new Map(flights.map((f) => [f._id.toString(), f]));
+    const airlineById = new Map(airlines.map((a) => [a._id.toString(), a]));
+    const cabinById = new Map(cabins.map((c) => [c._id.toString(), c]));
+
+    return booking.legs.map((leg) => {
+      const flight = flightById.get(leg.flight.toString());
+      const airline = flight && airlineById.get(flight.airline.toString());
+      const cabin = cabinById.get(leg.cabin.toString());
+      if (!flight || !airline || !cabin) {
+        throw new ConflictException(
+          'A flight in this booking is no longer available',
+        );
+      }
+      if (
+        !BOOKABLE_FLIGHT_STATUSES.includes(flight.status) ||
+        flight.departureTime.getTime() <= now.getTime()
+      ) {
+        throw new ConflictException(
+          `Flight ${flight.flightNumber} can no longer be booked (${flight.status})`,
+        );
+      }
+      if (!airline.isActive) {
+        throw new ConflictException(
+          `The airline for flight ${flight.flightNumber} is not accepting bookings`,
+        );
+      }
+      return { flightId: flight._id.toString(), airline, cabin };
+    });
+  }
+
+  private toBookingResponse(
+    booking: FlightBookingDocument,
+    snapshot: FlightPolicySnapshot,
+  ): FlightBookingResponse {
+    // Built field by field on purpose: spreading a Mongoose subdocument leaks
+    // internals (even the transaction session) into the JSON response.
+    return {
+      id: booking._id.toString(),
+      bookingReference: booking.bookingReference,
+      status: booking.status,
+      tripType: booking.tripType,
+      holdExpiresAt: booking.holdExpiresAt as Date,
+      passengerCounts: {
+        adults: booking.passengerCounts.adults,
+        children: booking.passengerCounts.children,
+        infants: booking.passengerCounts.infants,
+        totalSeatsRequired: booking.passengerCounts.totalSeatsRequired,
+      },
+      passengers: booking.passengers.map((passenger) =>
+        this.toPassengerResponse(passenger),
+      ),
+      legs: booking.legs.map((leg) => ({
+        flightId: leg.flight.toString(),
+        cabinClass: leg.cabinClass,
+        departureTime: leg.departureTime,
+        arrivalTime: leg.arrivalTime,
+        unitPrice: leg.unitPrice,
+      })),
+      baseFareTotal: booking.baseFareTotal,
+      extraBaggageTotal: booking.extraBaggageTotal,
+      taxesAndFees: booking.taxesAndFees,
+      totalPrice: booking.totalPrice,
+      currency: booking.currency,
+      policies: snapshot,
+    };
+  }
+
+  private toPassengerResponse(
+    passenger: Passenger,
+  ): FlightBookingPassengerResponse {
+    const { _id } = passenger as Passenger & { _id?: Types.ObjectId };
+    return {
+      id: _id ? _id.toString() : null,
+      firstName: passenger.firstName,
+      lastName: passenger.lastName,
+      type: passenger.type,
+      dateOfBirth: passenger.dateOfBirth ?? null,
+      gender: passenger.gender ?? null,
+      passportNumber: maskPassport(passenger.passportNumber),
+      passportExpiry: passenger.passportExpiry ?? null,
+      nationality: passenger.nationality ?? null,
+      extraBaggageCount: passenger.extraBaggageCount,
+      extraBaggageFee: passenger.extraBaggageFee,
+    };
   }
 
   /**
