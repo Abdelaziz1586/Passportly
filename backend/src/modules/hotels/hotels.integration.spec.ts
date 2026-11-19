@@ -49,7 +49,7 @@ import { dateRange, DAY_MS, todayUtc } from './hotel-utils';
 
 // Each ticket branch activates its completed prefix; the final branch runs all 18 groups.
 const implementedTickets = new Set(
-  Array.from({ length: 4 }, (_, i) => `SCRUM-${52 + i}`),
+  Array.from({ length: 5 }, (_, i) => `SCRUM-${52 + i}`),
 );
 const ticket = (id: string, tests: () => void): void => {
   (implementedTickets.has(id) ? describe : describe.skip)(id, tests);
