@@ -1,15 +1,35 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
   NotImplementedException,
+  Param,
   Patch,
   Post,
+  Req,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiConflictResponse,
+  ApiCookieAuth,
+  ApiForbiddenResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+} from '@nestjs/swagger';
+import type { Request } from 'express';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
+import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { AdminService } from './admin.service';
+import {
+  ResolveReportDto,
+  ResolveReportResponseDto,
+} from './dto/resolve-report.dto';
 
 @ApiTags('Administration')
 @ApiCookieAuth()
@@ -103,10 +123,24 @@ export class AdminController {
     summary:
       'GEN-10: Resolve report (dismiss, hide content, or delete content)',
   })
-  resolveReport() {
-    throw new NotImplementedException(
-      'PATCH /api/admin/reports/:id not implemented yet',
-    );
+  @ApiParam({ name: 'id', type: String, description: 'Report ID' })
+  @ApiOkResponse({
+    description: 'Report resolved and moderation action applied',
+    type: ResolveReportResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid report ID or resolution body',
+  })
+  @ApiConflictResponse({ description: 'Report has already been resolved' })
+  @ApiForbiddenResponse({ description: 'Admin role required' })
+  @ApiNotFoundResponse({ description: 'Report or target content not found' })
+  resolveReport(
+    @Param('id') id: string,
+    @Body() dto: ResolveReportDto,
+    @CurrentUser() admin: AuthenticatedUser,
+    @Req() req: Request,
+  ): Promise<ResolveReportResponseDto> {
+    return this.adminService.resolveReport(id, dto, admin, req.ip);
   }
 
   @Delete('content/:type/:id')
