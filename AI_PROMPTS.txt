@@ -82,3 +82,20 @@ Details: Verify credentials, enforce failed-login lockout & AccountStatus.ACTIVE
 How the output was used:
 Implemented LoginDto, LoginResponseDto, AuthService.login (email normalization, bcrypt password check, 5-attempt / 15-minute failed-login lockout, AccountStatus.ACTIVE enforcement, UserSession creation with jti and JWT-aligned expiresAt, httpOnly cookie configuration), and AuthController.login wiring with @Public() and Swagger annotations. Added unit tests in auth.service.spec.ts and auth.controller.spec.ts and verified with npm run lint, npm run build, and npm test.
 ================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-11 (GET /api/users/me, SCRUM-15)
+
+Prompt:
+Requirement: ACC-11
+Endpoint: GET /api/users/me
+Controller: backend/src/modules/users/users.controller.ts
+Allowed Roles: Authenticated (All Roles)
+Details: Fetch full User document for CurrentUser (excluding passwordHash and sensitive tokens) plus moderator assignment if applicable.
+
+How the output was used:
+Implemented UserProfileResponseDto, ModeratorAssignmentSummaryDto, UsersService.getMyProfile (fetches sanitized User document excluding passwordHash and verification/reset tokens, verifies ACTIVE status, and loads active ModeratorAssignment for moderator roles), UsersController.getMyProfile Swagger wiring, and unit + HTTP integration tests in users.service.spec.ts and users.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================

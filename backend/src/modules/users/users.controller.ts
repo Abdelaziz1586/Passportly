@@ -5,9 +5,17 @@ import {
   NotImplementedException,
   Patch,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiCookieAuth,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
+import { UserProfileResponseDto } from './dto/user-profile-response.dto';
 import { UsersService } from './users.service';
 
 @ApiTags('Users')
@@ -18,10 +26,17 @@ export class UsersController {
 
   @Get('me')
   @ApiOperation({ summary: 'ACC-11: Get current user profile' })
-  getMyProfile(@CurrentUser() user: AuthenticatedUser) {
-    throw new NotImplementedException(
-      `GET /api/users/me not implemented yet (user: ${user.userId})`,
-    );
+  @ApiOkResponse({
+    description:
+      'Sanitized user profile (plus active moderator assignment when applicable)',
+    type: UserProfileResponseDto,
+  })
+  @ApiUnauthorizedResponse({ description: 'Authentication required' })
+  @ApiNotFoundResponse({ description: 'User account not found' })
+  getMyProfile(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<UserProfileResponseDto> {
+    return this.usersService.getMyProfile(user);
   }
 
   @Patch('me')
