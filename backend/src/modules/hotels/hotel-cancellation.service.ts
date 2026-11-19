@@ -28,7 +28,7 @@ import {
 import { RefundsService } from '../payments/refunds.service';
 import { Payment } from '../payments/schemas/payment.schema';
 import { CancelHotelBookingDto } from './dto/cancel-hotel-booking.dto';
-import { stayNights } from './hotel-booking-dates';
+import { startOfUtcDay, stayNights } from './hotel-booking-dates';
 import { effectiveHotelStatus } from './hotel-booking-view';
 import { HotelBooking } from './schemas/hotel-booking.schema';
 import { RoomAvailability } from './schemas/room-availability.schema';
@@ -244,7 +244,11 @@ export class HotelCancellationService {
     booking: Stored,
     session: ClientSession,
   ): Promise<void> {
-    const nights = stayNights(booking.checkInDate, booking.nights);
+    // Same nights the hold and the payment webhook used: check-in at UTC midnight, up to the night before check-out.
+    const nights = stayNights(
+      startOfUtcDay(booking.checkInDate),
+      booking.nights,
+    );
     for (const item of booking.rooms) {
       const released = await this.availabilityModel.updateMany(
         {

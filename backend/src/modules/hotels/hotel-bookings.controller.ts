@@ -149,7 +149,7 @@ export class HotelBookingsController {
   @ApiOperation({
     summary: 'HTL-21: Preview the refund before cancelling a hotel reservation',
     description:
-      "Shows what cancelling now would refund, without changing anything: the whole days left until the check-in date, the hotel tier that applies (from the tiers copied onto the reservation when it was made) and the refund amount on the full total. Only the owner's CONFIRMED reservation before its check-in date.",
+      "Shows what cancelling now would refund, without changing anything: the whole days left until the check-in date (counted to UTC midnight of that date: a check-in 10 days away at 15:00 UTC today is 9 whole days), the hotel tier that applies (from the tiers copied onto the reservation when it was made) and the refund amount on the full total. Only the owner's CONFIRMED reservation before its check-in date.",
   })
   @ApiOkResponse({
     description: 'The refund the cancellation would give',

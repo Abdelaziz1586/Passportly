@@ -617,6 +617,38 @@ describe('HotelCancellationService.cancel', () => {
     expect(update.$set).not.toHaveProperty('cancellationReason');
   });
 
+  it('warns (and still cancels) when fewer booked units than nights were released', async () => {
+    const ctx = build();
+    ctx.availabilityModel.updateMany.mockResolvedValue({ modifiedCount: 1 });
+
+    await expect(
+      ctx.service.cancel(userId.toString(), id(ctx), confirm),
+    ).resolves.toMatchObject({ status: BookingStatus.CANCELLED });
+    expect(ctx.availabilityModel.updateMany).toHaveBeenCalledTimes(2);
+  });
+
+  it('refunds 0% for a reservation whose snapshot has no cancellation policy at all', async () => {
+    const ctx = build(makeBooking({ policySnapshot: {} }));
+
+    const preview = await ctx.service.preview(userId.toString(), id(ctx));
+
+    expect(preview.refundAmount).toBe(0);
+    expect(preview.tierApplied).toBeNull();
+  });
+
+  it('releases the stay nights even when the stored check-in carries a time of day', async () => {
+    const odd = new Date(utcMidnight(10).getTime() + 5 * 3_600_000);
+    const ctx = build(makeBooking({ checkInDate: odd }));
+
+    await ctx.service.cancel(userId.toString(), id(ctx), confirm);
+
+    const [filter] = ctx.availabilityModel.updateMany.mock
+      .calls[0] as unknown as [{ date: { $in: Date[] } }];
+    expect(filter.date.$in[0].toISOString()).toBe(
+      utcMidnight(10).toISOString(),
+    );
+  });
+
   it('cancels as a whole: every room of the reservation is released together', async () => {
     const three = makeBooking({
       rooms: [
