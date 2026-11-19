@@ -1,4 +1,10 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { ClientSession, isValidObjectId, Model, Types } from 'mongoose';
@@ -21,8 +27,9 @@ export interface RecordRefundInput {
   user: Types.ObjectId;
   bookingType: BookingType;
   bookingId: Types.ObjectId;
-  /** Major units, > 0 and at most the payment amount. */
+  /** Major units: > 0 and at most the payment amount. */
   amount: number;
+  /** Must be the payment's currency. */
   currency: string;
   reason: string;
   notes: string;
@@ -50,16 +57,32 @@ type StoredRefund = Refund & {
   updatedAt: Date;
 };
 
-/** A refund that never reached Stripe is retried this many times before it is marked FAILED. */
+/** A refund Stripe keeps rejecting (not an outage) is marked FAILED after this many tries. */
 export const MAX_REFUND_ATTEMPTS = 5;
 const UNSENT_AFTER_MS = 20_000;
 const UNSENT_BATCH_SIZE = 50;
+/** Payments that still hold money that can be refunded. */
+const REFUNDABLE_PAYMENT_STATUSES: PaymentStatus[] = [
+  PaymentStatus.SUCCEEDED,
+  PaymentStatus.PARTIALLY_REFUNDED,
+];
+const TRANSIENT_STRIPE_ERRORS = new Set([
+  'StripeConnectionError',
+  'StripeAPIError',
+  'StripeRateLimitError',
+]);
+/** Shown to the user instead of raw Stripe messages (they can contain object ids). */
+const GENERIC_FAILURE = 'The payment provider could not complete the refund';
 
 /**
  * PAY-03: refunds. A refund is first recorded (PENDING, inside the cancellation
  * transaction), then sent to Stripe through the Refunds API with an idempotency
  * key, so a crash or a retry can never refund twice. A job re-sends refunds that
  * never reached Stripe. Stripe's own events settle PENDING into Refunded or Failed.
+ *
+ * Callers: recordRefund(input, session) inside their cancellation transaction,
+ * then dispatchRefund(id) only AFTER that transaction committed (before the
+ * commit the record is not visible yet and the job would pick it up later).
  */
 @Injectable()
 export class RefundsService {
@@ -78,39 +101,72 @@ export class RefundsService {
   /**
    * Records a PENDING refund. Pass the session of the cancellation transaction so
    * the booking, its inventory and the refund record commit together. A payment
-   * can only be refunded once: asking again returns the existing refund.
+   * can only be refunded once: asking again returns the existing refund (also
+   * when two requests race and the unique index rejects the second one).
    */
   async recordRefund(
     input: RecordRefundInput,
     session?: ClientSession,
   ): Promise<RefundDocument> {
+    if (!(input.amount > 0)) {
+      throw new BadRequestException('A refund needs a positive amount');
+    }
     const existing = await this.refundModel
       .findOne({ payment: input.payment })
       .session(session ?? null);
     if (existing) return existing;
-    const [created] = await this.refundModel.create(
-      [
-        {
+
+    const payment = await this.paymentModel
+      .findById(input.payment)
+      .session(session ?? null)
+      .lean();
+    if (!payment || !REFUNDABLE_PAYMENT_STATUSES.includes(payment.status)) {
+      throw new ConflictException(
+        'This payment has no money that can be refunded',
+      );
+    }
+    if (
+      input.amount > payment.amount ||
+      input.currency.toUpperCase() !== payment.currency.toUpperCase()
+    ) {
+      throw new BadRequestException(
+        'A refund cannot exceed the payment or use another currency',
+      );
+    }
+
+    try {
+      const [created] = await this.refundModel.create(
+        [
+          {
+            payment: input.payment,
+            user: input.user,
+            bookingType: input.bookingType,
+            bookingId: input.bookingId,
+            amount: input.amount,
+            currency: input.currency.toUpperCase(),
+            status: RefundStatus.PENDING,
+            reason: input.reason,
+            policyCalculationNotes: input.notes,
+          },
+        ],
+        { session },
+      );
+      return created;
+    } catch (error) {
+      if (!session && this.isDuplicateKey(error)) {
+        const winner = await this.refundModel.findOne({
           payment: input.payment,
-          user: input.user,
-          bookingType: input.bookingType,
-          bookingId: input.bookingId,
-          amount: input.amount,
-          currency: input.currency,
-          status: RefundStatus.PENDING,
-          reason: input.reason,
-          policyCalculationNotes: input.notes,
-        },
-      ],
-      { session },
-    );
-    return created;
+        });
+        if (winner) return winner;
+      }
+      throw error;
+    }
   }
 
   /**
    * Sends a recorded refund to Stripe (Refunds API). Safe to call again: the
    * Stripe idempotency key is the refund id and the record is only updated once.
-   * Returns false when it could not be sent (the job retries).
+   * Never throws for a Stripe problem: it returns false and the job retries.
    */
   async dispatchRefund(refundId: Types.ObjectId): Promise<boolean> {
     const stripe = this.paymentsService.stripe;
@@ -122,11 +178,11 @@ export class RefundsService {
         stripeRefundId: null,
       })
       .lean();
-    if (!refund) return true; // already sent or settled
+    if (!refund) return true; // already sent, settled, or not committed yet
     const payment = await this.paymentModel.findById(refund.payment).lean();
     if (
       !payment?.stripePaymentIntentId ||
-      payment.status === PaymentStatus.PENDING
+      !REFUNDABLE_PAYMENT_STATUSES.includes(payment.status)
     ) {
       await this.failRefund(
         refund._id,
@@ -159,21 +215,7 @@ export class RefundsService {
     const updated = await this.refundModel.findOneAndUpdate(
       { _id: refund._id, stripeRefundId: null },
       {
-        $set: {
-          stripeRefundId: stripeRefund.id,
-          status,
-          ...(status === RefundStatus.SUCCEEDED
-            ? { processedAt: new Date() }
-            : {}),
-          ...(status === RefundStatus.FAILED
-            ? {
-                failureReason:
-                  stripeRefund.failure_reason ??
-                  'Stripe could not refund the payment',
-              }
-            : {}),
-        },
-        $inc: { attempts: 1 },
+        ...this.finalUpdate(status, stripeRefund),
       },
       { returnDocument: 'after' },
     );
@@ -237,45 +279,92 @@ export class RefundsService {
     return this.toResponse(refund);
   }
 
-  /** `charge.refunded`: the money is back, so a PENDING refund of this payment is settled. */
+  /**
+   * `charge.refunded`: the charge was refunded, so look at Stripe's own state of
+   * the refund(s) of this payment that are still PENDING and follow it. A refund
+   * Stripe still reports as pending stays PENDING.
+   */
   async settleForPayment(paymentId: Types.ObjectId): Promise<boolean> {
-    const result = await this.refundModel.updateOne(
-      {
+    const stripe = this.paymentsService.stripe;
+    if (!stripe) return false;
+    const pending = await this.refundModel
+      .findOne({
         payment: paymentId,
         status: RefundStatus.PENDING,
         stripeRefundId: { $ne: null },
-      },
-      { $set: { status: RefundStatus.SUCCEEDED, processedAt: new Date() } },
-    );
-    return result.modifiedCount === 1;
+      })
+      .lean();
+    if (!pending?.stripeRefundId) return false;
+    try {
+      return await this.syncFromStripe(
+        await stripe.refunds.retrieve(pending.stripeRefundId),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Could not read Stripe refund ${pending.stripeRefundId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return false;
+    }
   }
 
-  /** `refund.updated` / `refund.failed`: follow Stripe's final word on one refund. */
+  /**
+   * `refund.updated` / `refund.failed`: follow Stripe's final word on one refund.
+   * Matches by the Stripe refund id, or by our refund id in the Stripe metadata
+   * (a call that succeeded at Stripe but whose answer was lost). A PENDING refund
+   * settles; so does one that was given up as FAILED before its Stripe id was known.
+   */
   async syncFromStripe(stripeRefund: Stripe.Refund): Promise<boolean> {
     const status = this.toRefundStatus(stripeRefund.status);
     if (status === RefundStatus.PENDING) return false;
+    const metadataId = stripeRefund.metadata?.refundId;
+    const match: Record<string, unknown>[] = [
+      { stripeRefundId: stripeRefund.id },
+    ];
+    if (typeof metadataId === 'string' && isValidObjectId(metadataId)) {
+      match.push({ _id: new Types.ObjectId(metadataId) });
+    }
     const updated = await this.refundModel.findOneAndUpdate(
-      { stripeRefundId: stripeRefund.id, status: RefundStatus.PENDING },
       {
-        $set: {
-          status,
-          ...(status === RefundStatus.SUCCEEDED
-            ? { processedAt: new Date() }
-            : {}),
-          ...(status === RefundStatus.FAILED
-            ? {
-                failureReason:
-                  stripeRefund.failure_reason ??
-                  'Stripe could not refund the payment',
-              }
-            : {}),
-        },
+        $or: match,
+        $and: [
+          {
+            $or: [
+              { status: RefundStatus.PENDING },
+              { status: RefundStatus.FAILED, stripeRefundId: null },
+            ],
+          },
+        ],
+      },
+      {
+        ...this.finalUpdate(status, stripeRefund),
       },
       { returnDocument: 'after' },
     );
-    if (updated && status === RefundStatus.FAILED)
-      await this.notifyOutcome(updated);
+    if (updated) await this.notifyOutcome(updated);
     return !!updated;
+  }
+
+  /** The update that records Stripe's answer: its id, the status, and the matching fields. */
+  private finalUpdate(status: RefundStatus, stripeRefund: Stripe.Refund) {
+    const base = { stripeRefundId: stripeRefund.id, status };
+    if (status === RefundStatus.FAILED) {
+      // Stripe's failure_reason is a short code (e.g. expired_or_canceled_card).
+      return {
+        $set: {
+          ...base,
+          failureReason: stripeRefund.failure_reason ?? GENERIC_FAILURE,
+        },
+      };
+    }
+    return {
+      $set: {
+        ...base,
+        ...(status === RefundStatus.SUCCEEDED
+          ? { processedAt: new Date() }
+          : {}),
+      },
+      $unset: { failureReason: 1 },
+    };
   }
 
   private async failRefund(refundId: Types.ObjectId, reason: string) {
@@ -287,21 +376,30 @@ export class RefundsService {
     if (failed) await this.notifyOutcome(failed);
   }
 
+  /**
+   * A Stripe call failed. An outage (connection, rate limit, 5xx) is retried
+   * without limit; a rejection that will not change counts towards giving up.
+   * The raw Stripe message is only logged: it can contain object ids.
+   */
   private async recordFailedAttempt(refundId: Types.ObjectId, error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
+    const type = (error as { type?: string } | null)?.type;
+    if (type && TRANSIENT_STRIPE_ERRORS.has(type)) {
+      this.logger.warn(
+        `Stripe unavailable for refund ${refundId.toString()}: ${message}`,
+      );
+      return;
+    }
     this.logger.warn(
-      `Stripe refund call failed for ${refundId.toString()}: ${message}`,
+      `Stripe rejected refund ${refundId.toString()}: ${message}`,
     );
     const refund = await this.refundModel.findOneAndUpdate(
       { _id: refundId, status: RefundStatus.PENDING, stripeRefundId: null },
-      { $inc: { attempts: 1 }, $set: { failureReason: message.slice(0, 300) } },
+      { $inc: { attempts: 1 }, $set: { failureReason: GENERIC_FAILURE } },
       { returnDocument: 'after' },
     );
     if (refund && refund.attempts >= MAX_REFUND_ATTEMPTS) {
-      await this.failRefund(
-        refundId,
-        `Gave up after ${refund.attempts} attempts: ${message.slice(0, 200)}`,
-      );
+      await this.failRefund(refundId, GENERIC_FAILURE);
     }
   }
 
@@ -314,9 +412,17 @@ export class RefundsService {
     return RefundStatus.PENDING;
   }
 
+  private isDuplicateKey(error: unknown): boolean {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      (error as { code?: number }).code === 11000
+    );
+  }
+
   private async notifyOutcome(refund: RefundDocument): Promise<void> {
     const amount = `${refund.amount.toFixed(2)} ${refund.currency}`;
-    const message =
+    const base =
       refund.status === RefundStatus.SUCCEEDED
         ? `Your refund of ${amount} was issued.`
         : refund.status === RefundStatus.FAILED
@@ -330,7 +436,7 @@ export class RefundsService {
           refund.status === RefundStatus.FAILED
             ? 'Refund failed'
             : 'Refund update',
-        message,
+        message: refund.reason ? `${base} Reason: ${refund.reason}.` : base,
         relatedEntityType: 'Refund',
         relatedEntityId: refund._id,
       });

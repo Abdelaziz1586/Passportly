@@ -1,4 +1,8 @@
-import { NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Types } from 'mongoose';
 import {
   BookingType,
@@ -65,7 +69,7 @@ function build() {
     updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
   };
   const paymentModel = { findById: jest.fn() };
-  const stripe = { refunds: { create: jest.fn() } };
+  const stripe = { refunds: { create: jest.fn(), retrieve: jest.fn() } };
   const paymentsService = { stripe: stripe as unknown };
   const notificationsService = {
     createNotification: jest.fn().mockResolvedValue({}),
@@ -93,13 +97,31 @@ describe('RefundsService.recordRefund', () => {
     bookingType: BookingType.FLIGHT,
     bookingId: new Types.ObjectId(),
     amount: 100,
-    currency: 'USD',
+    currency: 'usd',
     reason: 'Cancelled by the traveller',
     notes: 'notes',
   };
 
+  function setupRecord(paymentOverrides: Record<string, unknown> | null = {}) {
+    const ctx = build();
+    ctx.paymentModel.findById.mockReturnValue(
+      query(
+        paymentOverrides === null
+          ? null
+          : {
+              _id: input.payment,
+              status: PaymentStatus.SUCCEEDED,
+              amount: 150,
+              currency: 'USD',
+              ...paymentOverrides,
+            },
+      ),
+    );
+    return ctx;
+  }
+
   it('records a PENDING refund inside the given transaction session', async () => {
-    const { service, refundModel } = build();
+    const { service, refundModel } = setupRecord();
     const session = { id: 's' };
 
     const refund = await service.recordRefund(input, session as never);
@@ -112,6 +134,7 @@ describe('RefundsService.recordRefund', () => {
       payment: input.payment,
       status: RefundStatus.PENDING,
       amount: 100,
+      currency: 'USD',
       reason: 'Cancelled by the traveller',
       policyCalculationNotes: 'notes',
     });
@@ -120,12 +143,78 @@ describe('RefundsService.recordRefund', () => {
   });
 
   it('returns the existing refund instead of recording a payment twice', async () => {
-    const { service, refundModel } = build();
+    const { service, refundModel } = setupRecord();
     const existing = makeRefund({ payment: input.payment });
     refundModel.findOne.mockReturnValue(query(existing));
 
     expect(await service.recordRefund(input)).toBe(existing);
     expect(refundModel.create).not.toHaveBeenCalled();
+  });
+
+  it('returns the winner when two requests race and the unique index rejects the second', async () => {
+    const { service, refundModel } = setupRecord();
+    const winner = makeRefund({ payment: input.payment });
+    refundModel.findOne
+      .mockReturnValueOnce(query(null))
+      .mockReturnValueOnce(query(winner));
+    refundModel.create.mockRejectedValue({ code: 11000 });
+
+    expect(await service.recordRefund(input)).toBe(winner);
+  });
+
+  it('does not swallow a duplicate-key error inside a transaction (the caller must abort)', async () => {
+    const { service, refundModel } = setupRecord();
+    refundModel.create.mockRejectedValue({ code: 11000 });
+
+    await expect(
+      service.recordRefund(input, { id: 's' } as never),
+    ).rejects.toEqual({
+      code: 11000,
+    });
+  });
+
+  it.each([0, -5, Number.NaN])('rejects a refund of %p', async (amount) => {
+    const { service, refundModel } = setupRecord();
+
+    await expect(
+      service.recordRefund({ ...input, amount }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(refundModel.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a refund above the payment or in another currency', async () => {
+    const { service } = setupRecord();
+
+    await expect(
+      service.recordRefund({ ...input, amount: 150.01 }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.recordRefund({ ...input, currency: 'EUR' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it.each([
+    PaymentStatus.PENDING,
+    PaymentStatus.FAILED,
+    PaymentStatus.EXPIRED,
+    PaymentStatus.CANCELLED,
+    PaymentStatus.REFUNDED,
+  ])('rejects a refund of a %s payment', async (status) => {
+    const { service } = setupRecord({ status });
+
+    await expect(service.recordRefund(input)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+  });
+
+  it('accepts a PARTIALLY_REFUNDED payment and rejects an unknown one', async () => {
+    const partial = setupRecord({ status: PaymentStatus.PARTIALLY_REFUNDED });
+    await expect(partial.service.recordRefund(input)).resolves.toBeDefined();
+
+    const unknown = setupRecord(null);
+    await expect(unknown.service.recordRefund(input)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
   });
 });
 
@@ -191,13 +280,18 @@ describe('RefundsService.dispatchRefund', () => {
       stripeRefundId: 're_1',
       status: RefundStatus.SUCCEEDED,
     });
+    expect((update as unknown as { $unset: unknown }).$unset).toEqual({
+      failureReason: 1,
+    });
     expect(update.$set.processedAt).toBeInstanceOf(Date);
     expect(notificationsService.createNotification).toHaveBeenCalledTimes(1);
     expect(notificationsService.createNotification).toHaveBeenCalledWith(
       expect.objectContaining({
         type: NotificationType.REFUND_PROCESSED,
         recipient: userId,
-        message: 'Your refund of 170.25 USD was issued.',
+        message: expect.stringContaining(
+          'Your refund of 170.25 USD was issued.',
+        ) as unknown,
       }),
     );
   });
@@ -217,7 +311,9 @@ describe('RefundsService.dispatchRefund', () => {
     expect(update.$set.processedAt).toBeUndefined();
     expect(notificationsService.createNotification).toHaveBeenCalledWith(
       expect.objectContaining({
-        message: 'Your refund of 170.25 USD is being processed.',
+        message: expect.stringContaining(
+          'Your refund of 170.25 USD is being processed.',
+        ) as unknown,
       }),
     );
   });
@@ -276,8 +372,23 @@ describe('RefundsService.dispatchRefund', () => {
       { $inc: { attempts: number }; $set: { failureReason: string } },
     ];
     expect(update.$inc).toEqual({ attempts: 1 });
-    expect(update.$set.failureReason).toBe('network down');
+    // the raw Stripe message is only logged: it can contain object ids
+    expect(update.$set.failureReason).toBe(
+      'The payment provider could not complete the refund',
+    );
   });
+
+  it.each(['StripeConnectionError', 'StripeAPIError', 'StripeRateLimitError'])(
+    'an outage (%s) never counts towards giving up',
+    async (type) => {
+      const { service, stripe, refund, refundModel } = setup();
+      stripe.refunds.create.mockRejectedValue({ type, message: 'outage' });
+
+      expect(await service.dispatchRefund(refund._id)).toBe(false);
+
+      expect(refundModel.findOneAndUpdate).not.toHaveBeenCalled();
+    },
+  );
 
   it('gives up with FAILED after the maximum number of attempts and tells the user', async () => {
     const { service, stripe, refund, refundModel, notificationsService } =
@@ -297,11 +408,36 @@ describe('RefundsService.dispatchRefund', () => {
       { $set: { status: RefundStatus; failureReason: string } },
     ];
     expect(failUpdate.$set.status).toBe(RefundStatus.FAILED);
-    expect(failUpdate.$set.failureReason).toContain('Gave up after');
+    expect(failUpdate.$set.failureReason).toBe(
+      'The payment provider could not complete the refund',
+    );
     expect(notificationsService.createNotification).toHaveBeenCalledWith(
       expect.objectContaining({ title: 'Refund failed' }),
     );
   });
+
+  it.each([
+    PaymentStatus.PENDING,
+    PaymentStatus.PROCESSING,
+    PaymentStatus.FAILED,
+    PaymentStatus.EXPIRED,
+    PaymentStatus.CANCELLED,
+    PaymentStatus.REFUNDED,
+  ])(
+    'fails at once, without calling Stripe, when the payment is %s',
+    async (status) => {
+      const { service, stripe, refund, refundModel } = setup({}, { status });
+
+      await service.dispatchRefund(refund._id);
+
+      expect(stripe.refunds.create).not.toHaveBeenCalled();
+      const [, update] = refundModel.findOneAndUpdate.mock.calls[0] as [
+        unknown,
+        { $set: { status: RefundStatus } },
+      ];
+      expect(update.$set.status).toBe(RefundStatus.FAILED);
+    },
+  );
 
   it('fails a refund whose payment has no Stripe charge', async () => {
     const { service, stripe, refund, refundModel } = setup(
@@ -454,54 +590,91 @@ describe('RefundsService.getRefund', () => {
 });
 
 describe('RefundsService Stripe events', () => {
-  it('settleForPayment turns a sent PENDING refund into SUCCEEDED', async () => {
-    const { service, refundModel } = build();
+  it("settleForPayment follows Stripe's state of the sent PENDING refund", async () => {
+    const { service, refundModel, stripe, notificationsService } = build();
     const paymentId = new Types.ObjectId();
+    refundModel.findOne.mockReturnValue(
+      query(makeRefund({ payment: paymentId, stripeRefundId: 're_1' })),
+    );
+    stripe.refunds.retrieve.mockResolvedValue({
+      id: 're_1',
+      status: 'succeeded',
+      metadata: {},
+    });
+    refundModel.findOneAndUpdate.mockResolvedValue(
+      makeRefund({ status: RefundStatus.SUCCEEDED }),
+    );
 
     expect(await service.settleForPayment(paymentId)).toBe(true);
 
-    const [filter, update] = refundModel.updateOne.mock.calls[0] as unknown as [
+    const [filter] = refundModel.findOne.mock.calls[0] as unknown as [
       {
         payment: Types.ObjectId;
         status: RefundStatus;
         stripeRefundId: { $ne: null };
       },
-      { $set: { status: RefundStatus; processedAt: Date } },
     ];
     expect(filter.payment).toBe(paymentId);
     expect(filter.status).toBe(RefundStatus.PENDING);
     expect(filter.stripeRefundId).toEqual({ $ne: null });
-    expect(update.$set.status).toBe(RefundStatus.SUCCEEDED);
+    expect(stripe.refunds.retrieve).toHaveBeenCalledWith('re_1');
+    // the user hears that the refund went through
+    expect(notificationsService.createNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining('was issued') as unknown,
+      }),
+    );
   });
 
-  it('settleForPayment is idempotent (already settled changes nothing)', async () => {
-    const { service, refundModel } = build();
-    refundModel.updateOne.mockResolvedValue({ modifiedCount: 0 });
+  it('settleForPayment does not close a refund Stripe still reports as pending', async () => {
+    const { service, refundModel, stripe } = build();
+    refundModel.findOne.mockReturnValue(
+      query(makeRefund({ stripeRefundId: 're_1' })),
+    );
+    stripe.refunds.retrieve.mockResolvedValue({
+      id: 're_1',
+      status: 'pending',
+      metadata: {},
+    });
 
+    expect(await service.settleForPayment(new Types.ObjectId())).toBe(false);
+    expect(refundModel.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('settleForPayment is idempotent and survives a Stripe read error', async () => {
+    const { service, refundModel, stripe } = build();
+
+    expect(await service.settleForPayment(new Types.ObjectId())).toBe(false); // nothing pending
+
+    refundModel.findOne.mockReturnValue(
+      query(makeRefund({ stripeRefundId: 're_1' })),
+    );
+    stripe.refunds.retrieve = jest
+      .fn()
+      .mockRejectedValue(new Error('stripe down'));
     expect(await service.settleForPayment(new Types.ObjectId())).toBe(false);
   });
 
-  it('syncFromStripe marks a failed refund FAILED and notifies the user', async () => {
+  it('syncFromStripe marks a failed refund FAILED with the Stripe code and notifies the user', async () => {
     const { service, refundModel, notificationsService } = build();
-    const refund = makeRefund({ status: RefundStatus.FAILED });
-    refundModel.findOneAndUpdate.mockResolvedValue(refund);
+    refundModel.findOneAndUpdate.mockResolvedValue(
+      makeRefund({ status: RefundStatus.FAILED }),
+    );
 
     const changed = await service.syncFromStripe({
       id: 're_1',
       status: 'failed',
       failure_reason: 'lost_or_stolen_card',
+      metadata: {},
     } as never);
 
     expect(changed).toBe(true);
     const [filter, update] = refundModel.findOneAndUpdate.mock
       .calls[0] as unknown as [
-      { stripeRefundId: string; status: RefundStatus },
+      { $or: unknown[] },
       { $set: { status: RefundStatus; failureReason: string } },
     ];
-    expect(filter).toMatchObject({
-      stripeRefundId: 're_1',
-      status: RefundStatus.PENDING,
-    });
+    expect(filter.$or).toEqual([{ stripeRefundId: 're_1' }]);
     expect(update.$set).toMatchObject({
       status: RefundStatus.FAILED,
       failureReason: 'lost_or_stolen_card',
@@ -511,9 +684,60 @@ describe('RefundsService Stripe events', () => {
     );
   });
 
-  it('syncFromStripe marks a succeeded refund SUCCEEDED without a second notification', async () => {
-    const { service, refundModel, notificationsService } = build();
+  it('syncFromStripe also finds a refund by our id in the Stripe metadata and revives a given-up one', async () => {
+    const { service, refundModel } = build();
+    const refundId = new Types.ObjectId();
     refundModel.findOneAndUpdate.mockResolvedValue(
+      makeRefund({ status: RefundStatus.SUCCEEDED }),
+    );
+
+    await service.syncFromStripe({
+      id: 're_late',
+      status: 'succeeded',
+      metadata: { refundId: refundId.toString() },
+    } as never);
+
+    const [filter, update] = refundModel.findOneAndUpdate.mock
+      .calls[0] as unknown as [
+      {
+        $or: Record<string, unknown>[];
+        $and: { $or: Record<string, unknown>[] }[];
+      },
+      { $set: Record<string, unknown>; $unset: Record<string, unknown> },
+    ];
+    expect(filter.$or).toHaveLength(2);
+    expect(filter.$or[1]._id).toEqual(refundId);
+    // PENDING settles; FAILED settles only when its Stripe id was never recorded
+    expect(filter.$and[0].$or).toEqual([
+      { status: RefundStatus.PENDING },
+      { status: RefundStatus.FAILED, stripeRefundId: null },
+    ]);
+    expect(update.$set).toMatchObject({
+      stripeRefundId: 're_late',
+      status: RefundStatus.SUCCEEDED,
+    });
+    expect(update.$unset).toEqual({ failureReason: 1 });
+  });
+
+  it('syncFromStripe ignores a malformed metadata id', async () => {
+    const { service, refundModel } = build();
+    refundModel.findOneAndUpdate.mockResolvedValue(null);
+
+    await service.syncFromStripe({
+      id: 're_1',
+      status: 'succeeded',
+      metadata: { refundId: 'not-an-id' },
+    } as never);
+
+    const [filter] = refundModel.findOneAndUpdate.mock.calls[0] as unknown as [
+      { $or: unknown[] },
+    ];
+    expect(filter.$or).toHaveLength(1);
+  });
+
+  it('syncFromStripe tells the user when a PENDING refund becomes SUCCEEDED, once', async () => {
+    const { service, refundModel, notificationsService } = build();
+    refundModel.findOneAndUpdate.mockResolvedValueOnce(
       makeRefund({ status: RefundStatus.SUCCEEDED }),
     );
 
@@ -521,24 +745,58 @@ describe('RefundsService Stripe events', () => {
       await service.syncFromStripe({
         id: 're_1',
         status: 'succeeded',
+        metadata: {},
       } as never),
     ).toBe(true);
-    expect(notificationsService.createNotification).not.toHaveBeenCalled();
+    expect(notificationsService.createNotification).toHaveBeenCalledTimes(1);
+
+    refundModel.findOneAndUpdate.mockResolvedValueOnce(null); // replay: already settled
+    expect(
+      await service.syncFromStripe({
+        id: 're_1',
+        status: 'succeeded',
+        metadata: {},
+      } as never),
+    ).toBe(false);
+    expect(notificationsService.createNotification).toHaveBeenCalledTimes(1);
   });
 
-  it('syncFromStripe ignores a still-pending refund and an unknown or already settled one', async () => {
+  it('syncFromStripe ignores a still-pending refund', async () => {
     const { service, refundModel } = build();
 
     expect(
-      await service.syncFromStripe({ id: 're_1', status: 'pending' } as never),
-    ).toBe(false);
-    expect(refundModel.findOneAndUpdate).not.toHaveBeenCalled();
-    refundModel.findOneAndUpdate.mockResolvedValue(null);
-    expect(
       await service.syncFromStripe({
-        id: 're_x',
-        status: 'succeeded',
+        id: 're_1',
+        status: 'pending',
+        metadata: {},
       } as never),
     ).toBe(false);
+    expect(refundModel.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe('notification text', () => {
+  it('names the reason of the refund', async () => {
+    const { service, refundModel, notificationsService } = build();
+    refundModel.findOneAndUpdate.mockResolvedValue(
+      makeRefund({
+        status: RefundStatus.SUCCEEDED,
+        reason: 'Payment received after the booking hold ended',
+      }),
+    );
+
+    await service.syncFromStripe({
+      id: 're_1',
+      status: 'succeeded',
+      metadata: {},
+    } as never);
+
+    expect(notificationsService.createNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining(
+          'Reason: Payment received after the booking hold ended',
+        ) as unknown,
+      }),
+    );
   });
 });

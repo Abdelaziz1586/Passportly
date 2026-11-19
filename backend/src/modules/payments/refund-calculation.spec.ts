@@ -115,6 +115,23 @@ describe('calculateRefund', () => {
     expect(result.notes).toContain('check-in');
   });
 
+  it('never refunds more than the total or less than nothing, whatever the tier says', () => {
+    expect(
+      calculateRefund({
+        ...base,
+        tiers: [{ days: 0, refundPercentage: 150 }],
+        start: inDays(1),
+      }).amount,
+    ).toBe(340.5);
+    expect(
+      calculateRefund({
+        ...base,
+        tiers: [{ days: 0, refundPercentage: -20 }],
+        start: inDays(1),
+      }).amount,
+    ).toBe(0);
+  });
+
   it('handles a 0% tier and a booking with no tiers at all', () => {
     expect(
       calculateRefund({

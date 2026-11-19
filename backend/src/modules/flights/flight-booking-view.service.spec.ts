@@ -14,11 +14,13 @@ import { FlightBookingViewService } from './flight-booking-view.service';
 
 interface Chain<T> extends PromiseLike<T> {
   lean(): Chain<T>;
+  sort(): Chain<T>;
 }
 
 function query<T>(result: T): Chain<T> {
   const q: Chain<T> = {
     lean: () => q,
+    sort: () => q,
     then: (onFulfilled, onRejected) =>
       Promise.resolve(result).then(onFulfilled, onRejected),
   };

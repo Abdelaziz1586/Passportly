@@ -162,6 +162,7 @@ export class FlightBookingViewService {
   ): Promise<BookingViewRefund | null> {
     const refund = (await this.refundModel
       .findOne({ bookingType: BookingType.FLIGHT, bookingId })
+      .sort({ createdAt: -1 })
       .lean()) as unknown as Lean<Refund> | null;
     if (!refund) return null;
     return {

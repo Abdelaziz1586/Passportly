@@ -57,7 +57,10 @@ export function calculateRefund(params: {
 }): RefundCalculation {
   const daysRemaining = wholeDaysUntil(params.start, params.now);
   const tier = selectRefundTier(params.tiers, daysRemaining);
-  const percentage = tier ? tier.refundPercentage : 0;
+  // A tier outside 0..100 (bad provider data) can never refund more than the total.
+  const percentage = tier
+    ? Math.min(100, Math.max(0, tier.refundPercentage))
+    : 0;
   const amount = Math.round(params.total * 100 * (percentage / 100)) / 100;
   const notes = tier
     ? `${daysRemaining} day(s) before ${params.subject}: the tier of ${tier.days}+ day(s) applies, ${percentage}% of ${params.total.toFixed(2)} ${params.currency} = ${amount.toFixed(2)} ${params.currency}`

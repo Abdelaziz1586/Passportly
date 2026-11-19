@@ -409,8 +409,7 @@ export class PaymentWebhookService {
    * A payment that completed after its booking could no longer be confirmed is
    * refunded in full through the Stripe Refunds API (see RefundsService): one
    * Refund per payment, so a retried event never refunds twice. If Stripe is
-   * unreachable the error propagates so Stripe retries the event, and the
-   * refund job re-sends any recorded refund that never got through.
+   * unreachable the refund stays recorded as PENDING and the refund job re-sends it.
    */
   private async ensureOrphanRefund(paymentId: Types.ObjectId): Promise<void> {
     const payment = await this.paymentsService.paymentModel
