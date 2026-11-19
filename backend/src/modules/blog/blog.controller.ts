@@ -1,16 +1,32 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
   NotImplementedException,
+  Param,
   Patch,
   Post,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiCookieAuth,
+  ApiCreatedResponse,
+  ApiForbiddenResponse,
+  ApiNotFoundResponse,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
+import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { BlogService } from './blog.service';
+import { BlogCommentItemDto } from './dto/blog-post-response.dto';
+import { CreateCommentDto } from './dto/create-comment.dto';
 
 @ApiTags('Blog & Community')
 @Controller()
@@ -77,10 +93,23 @@ export class BlogController {
   @Roles(Role.REGISTERED_USER)
   @Post('posts/:id/comments')
   @ApiOperation({ summary: 'BLG-05: Add comment to a published post' })
-  addComment() {
-    throw new NotImplementedException(
-      'POST /api/posts/:id/comments not implemented yet',
-    );
+  @ApiParam({ name: 'id', description: 'Published blog post MongoDB ObjectId' })
+  @ApiCreatedResponse({
+    description: 'Comment added to blog post successfully',
+    type: BlogCommentItemDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid blog post ID or comment payload',
+  })
+  @ApiUnauthorizedResponse({ description: 'Authentication required' })
+  @ApiForbiddenResponse({ description: 'Insufficient role permissions' })
+  @ApiNotFoundResponse({ description: 'Published blog post not found' })
+  addComment(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateCommentDto,
+  ): Promise<BlogCommentItemDto> {
+    return this.blogService.addComment(id, user.userId, dto);
   }
 
   @ApiCookieAuth()
