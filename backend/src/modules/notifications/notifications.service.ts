@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { isValidObjectId, Model, Types } from 'mongoose';
 import { NotificationType } from '../../common/enums';
+import { MarkAllNotificationsReadResponseDto } from './dto/mark-all-read-response.dto';
 import {
   Notification,
   NotificationDocument,
@@ -32,5 +33,36 @@ export class NotificationsService {
         ? new Types.ObjectId(params.relatedEntityId)
         : undefined,
     });
+  }
+
+  /**
+   * Marks all unread notifications belonging to the authenticated user as read.
+   */
+  async markAllAsRead(
+    userId: string,
+  ): Promise<MarkAllNotificationsReadResponseDto> {
+    if (!isValidObjectId(userId)) {
+      throw new BadRequestException('Invalid user ID');
+    }
+
+    const readAt = new Date();
+    const result = await this.notificationModel.updateMany(
+      {
+        recipient: new Types.ObjectId(userId),
+        isRead: false,
+      },
+      {
+        $set: {
+          isRead: true,
+          readAt,
+        },
+      },
+    );
+
+    return {
+      message: 'All unread notifications marked as read',
+      modifiedCount: result.modifiedCount ?? 0,
+      readAt,
+    };
   }
 }
