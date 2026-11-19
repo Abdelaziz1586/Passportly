@@ -3,10 +3,12 @@ import { PATH_METADATA } from '@nestjs/common/constants';
 import { ROLES_KEY } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
+import { CancelHotelBookingDto } from './dto/cancel-hotel-booking.dto';
 import { CreateHotelBookingDto } from './dto/create-hotel-booking.dto';
 import { HotelBookingIdParamDto } from './dto/hotel-booking-id-param.dto';
 import { ListHotelBookingsQueryDto } from './dto/list-hotel-bookings-query.dto';
 import { HotelBookingViewService } from './hotel-booking-view.service';
+import { HotelCancellationService } from './hotel-cancellation.service';
 import { HotelBookingsController } from './hotel-bookings.controller';
 import { HotelBookingsService } from './hotel-bookings.service';
 import { HotelsService } from './hotels.service';
@@ -22,6 +24,7 @@ describe('HotelBookingsController.createBooking (HTL-16, HTL-18)', () => {
     {} as HotelsService,
     { createBooking } as unknown as HotelBookingsService,
     {} as HotelBookingViewService,
+    {} as HotelCancellationService,
   );
   const user: AuthenticatedUser = {
     userId: '665f1c2e8a1b2c3d4e5f6a7b',
@@ -59,6 +62,7 @@ describe('HotelBookingsController HTL-20 list and details', () => {
     {} as HotelsService,
     {} as HotelBookingsService,
     { listBookings, getBooking } as unknown as HotelBookingViewService,
+    {} as HotelCancellationService,
   );
   const user: AuthenticatedUser = {
     userId: '665f1c2e8a1b2c3d4e5f6a7b',
@@ -105,6 +109,54 @@ describe('HotelBookingsController HTL-20 list and details', () => {
     );
     expect(Reflect.getMetadata(PATH_METADATA, handlers.getBooking)).toBe(
       'hotel-bookings/:id',
+    );
+  });
+});
+
+describe('HotelBookingsController HTL-21 cancellation', () => {
+  const preview = jest.fn();
+  const cancel = jest.fn();
+  const controller = new HotelBookingsController(
+    {} as HotelsService,
+    {} as HotelBookingsService,
+    {} as HotelBookingViewService,
+    { preview, cancel } as unknown as HotelCancellationService,
+  );
+  const user: AuthenticatedUser = {
+    userId: '665f1c2e8a1b2c3d4e5f6a7b',
+    email: 'a@example.com',
+    role: Role.REGISTERED_USER,
+    jti: 'jti',
+  };
+  const params = Object.assign(new HotelBookingIdParamDto(), {
+    id: '665f1c2e8a1b2c3d4e5f6a7c',
+  });
+
+  afterEach(() => jest.clearAllMocks());
+
+  it('previews and cancels for the JWT user, never an owner from the request', async () => {
+    preview.mockResolvedValue({ refundAmount: 1 });
+    cancel.mockResolvedValue({ status: 'CANCELLED' });
+    const dto = Object.assign(new CancelHotelBookingDto(), { confirm: true });
+
+    await controller.previewCancellation(params, user);
+    await controller.cancelBooking(params, dto, user);
+
+    expect(preview).toHaveBeenCalledWith(user.userId, params.id);
+    expect(cancel).toHaveBeenCalledWith(user.userId, params.id, dto);
+  });
+
+  it('is for registered users only (the owner), on POST :id/cancel and GET :id/cancellation-preview', () => {
+    for (const name of ['previewCancellation', 'cancelBooking']) {
+      expect(Reflect.getMetadata(ROLES_KEY, handlers[name])).toEqual([
+        Role.REGISTERED_USER,
+      ]);
+    }
+    expect(
+      Reflect.getMetadata(PATH_METADATA, handlers.previewCancellation),
+    ).toBe('hotel-bookings/:id/cancellation-preview');
+    expect(Reflect.getMetadata(PATH_METADATA, handlers.cancelBooking)).toBe(
+      'hotel-bookings/:id/cancel',
     );
   });
 });

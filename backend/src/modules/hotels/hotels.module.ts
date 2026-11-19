@@ -2,8 +2,10 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Payment, PaymentSchema } from '../payments/schemas/payment.schema';
 import { Refund, RefundSchema } from '../payments/schemas/refund.schema';
+import { PaymentsModule } from '../payments/payments.module';
 import { HotelBookingsController } from './hotel-bookings.controller';
 import { HotelBookingViewService } from './hotel-booking-view.service';
+import { HotelCancellationService } from './hotel-cancellation.service';
 import { HotelBookingsService } from './hotel-bookings.service';
 import { HotelsController } from './hotels.controller';
 import { HotelsService } from './hotels.service';
@@ -21,6 +23,7 @@ import { Room, RoomSchema } from './schemas/room.schema';
 
 @Module({
   imports: [
+    PaymentsModule,
     MongooseModule.forFeature([
       { name: Hotel.name, schema: HotelSchema },
       { name: Room.name, schema: RoomSchema },
@@ -32,7 +35,12 @@ import { Room, RoomSchema } from './schemas/room.schema';
     ]),
   ],
   controllers: [HotelsController, HotelBookingsController],
-  providers: [HotelsService, HotelBookingsService, HotelBookingViewService],
+  providers: [
+    HotelsService,
+    HotelBookingsService,
+    HotelBookingViewService,
+    HotelCancellationService,
+  ],
   exports: [HotelsService, HotelBookingsService, MongooseModule],
 })
 export class HotelsModule {}

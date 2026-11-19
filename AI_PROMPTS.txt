@@ -203,3 +203,14 @@ Implement GET /api/hotel-bookings (the signed-in user's own reservations, pagina
 How the output was used:
 The generated query DTO, status/group helpers, view service, response DTOs, controller wiring and tests were integrated and checked with lint, build, unit tests, 56 live checks and a Swagger "Try it out" run for the list and the details.
 ================================================
+================================================
+Date: 2026-11-19
+Student: Abdulrahman Ahmed
+Branch: feature/SCRUM-81-HTL-21-cancel-hotel-booking (stacked on feature/SCRUM-79-HTL-20-list-get-hotel-bookings)
+Tool: Claude Code (terminal, Claude Sonnet 5.5)
+Related Requirement: HTL-21 (POST /api/hotel-bookings/:id/cancel), HTL-10, PAY-03, GEN-03, GEN-11
+Prompt:
+Implement POST /api/hotel-bookings/:id/cancel: the owner cancels a Confirmed reservation as a whole before the check-in date after seeing the refund and confirming. The refund comes from the hotel tiers copied onto the reservation (highest threshold not above the whole days to check-in, otherwise 0%) on the full total. Confirmed becomes Cancelled (the only transition), every room is released for the stay nights in the same transaction (booked units back, never below zero), a refund is created in the same transaction and sent through the Stripe Refunds API after the commit, and the traveller is notified. Use the effective status (nothing stores Completed). Also a preview endpoint and an optional expectedRefundAmount guard. Then write unit tests and run live checks against Stripe test mode (five concurrent cancels, every tier, zero refund, started stay, finished stay) plus the Swagger page in a browser.
+How the output was used:
+The generated service, DTOs, controller wiring and tests were integrated and checked with lint, build, unit tests, 48 live checks and a Swagger "Try it out" run for the preview and the cancellation.
+================================================
