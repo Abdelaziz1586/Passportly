@@ -3,9 +3,11 @@ import {
   Controller,
   Get,
   NotImplementedException,
+  Param,
   Patch,
   Post,
   Query,
+  StreamableFile,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -16,6 +18,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiProduces,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -24,9 +27,14 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { CreateFlightBookingDto } from './dto/create-flight-booking.dto';
+import { ETicketQueryDto, ETicketFormat } from './dto/e-ticket-query.dto';
+import { ETicketResponseDto } from './dto/e-ticket-response.dto';
+import { FlightBookingIdParamDto } from './dto/flight-booking-id-param.dto';
 import { FlightBookingListResponseDto } from './dto/flight-booking-list-response.dto';
 import { HoldSeatsDto } from './dto/hold-seats.dto';
 import { ListFlightBookingsQueryDto } from './dto/list-flight-bookings-query.dto';
+import type { ETicket } from './flight-e-ticket';
+import { FlightETicketService } from './flight-e-ticket.service';
 import {
   FlightBookingListResponse,
   FlightBookingResponse,
@@ -38,7 +46,10 @@ import {
 @ApiCookieAuth()
 @Controller('flight-bookings')
 export class FlightBookingsController {
-  constructor(private readonly flightBookingsService: FlightBookingsService) {}
+  constructor(
+    private readonly flightBookingsService: FlightBookingsService,
+    private readonly flightETicketService: FlightETicketService,
+  ) {}
 
   @Roles(Role.REGISTERED_USER)
   @Post('hold')
@@ -150,13 +161,38 @@ export class FlightBookingsController {
 
   @Roles(Role.REGISTERED_USER, Role.ADMIN, Role.AIRLINE_MODERATOR)
   @Get(':id/e-ticket')
+  @ApiProduces('application/json', 'application/pdf')
   @ApiOperation({
     summary: 'FLT-23: Retrieve generated e-ticket for confirmed booking',
+    description:
+      "Only a CONFIRMED booking has an e-ticket. Returns the booking reference (PNR), the passengers with their e-ticket numbers (passport masked) and every flight with departure and arrival in UTC and in the airport's own IANA time zone. With ?format=pdf the same ticket is downloaded as a PDF file. Readable by the booking's owner, an admin, or the airline moderator of an airline operating a flight of the booking; for anyone else the booking looks like it does not exist.",
   })
-  getETicket() {
-    throw new NotImplementedException(
-      'GET /api/flight-bookings/:id/e-ticket not implemented yet',
-    );
+  @ApiOkResponse({
+    description: 'The e-ticket (JSON), or application/pdf with ?format=pdf',
+    type: ETicketResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid id or format' })
+  @ApiUnauthorizedResponse({ description: 'Not signed in' })
+  @ApiForbiddenResponse({
+    description:
+      'Only registered users, admins and airline moderators may call this',
+  })
+  @ApiNotFoundResponse({ description: 'Booking not found or not yours' })
+  @ApiConflictResponse({
+    description:
+      'The booking is not CONFIRMED yet (or any more), so it has no e-ticket',
+  })
+  async getETicket(
+    @Param() params: FlightBookingIdParamDto,
+    @Query() query: ETicketQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<ETicket | StreamableFile> {
+    const ticket = await this.flightETicketService.getETicket(user, params.id);
+    if (query.format !== ETicketFormat.PDF) return ticket;
+    return new StreamableFile(this.flightETicketService.toPdf(ticket), {
+      type: 'application/pdf',
+      disposition: `attachment; filename="e-ticket-${ticket.bookingReference}.pdf"`,
+    });
   }
 
   @Roles(Role.REGISTERED_USER)

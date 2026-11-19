@@ -5,6 +5,11 @@ import { FlightBookingsController } from './flight-bookings.controller';
 import { FlightBookingsService } from './flight-bookings.service';
 import { FlightsController } from './flights.controller';
 import { FlightsService } from './flights.service';
+import {
+  Airport,
+  AirportSchema,
+} from '../reference-data/schemas/airport.schema';
+import { FlightETicketService } from './flight-e-ticket.service';
 import { Airline, AirlineSchema } from './schemas/airline.schema';
 import {
   CabinInventory,
@@ -23,6 +28,7 @@ import { Flight, FlightSchema } from './schemas/flight.schema';
       { name: Flight.name, schema: FlightSchema },
       { name: CabinInventory.name, schema: CabinInventorySchema },
       { name: FlightBooking.name, schema: FlightBookingSchema },
+      { name: Airport.name, schema: AirportSchema },
     ]),
   ],
   controllers: [
@@ -30,7 +36,7 @@ import { Flight, FlightSchema } from './schemas/flight.schema';
     FlightsController,
     FlightBookingsController,
   ],
-  providers: [FlightsService, FlightBookingsService],
+  providers: [FlightsService, FlightBookingsService, FlightETicketService],
   exports: [FlightsService, FlightBookingsService, MongooseModule],
 })
 export class FlightsModule {}
