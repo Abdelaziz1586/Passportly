@@ -24,6 +24,7 @@ import { UploadsService } from '../uploads/uploads.service';
 import { CreateItineraryDto } from './dto/create-itinerary.dto';
 import {
   CreateActivityDto,
+  CreateBudgetEntryDto,
   CreateItineraryDayDto,
   ListItinerariesQueryDto,
   ReorderItineraryDaysDto,
@@ -402,6 +403,28 @@ export class ItinerariesService {
       .removeImage(image.filename)
       .catch(() => undefined);
     return { deleted: true, imageId };
+  }
+
+  async addBudgetEntry(
+    itineraryId: string,
+    dayId: string,
+    userId: string,
+    dto: CreateBudgetEntryDto,
+  ): Promise<BudgetEntryDocument> {
+    const itinerary = await this.findOwnedItinerary(itineraryId, userId);
+    const day = this.findDay(itinerary, dayId);
+    const currency = dto.currency.trim().toUpperCase();
+    await this.assertSupportedCurrency(currency);
+    return this.budgetEntryModel.create({
+      itinerary: itinerary._id,
+      dayId: day._id,
+      user: this.objectId(userId, 'userId'),
+      category: dto.category,
+      title: dto.title.trim(),
+      ...(dto.notes?.trim() ? { notes: dto.notes.trim() } : {}),
+      amount: dto.amount,
+      currency,
+    });
   }
 
   private async getItineraryDetails(
