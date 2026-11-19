@@ -223,6 +223,11 @@ export class RefundsService {
     return true;
   }
 
+  /** The current state of a refund (e.g. right after dispatchRefund). */
+  async findRefund(refundId: Types.ObjectId): Promise<RefundDocument | null> {
+    return this.refundModel.findById(refundId);
+  }
+
   /** Re-sends refunds that never reached Stripe (crash, outage). */
   @Cron(CronExpression.EVERY_30_SECONDS, { name: 'refund-dispatch' })
   async dispatchUnsentRefunds(): Promise<number> {

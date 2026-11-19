@@ -170,3 +170,14 @@ Implement PAY-03: a refund engine that issues refunds through the Stripe Refunds
 How the output was used:
 The generated service, calculator, schema indexes, DTOs, controller wiring and tests were integrated and checked with lint, build, unit tests, 38 live checks (real Stripe test-mode refunds, a job-sent partial refund, failed and settled refunds) and a Swagger "Try it out" run.
 ================================================
+================================================
+Date: 2026-11-19
+Student: Abdulrahman Ahmed
+Branch: feature/SCRUM-74-FLT-26-cancel-flight-booking (stacked on feature/SCRUM-88-PAY-03-refunds)
+Tool: Claude Code (terminal, Claude Sonnet 5.5)
+Related Requirement: FLT-26 (POST /api/flight-bookings/:id/cancel), FLT-09, FLT-12, PAY-03, GEN-03, GEN-11
+Prompt:
+Implement POST /api/flight-bookings/:id/cancel: the owner cancels a CONFIRMED booking any time before the outbound departure (blocked after), after seeing the refund and confirming. The refund comes from the airline tiers copied onto the booking when it was made (highest threshold not above the whole days left, from the outbound flight even for a round trip, on the whole total). Confirmed becomes Cancelled (the only transition), the seats go back to every leg's cabin, a refund is created inside the same transaction and sent through the Stripe Refunds API after the commit, and the traveller is notified. Also a preview endpoint so the refund is shown before confirming. Then write unit tests and run live checks against Stripe test mode, including five concurrent cancels, plus the Swagger page in a browser.
+How the output was used:
+The generated service, DTOs, controller wiring and tests were integrated and checked with lint, build, unit tests, 52 live checks (tiers, round trip, zero refund, after departure, concurrency, real Stripe refunds) and a Swagger "Try it out" run for the preview and the cancellation.
+================================================

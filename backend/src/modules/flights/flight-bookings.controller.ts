@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   NotImplementedException,
   Param,
   Patch,
@@ -26,6 +28,11 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
+import { CancelFlightBookingDto } from './dto/cancel-flight-booking.dto';
+import {
+  CancellationPreviewDto,
+  CancellationResultDto,
+} from './dto/cancellation-response.dto';
 import { CreateFlightBookingDto } from './dto/create-flight-booking.dto';
 import { ETicketQueryDto, ETicketFormat } from './dto/e-ticket-query.dto';
 import { ETicketResponseDto } from './dto/e-ticket-response.dto';
@@ -35,6 +42,11 @@ import { FlightBookingListResponseDto } from './dto/flight-booking-list-response
 import { HoldSeatsDto } from './dto/hold-seats.dto';
 import { ListFlightBookingsQueryDto } from './dto/list-flight-bookings-query.dto';
 import type { ETicket } from './flight-e-ticket';
+import { FlightCancellationService } from './flight-cancellation.service';
+import type {
+  CancellationPreview,
+  CancellationResult,
+} from './flight-cancellation.service';
 import { FlightBookingViewService } from './flight-booking-view.service';
 import type { FlightBookingDetails } from './flight-booking-view';
 import { FlightETicketService } from './flight-e-ticket.service';
@@ -53,6 +65,7 @@ export class FlightBookingsController {
     private readonly flightBookingsService: FlightBookingsService,
     private readonly flightETicketService: FlightETicketService,
     private readonly flightBookingViewService: FlightBookingViewService,
+    private readonly flightCancellationService: FlightCancellationService,
   ) {}
 
   @Roles(Role.REGISTERED_USER)
@@ -160,14 +173,59 @@ export class FlightBookingsController {
   }
 
   @Roles(Role.REGISTERED_USER)
+  @Get(':id/cancellation-preview')
+  @ApiOperation({
+    summary: 'FLT-26: Preview the refund before cancelling a flight booking',
+    description:
+      "Shows what cancelling now would refund, without changing anything: the whole days left until the outbound departure, the airline tier that applies (from the tiers copied onto the booking when it was made) and the refund amount on the whole booking total. A round trip is cancelled as a whole using the outbound flight's tier. Only the owner's CONFIRMED booking that has not departed.",
+  })
+  @ApiOkResponse({
+    description: 'The refund the cancellation would give',
+    type: CancellationPreviewDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid id' })
+  @ApiUnauthorizedResponse({ description: 'Not signed in' })
+  @ApiForbiddenResponse({ description: 'Only registered users may cancel' })
+  @ApiNotFoundResponse({ description: 'Booking not found or not yours' })
+  @ApiConflictResponse({
+    description:
+      'Not CONFIRMED (pending, expired, already cancelled) or the flight has departed',
+  })
+  previewCancellation(
+    @Param() params: FlightBookingIdParamDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<CancellationPreview> {
+    return this.flightCancellationService.preview(user.userId, params.id);
+  }
+
+  @Roles(Role.REGISTERED_USER)
   @Post(':id/cancel')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'FLT-26: Cancel flight booking according to airline policy',
+    description:
+      'Cancels the owner\'s CONFIRMED booking any time before the outbound departure (after departure it is blocked) once the traveller confirmed with { "confirm": true } (see GET /flight-bookings/:id/cancellation-preview for the refund). The booking becomes CANCELLED (the only transition from CONFIRMED), its seats return to the cabins, and a refund is created from the airline tiers stored on the booking and sent through the Stripe Refunds API (PAY-03); the traveller is notified. Refund 0 creates no refund record.',
   })
-  cancelBooking() {
-    throw new NotImplementedException(
-      'POST /api/flight-bookings/:id/cancel not implemented yet',
-    );
+  @ApiOkResponse({
+    description: 'Cancelled; the refund and how it was computed',
+    type: CancellationResultDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid id, confirm is not true, or an invalid reason',
+  })
+  @ApiUnauthorizedResponse({ description: 'Not signed in' })
+  @ApiForbiddenResponse({ description: 'Only registered users may cancel' })
+  @ApiNotFoundResponse({ description: 'Booking not found or not yours' })
+  @ApiConflictResponse({
+    description:
+      'Not CONFIRMED (pending, expired, already cancelled) or the flight has departed',
+  })
+  cancelBooking(
+    @Param() params: FlightBookingIdParamDto,
+    @Body() dto: CancelFlightBookingDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<CancellationResult> {
+    return this.flightCancellationService.cancel(user.userId, params.id, dto);
   }
 
   @Roles(Role.REGISTERED_USER)

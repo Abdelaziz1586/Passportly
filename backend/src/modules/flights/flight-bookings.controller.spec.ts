@@ -9,6 +9,8 @@ import { FlightBookingsController } from './flight-bookings.controller';
 import { ETicketFormat, ETicketQueryDto } from './dto/e-ticket-query.dto';
 import { FlightBookingIdParamDto } from './dto/flight-booking-id-param.dto';
 import { FlightBookingViewService } from './flight-booking-view.service';
+import { FlightCancellationService } from './flight-cancellation.service';
+import { CancelFlightBookingDto } from './dto/cancel-flight-booking.dto';
 import { FlightETicketService } from './flight-e-ticket.service';
 import {
   FlightBookingListResponse,
@@ -27,6 +29,7 @@ describe('FlightBookingsController.listBookings', () => {
     { listBookings } as unknown as FlightBookingsService,
     {} as FlightETicketService,
     {} as FlightBookingViewService,
+    {} as FlightCancellationService,
   );
 
   const user: AuthenticatedUser = {
@@ -89,6 +92,7 @@ describe('FlightBookingsController.getETicket (FLT-23)', () => {
     {} as FlightBookingsService,
     { getETicket, toPdf } as unknown as FlightETicketService,
     {} as FlightBookingViewService,
+    {} as FlightCancellationService,
   );
   const user: AuthenticatedUser = {
     userId: '665f1c2e8a1b2c3d4e5f6a7b',
@@ -152,6 +156,7 @@ describe('FlightBookingsController.getBooking (FLT-25 details)', () => {
     {} as FlightBookingsService,
     {} as FlightETicketService,
     { getBooking } as unknown as FlightBookingViewService,
+    {} as FlightCancellationService,
   );
   const user: AuthenticatedUser = {
     userId: '665f1c2e8a1b2c3d4e5f6a7b',
@@ -178,6 +183,57 @@ describe('FlightBookingsController.getBooking (FLT-25 details)', () => {
     const roles = Reflect.getMetadata(ROLES_KEY, handlers.getBooking) as Role[];
     expect([...roles].sort()).toEqual(
       [Role.ADMIN, Role.AIRLINE_MODERATOR, Role.REGISTERED_USER].sort(),
+    );
+  });
+});
+
+describe('FlightBookingsController FLT-26 cancellation', () => {
+  const preview = jest.fn();
+  const cancel = jest.fn();
+  const controller = new FlightBookingsController(
+    {} as FlightBookingsService,
+    {} as FlightETicketService,
+    {} as FlightBookingViewService,
+    { preview, cancel } as unknown as FlightCancellationService,
+  );
+  const user: AuthenticatedUser = {
+    userId: '665f1c2e8a1b2c3d4e5f6a7b',
+    email: 'a@example.com',
+    role: Role.REGISTERED_USER,
+    jti: 'jti',
+  };
+  const params = Object.assign(new FlightBookingIdParamDto(), {
+    id: '665f1c2e8a1b2c3d4e5f6a7c',
+  });
+
+  afterEach(() => jest.clearAllMocks());
+
+  it('previews and cancels for the JWT user, never an owner from the request', async () => {
+    preview.mockResolvedValue({ refundAmount: 1 });
+    cancel.mockResolvedValue({ status: 'CANCELLED' });
+    const dto = Object.assign(new CancelFlightBookingDto(), {
+      confirm: true,
+      reason: 'x',
+    });
+
+    await controller.previewCancellation(params, user);
+    await controller.cancelBooking(params, dto, user);
+
+    expect(preview).toHaveBeenCalledWith(user.userId, params.id);
+    expect(cancel).toHaveBeenCalledWith(user.userId, params.id, dto);
+  });
+
+  it('is for registered users only (owner), on POST :id/cancel and GET :id/cancellation-preview', () => {
+    for (const name of ['previewCancellation', 'cancelBooking']) {
+      expect(Reflect.getMetadata(ROLES_KEY, handlers[name])).toEqual([
+        Role.REGISTERED_USER,
+      ]);
+    }
+    expect(
+      Reflect.getMetadata(PATH_METADATA, handlers.previewCancellation),
+    ).toBe(':id/cancellation-preview');
+    expect(Reflect.getMetadata(PATH_METADATA, handlers.cancelBooking)).toBe(
+      ':id/cancel',
     );
   });
 });
