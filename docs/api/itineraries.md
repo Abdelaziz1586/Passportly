@@ -7,6 +7,7 @@ parent lands. Each pull request shows only its own ticket delta.
 | Jira | Requirement | Endpoint behavior |
 | --- | --- | --- |
 | SCRUM-89 | ITN-01 | Create a private itinerary |
+| SCRUM-90 | ITN-03 | List current user itineraries |
 
 Each ticket is checked with `npm run lint`, `npm run build` and `npm test`.
 Database tests use an isolated local MongoDB replica set and never load application environment files.
