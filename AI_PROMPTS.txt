@@ -82,3 +82,16 @@ Details: Verify credentials, enforce failed-login lockout & AccountStatus.ACTIVE
 How the output was used:
 Implemented LoginDto, LoginResponseDto, AuthService.login (email normalization, bcrypt password check, 5-attempt / 15-minute failed-login lockout, AccountStatus.ACTIVE enforcement, UserSession creation with jti and JWT-aligned expiresAt, httpOnly cookie configuration), and AuthController.login wiring with @Public() and Swagger annotations. Added unit tests in auth.service.spec.ts and auth.controller.spec.ts and verified with npm run lint, npm run build, and npm test.
 ================================================
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-89–SCRUM-116 (ITN-01, ITN-03, ITN-05, ITN-07, ITN-08, ITN-10, ITN-12, ITN-14, ITN-16, ITN-18, ITN-20, ITN-21, ITN-25, ITN-26, ITN-27, ITN-28)
+
+Prompt:
+Implement all my assigned itinerary Jira tasks SCRUM-89 through SCRUM-116 in the backend, following AGENTS.md and existing schemas/services. Cover itinerary CRUD and public search/details, day and activity operations, image upload, budget and transport tracking with FX conversion, public itinerary cloning, hotel and timezone-aware flight suggestions from itinerary dates, confirmed booking attachment, and PDF export. Enforce ownership, input validation, privacy, and currency/reference-data rules.
+
+How the output was used:
+Implemented SCRUM-89 through SCRUM-116 with validated DTOs and Swagger metadata, itinerary/day/activity/budget/transport CRUD, ownership checks, public visibility filters, cloning and attribution, FXRatesAPI caching, image storage via UploadsService, date-aware hotel/flight suggestions, confirmed booking attachment, and PDF export. Reused existing schemas and reference data, added optional authentication for public-or-owner summary/export routes, and recorded these changes in the repository prompt log. Verified with npm run lint, npm run build, and npm test (4 suites, 32 tests passed).
+================================================

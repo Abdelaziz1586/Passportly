@@ -1,15 +1,50 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
-  NotImplementedException,
+  Param,
   Patch,
   Post,
+  Query,
+  StreamableFile,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  ApiBody,
+  ApiConsumes,
+  ApiCookieAuth,
+  ApiCreatedResponse,
+  ApiOperation,
+  ApiProduces,
+  ApiTags,
+} from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { OptionalAuth } from '../../common/decorators/optional-auth.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
+import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
+import { CreateItineraryDto } from './dto/create-itinerary.dto';
+import {
+  AttachBookingDto,
+  BudgetSummaryQueryDto,
+  CreateActivityDto,
+  CreateBudgetEntryDto,
+  CreateItineraryDayDto,
+  CreateTransportCostDto,
+  ItineraryContextSearchQueryDto,
+  ListItinerariesQueryDto,
+  PublicItinerarySearchQueryDto,
+  ReorderItineraryDaysDto,
+  UpdateActivityDto,
+  UpdateBudgetEntryDto,
+  UpdateItineraryDayDto,
+  UpdateItineraryDto,
+  UpdateTransportCostDto,
+} from './dto/itinerary-endpoints.dto';
 import { ItinerariesService } from './itineraries.service';
 
 @ApiTags('Itineraries & Budgeting')
@@ -20,39 +55,38 @@ export class ItinerariesController {
   @Public()
   @Get('itineraries/public/search')
   @ApiOperation({ summary: 'ITN-20, ITN-21: Search public itineraries' })
-  searchPublicItineraries() {
-    throw new NotImplementedException(
-      'GET /api/itineraries/public/search not implemented yet',
-    );
+  searchPublicItineraries(@Query() query: PublicItinerarySearchQueryDto) {
+    return this.itinerariesService.searchPublicItineraries(query);
   }
 
   @Public()
   @Get('itineraries/public/:id')
   @ApiOperation({ summary: 'ITN-21: View public itinerary details' })
-  getPublicItinerary() {
-    throw new NotImplementedException(
-      'GET /api/itineraries/public/:id not implemented yet',
-    );
+  getPublicItinerary(@Param('id') id: string) {
+    return this.itinerariesService.getPublicItinerary(id);
   }
 
   @ApiCookieAuth()
   @Roles(Role.REGISTERED_USER)
   @Post('itineraries')
   @ApiOperation({ summary: 'ITN-01: Create itinerary' })
-  createItinerary() {
-    throw new NotImplementedException(
-      'POST /api/itineraries not implemented yet',
-    );
+  @ApiCreatedResponse({ description: 'Private itinerary created successfully' })
+  createItinerary(
+    @Body() dto: CreateItineraryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.createItinerary(user.userId, dto);
   }
 
   @ApiCookieAuth()
   @Roles(Role.REGISTERED_USER)
   @Get('itineraries')
   @ApiOperation({ summary: 'ITN-03: List current user itineraries' })
-  listMyItineraries() {
-    throw new NotImplementedException(
-      'GET /api/itineraries not implemented yet',
-    );
+  listMyItineraries(
+    @Query() query: ListItinerariesQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.listMyItineraries(user.userId, query);
   }
 
   @ApiCookieAuth()
@@ -61,10 +95,11 @@ export class ItinerariesController {
   @ApiOperation({
     summary: 'ITN-03: Get itinerary details (with ownership check)',
   })
-  getItinerary() {
-    throw new NotImplementedException(
-      'GET /api/itineraries/:id not implemented yet',
-    );
+  getItinerary(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.getItinerary(id, user);
   }
 
   @ApiCookieAuth()
@@ -73,30 +108,35 @@ export class ItinerariesController {
   @ApiOperation({
     summary: 'ITN-01, ITN-20: Update itinerary metadata or visibility',
   })
-  updateItinerary() {
-    throw new NotImplementedException(
-      'PATCH /api/itineraries/:id not implemented yet',
-    );
+  updateItinerary(
+    @Param('id') id: string,
+    @Body() dto: UpdateItineraryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.updateItinerary(id, user.userId, dto);
   }
 
   @ApiCookieAuth()
   @Roles(Role.REGISTERED_USER)
   @Delete('itineraries/:id')
   @ApiOperation({ summary: 'ITN-01: Delete itinerary' })
-  deleteItinerary() {
-    throw new NotImplementedException(
-      'DELETE /api/itineraries/:id not implemented yet',
-    );
+  deleteItinerary(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.deleteItinerary(id, user.userId);
   }
 
   @ApiCookieAuth()
   @Roles(Role.REGISTERED_USER)
   @Post('itineraries/:id/days')
   @ApiOperation({ summary: 'ITN-05: Add day to itinerary' })
-  addDay() {
-    throw new NotImplementedException(
-      'POST /api/itineraries/:id/days not implemented yet',
-    );
+  addDay(
+    @Param('id') id: string,
+    @Body() dto: CreateItineraryDayDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.addDay(id, user.userId, dto);
   }
 
   @ApiCookieAuth()
@@ -105,20 +145,25 @@ export class ItinerariesController {
   @ApiOperation({
     summary: 'ITN-08: Reorder itinerary days & recalculate dates',
   })
-  reorderDays() {
-    throw new NotImplementedException(
-      'PATCH /api/itineraries/:id/days/reorder not implemented yet',
-    );
+  reorderDays(
+    @Param('id') id: string,
+    @Body() dto: ReorderItineraryDaysDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.reorderDays(id, user.userId, dto);
   }
 
   @ApiCookieAuth()
   @Roles(Role.REGISTERED_USER)
   @Patch('itineraries/:id/days/:dayId')
   @ApiOperation({ summary: 'ITN-05: Update itinerary day' })
-  updateDay() {
-    throw new NotImplementedException(
-      'PATCH /api/itineraries/:id/days/:dayId not implemented yet',
-    );
+  updateDay(
+    @Param('id') id: string,
+    @Param('dayId') dayId: string,
+    @Body() dto: UpdateItineraryDayDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.updateDay(id, dayId, user.userId, dto);
   }
 
   @ApiCookieAuth()
@@ -127,59 +172,84 @@ export class ItinerariesController {
   @ApiOperation({
     summary: 'ITN-07: Delete itinerary day & renumber remaining days',
   })
-  deleteDay() {
-    throw new NotImplementedException(
-      'DELETE /api/itineraries/:id/days/:dayId not implemented yet',
-    );
+  deleteDay(
+    @Param('id') id: string,
+    @Param('dayId') dayId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.deleteDay(id, dayId, user.userId);
   }
 
   @ApiCookieAuth()
   @Roles(Role.REGISTERED_USER)
   @Post('itineraries/:id/days/:dayId/activities')
   @ApiOperation({ summary: 'ITN-10: Add activity to itinerary day' })
-  addActivity() {
-    throw new NotImplementedException(
-      'POST /api/itineraries/:id/days/:dayId/activities not implemented yet',
-    );
+  addActivity(
+    @Param('id') id: string,
+    @Param('dayId') dayId: string,
+    @Body() dto: CreateActivityDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.addActivity(id, dayId, user.userId, dto);
   }
 
   @ApiCookieAuth()
   @Roles(Role.REGISTERED_USER)
   @Patch('activities/:id')
   @ApiOperation({ summary: 'ITN-10: Update activity' })
-  updateActivity() {
-    throw new NotImplementedException(
-      'PATCH /api/activities/:id not implemented yet',
-    );
+  updateActivity(
+    @Param('id') id: string,
+    @Body() dto: UpdateActivityDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.updateActivity(id, user.userId, dto);
   }
 
   @ApiCookieAuth()
   @Roles(Role.REGISTERED_USER)
   @Delete('activities/:id')
   @ApiOperation({ summary: 'ITN-10: Delete activity' })
-  deleteActivity() {
-    throw new NotImplementedException(
-      'DELETE /api/activities/:id not implemented yet',
-    );
+  deleteActivity(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.deleteActivity(id, user.userId);
   }
 
   @ApiCookieAuth()
   @Roles(Role.REGISTERED_USER)
   @Post('activities/:id/images')
   @ApiOperation({ summary: 'ITN-12, GEN-08: Upload image for activity' })
-  uploadActivityImage() {
-    throw new NotImplementedException(
-      'POST /api/activities/:id/images not implemented yet',
-    );
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+      required: ['file'],
+    },
+  })
+  @UseInterceptors(FileInterceptor('file'))
+  uploadActivityImage(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.uploadActivityImage(id, user.userId, file);
   }
 
   @ApiCookieAuth()
   @Roles(Role.REGISTERED_USER)
   @Delete('activities/:id/images/:imageId')
   @ApiOperation({ summary: 'ITN-12: Delete activity image' })
-  deleteActivityImage() {
-    throw new NotImplementedException(
-      'DELETE /api/activities/:id/images/:imageId not implemented yet',
+  deleteActivityImage(
+    @Param('id') id: string,
+    @Param('imageId') imageId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.deleteActivityImage(
+      id,
+      imageId,
+      user.userId,
     );
   }
 
@@ -187,73 +257,86 @@ export class ItinerariesController {
   @Roles(Role.REGISTERED_USER)
   @Post('itineraries/:id/days/:dayId/budgets')
   @ApiOperation({ summary: 'ITN-14: Add budget entry to day' })
-  addBudgetEntry() {
-    throw new NotImplementedException(
-      'POST /api/itineraries/:id/days/:dayId/budgets not implemented yet',
-    );
+  addBudgetEntry(
+    @Param('id') id: string,
+    @Param('dayId') dayId: string,
+    @Body() dto: CreateBudgetEntryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.addBudgetEntry(id, dayId, user.userId, dto);
   }
 
   @ApiCookieAuth()
   @Roles(Role.REGISTERED_USER)
   @Patch('budgets/:id')
   @ApiOperation({ summary: 'ITN-14: Update budget entry' })
-  updateBudgetEntry() {
-    throw new NotImplementedException(
-      'PATCH /api/budgets/:id not implemented yet',
-    );
+  updateBudgetEntry(
+    @Param('id') id: string,
+    @Body() dto: UpdateBudgetEntryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.updateBudgetEntry(id, user.userId, dto);
   }
 
   @ApiCookieAuth()
   @Roles(Role.REGISTERED_USER)
   @Delete('budgets/:id')
   @ApiOperation({ summary: 'ITN-14: Delete budget entry' })
-  deleteBudgetEntry() {
-    throw new NotImplementedException(
-      'DELETE /api/budgets/:id not implemented yet',
-    );
+  deleteBudgetEntry(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.deleteBudgetEntry(id, user.userId);
   }
 
   @ApiCookieAuth()
   @Roles(Role.REGISTERED_USER)
   @Post('itineraries/:id/transport-costs')
   @ApiOperation({ summary: 'ITN-16: Add intercity transport cost' })
-  addTransportCost() {
-    throw new NotImplementedException(
-      'POST /api/itineraries/:id/transport-costs not implemented yet',
-    );
+  addTransportCost(
+    @Param('id') id: string,
+    @Body() dto: CreateTransportCostDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.addTransportCost(id, user.userId, dto);
   }
 
   @ApiCookieAuth()
   @Roles(Role.REGISTERED_USER)
   @Patch('transport-costs/:id')
   @ApiOperation({ summary: 'ITN-16: Update intercity transport cost' })
-  updateTransportCost() {
-    throw new NotImplementedException(
-      'PATCH /api/transport-costs/:id not implemented yet',
-    );
+  updateTransportCost(
+    @Param('id') id: string,
+    @Body() dto: UpdateTransportCostDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.updateTransportCost(id, user.userId, dto);
   }
 
   @ApiCookieAuth()
   @Roles(Role.REGISTERED_USER)
   @Delete('transport-costs/:id')
   @ApiOperation({ summary: 'ITN-16: Delete intercity transport cost' })
-  deleteTransportCost() {
-    throw new NotImplementedException(
-      'DELETE /api/transport-costs/:id not implemented yet',
-    );
+  deleteTransportCost(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.deleteTransportCost(id, user.userId);
   }
 
   @ApiCookieAuth()
-  @Roles(Role.REGISTERED_USER)
+  @OptionalAuth()
   @Get('itineraries/:id/budget-summary')
   @ApiOperation({
     summary:
       'ITN-14, ITN-18: Calculate itinerary budget summary using FXRatesAPI',
   })
-  getBudgetSummary() {
-    throw new NotImplementedException(
-      'GET /api/itineraries/:id/budget-summary not implemented yet',
-    );
+  getBudgetSummary(
+    @Param('id') id: string,
+    @Query() query: BudgetSummaryQueryDto,
+    @CurrentUser() user?: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.getBudgetSummary(id, query, user);
   }
 
   @ApiCookieAuth()
@@ -262,19 +345,26 @@ export class ItinerariesController {
   @ApiOperation({
     summary: 'ITN-21: Clone public itinerary preserving attribution',
   })
-  cloneItinerary() {
-    throw new NotImplementedException(
-      'POST /api/itineraries/:id/clone not implemented yet',
-    );
+  cloneItinerary(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.cloneItinerary(id, user.userId);
   }
 
   @ApiCookieAuth()
   @Roles(Role.REGISTERED_USER)
   @Get('itineraries/:id/hotels')
   @ApiOperation({ summary: 'ITN-25: Search hotels from itinerary context' })
-  searchHotelsForItinerary() {
-    throw new NotImplementedException(
-      'GET /api/itineraries/:id/hotels not implemented yet',
+  searchHotelsForItinerary(
+    @Param('id') id: string,
+    @Query() query: ItineraryContextSearchQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.searchHotelsForItinerary(
+      id,
+      user.userId,
+      query,
     );
   }
 
@@ -282,9 +372,15 @@ export class ItinerariesController {
   @Roles(Role.REGISTERED_USER)
   @Get('itineraries/:id/flights')
   @ApiOperation({ summary: 'ITN-26: Search flights from itinerary context' })
-  searchFlightsForItinerary() {
-    throw new NotImplementedException(
-      'GET /api/itineraries/:id/flights not implemented yet',
+  searchFlightsForItinerary(
+    @Param('id') id: string,
+    @Query() query: ItineraryContextSearchQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.searchFlightsForItinerary(
+      id,
+      user.userId,
+      query,
     );
   }
 
@@ -294,19 +390,27 @@ export class ItinerariesController {
   @ApiOperation({
     summary: 'ITN-27 (Optional): Attach confirmed booking to itinerary',
   })
-  attachBooking() {
-    throw new NotImplementedException(
-      'POST /api/itineraries/:id/bookings not implemented yet',
-    );
+  attachBooking(
+    @Param('id') id: string,
+    @Body() dto: AttachBookingDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.attachBooking(id, user.userId, dto);
   }
 
   @ApiCookieAuth()
-  @Roles(Role.REGISTERED_USER)
+  @OptionalAuth()
   @Get('itineraries/:id/pdf')
   @ApiOperation({ summary: 'ITN-28 (Optional): Export itinerary as PDF' })
-  exportPdf() {
-    throw new NotImplementedException(
-      'GET /api/itineraries/:id/pdf not implemented yet',
-    );
+  @ApiProduces('application/pdf')
+  async exportPdf(
+    @Param('id') id: string,
+    @CurrentUser() user?: AuthenticatedUser,
+  ): Promise<StreamableFile> {
+    const pdf = await this.itinerariesService.exportPdf(id, user);
+    return new StreamableFile(pdf, {
+      type: 'application/pdf',
+      disposition: `attachment; filename="itinerary-${id}.pdf"`,
+    });
   }
 }
