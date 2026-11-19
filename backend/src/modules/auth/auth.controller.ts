@@ -1,15 +1,25 @@
 import {
+  Body,
   Controller,
   Get,
   NotImplementedException,
   Patch,
   Post,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiConflictResponse,
+  ApiCookieAuth,
+  ApiCreatedResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { AuthService } from './auth.service';
+import { RegisterDto } from './dto/register.dto';
+import { SafeUserResponseDto } from './dto/safe-user-response.dto';
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -19,10 +29,18 @@ export class AuthController {
   @Public()
   @Post('register')
   @ApiOperation({ summary: 'ACC-01: Register a new traveler account' })
-  register() {
-    throw new NotImplementedException(
-      'POST /api/auth/register not implemented yet',
-    );
+  @ApiCreatedResponse({
+    description: 'Traveler account registered successfully',
+    type: SafeUserResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid registration payload or weak password',
+  })
+  @ApiConflictResponse({
+    description: 'An account with this email already exists',
+  })
+  register(@Body() dto: RegisterDto): Promise<SafeUserResponseDto> {
+    return this.authService.register(dto);
   }
 
   @Public()

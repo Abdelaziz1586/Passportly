@@ -31,3 +31,20 @@ Finish the base required so we can directly work on the endpoints and their func
 How the output was used:
 Used the generated structure and code to initialize the repository layout (backend/, frontend/, docs/, .env.example, .gitignore, README.md), scaffold the NestJS backend with global /api prefix, Swagger UI (/api/docs), ValidationPipe, exception filter, httpOnly cookie JWT/RBAC guards, database seed script, and Mongoose schemas and controller skeletons across all domain modules (auth, users, admin, reference-data, flights, hotels, payments, itineraries, blog, notifications, reports, audit-logs, uploads). Verified with npm run lint, npm run build, and npm test.
 ================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-01 (POST /api/auth/register)
+
+Prompt:
+Requirement: ACC-01
+Endpoint: POST /api/auth/register
+Controller: backend/src/modules/auth/auth.controller.ts
+Allowed Roles: Public
+Details: Validate unique email, enforce password rules, hash password with bcryptjs, create User with role REGISTERED_USER (never ADMIN), and return safe user profile (no passwordHash).
+
+How the output was used:
+Implemented RegisterDto, SafeUserResponseDto, AuthService.register (email normalization, uniqueness check + Mongo duplicate key handling, preferredCurrency check via ReferenceDataService, bcryptjs hashing with 12 salt rounds, hardcoded REGISTERED_USER role and ACTIVE status, sanitized user profile response), AuthController.register Swagger/validation wiring, and unit tests in auth.service.spec.ts and auth.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================

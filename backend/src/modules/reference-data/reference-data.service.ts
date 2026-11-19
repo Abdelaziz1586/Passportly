@@ -15,4 +15,18 @@ export class ReferenceDataService {
     @InjectModel(Attraction.name)
     readonly attractionModel: Model<AttractionDocument>,
   ) {}
+
+  /**
+   * Validates a 3-letter ISO currency code against seeded Country records.
+   * Allows valid format when reference data has not yet been seeded.
+   */
+  async isCurrencySupported(currencyCode: string): Promise<boolean> {
+    const normalized = currencyCode.trim().toUpperCase();
+    const totalCountries = await this.countryModel.estimatedDocumentCount();
+    if (totalCountries === 0) {
+      return true;
+    }
+    const match = await this.countryModel.exists({ currencyCode: normalized });
+    return match !== null;
+  }
 }
