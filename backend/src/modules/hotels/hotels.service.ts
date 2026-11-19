@@ -13,6 +13,7 @@ import { UploadsService } from '../uploads/uploads.service';
 import {
   CreateHotelDto,
   HotelDetailsQueryDto,
+  HotelPoliciesDto,
   SearchHotelsDto,
   UpdateHotelDto,
 } from './dto/hotel.dto';
@@ -265,6 +266,21 @@ export class HotelsService {
     });
     const { page, limit, skip } = pagination(query.page, query.limit);
     return paged(data.slice(skip, skip + limit), data.length, page, limit);
+  }
+
+  async updatePolicies(
+    id: string,
+    dto: HotelPoliciesDto,
+    user: AuthenticatedUser,
+  ) {
+    const hotel = await this.access.managedHotel(id, user);
+    return this.hotelModel
+      .findByIdAndUpdate(
+        hotel._id,
+        { $set: { policies: dto } },
+        { returnDocument: 'after', runValidators: true },
+      )
+      .lean();
   }
 
   async uploadImages(
