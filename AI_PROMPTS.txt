@@ -82,3 +82,17 @@ Details: Verify credentials, enforce failed-login lockout & AccountStatus.ACTIVE
 How the output was used:
 Implemented LoginDto, LoginResponseDto, AuthService.login (email normalization, bcrypt password check, 5-attempt / 15-minute failed-login lockout, AccountStatus.ACTIVE enforcement, UserSession creation with jti and JWT-aligned expiresAt, httpOnly cookie configuration), and AuthController.login wiring with @Public() and Swagger annotations. Added unit tests in auth.service.spec.ts and auth.controller.spec.ts and verified with npm run lint, npm run build, and npm test.
 ================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-13 (POST /api/admin/moderators, SCRUM-23)
+
+Prompt:
+Implement SCRUM-23 (POST /api/admin/moderators): Create User with AIRLINE_MODERATOR or HOTEL_MODERATOR role and create unique ModeratorAssignment linking to exactly one Airline or Hotel; record AuditLog.
+
+How the output was used:
+Implemented CreateModeratorDto, ModeratorResponseDto, AdminService.createModerator (email uniqueness check, provider verification, bcrypt password hashing, rollback-safe ModeratorAssignment creation, MODERATOR_CREATED audit log), and AdminController.createModerator. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
