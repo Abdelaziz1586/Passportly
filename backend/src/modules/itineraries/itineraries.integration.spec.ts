@@ -16,7 +16,7 @@ import { Test } from '@nestjs/testing';
 import type { Request } from 'express';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { Connection, Types } from 'mongoose';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import type { Server } from 'node:http';
 import * as os from 'node:os';
 import { tmpdir } from 'node:os';
@@ -59,6 +59,11 @@ describe('Itinerary endpoints and persistence', () => {
   };
 
   const stranger: AuthenticatedUser = { ...user, userId: otherId };
+
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aB9sAAAAASUVORK5CYII=',
+    'base64',
+  );
 
   beforeAll(async () => {
     directory = await mkdtemp(path.join(tmpdir(), 'passportly-itineraries-'));
@@ -357,6 +362,62 @@ describe('Itinerary endpoints and persistence', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
     await service.deleteActivity(String(activity._id), ownerId);
     expect(await service.activityModel.countDocuments()).toBe(0);
+  });
+
+  it('SCRUM-101/102: uploads a multipart image, validates size/MIME, and removes it', async () => {
+    const { itinerary, dayId } = await itineraryWithDay();
+    const activity = await service.addActivity(
+      String(itinerary._id),
+      dayId,
+      ownerId,
+      { title: 'Photo' },
+    );
+    const url = `/api/activities/${String(activity._id)}/images`;
+    await request(server())
+      .post(url)
+      .set('x-test-user', otherId)
+      .attach('file', png, { filename: 'image.png', contentType: 'image/png' })
+      .expect(403);
+    await request(server())
+      .post(url)
+      .set('x-test-user', ownerId)
+      .attach('file', Buffer.from('text'), {
+        filename: 'file.txt',
+        contentType: 'text/plain',
+      })
+      .expect(400);
+    await request(server())
+      .post(url)
+      .set('x-test-user', ownerId)
+      .attach('file', Buffer.alloc(2048), {
+        filename: 'large.png',
+        contentType: 'image/png',
+      })
+      .expect(413);
+    await request(server())
+      .post(url)
+      .set('x-test-user', ownerId)
+      .attach('file', Buffer.from('<html>not an image</html>'), {
+        filename: 'forged.png',
+        contentType: 'image/png',
+      })
+      .expect(400);
+    await request(server())
+      .post(url)
+      .set('x-test-user', ownerId)
+      .attach('file', png, { filename: 'image.png', contentType: 'image/png' })
+      .expect(201);
+    const saved = await service.activityModel.findById(activity._id).orFail();
+    const image = saved.images[0];
+    expect(await readFile(path.join(directory, image.filename))).toEqual(png);
+    await service.deleteActivityImage(
+      String(activity._id),
+      String(image._id),
+      ownerId,
+    );
+    await expect(
+      readFile(path.join(directory, image.filename)),
+    ).rejects.toHaveProperty('code', 'ENOENT');
   });
   it('SCRUM-89: creates an owned private itinerary through HTTP', async () => {
     await request(server())

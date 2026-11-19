@@ -389,6 +389,21 @@ export class ItinerariesService {
     );
   }
 
+  async deleteActivityImage(id: string, imageId: string, userId: string) {
+    const activity = await this.findOwnedActivity(id, userId);
+    const imageObjectId = this.objectId(imageId, 'imageId');
+    const index = activity.images.findIndex(
+      (image) => String(image._id) === String(imageObjectId),
+    );
+    if (index < 0) throw new NotFoundException('Activity image not found');
+    const [image] = activity.images.splice(index, 1);
+    await activity.save();
+    await this.uploadsService
+      .removeImage(image.filename)
+      .catch(() => undefined);
+    return { deleted: true, imageId };
+  }
+
   private async getItineraryDetails(
     itinerary: ItineraryDocument,
   ): Promise<Record<string, unknown>> {
