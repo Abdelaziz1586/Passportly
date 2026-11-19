@@ -1,21 +1,39 @@
+import { maxLogoBytes, UploadsService } from '../uploads/uploads.service';
 import {
+  NotImplementedException,
+  Body,
   Controller,
   Get,
-  NotImplementedException,
+  Param,
   Patch,
   Post,
   Put,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  ApiOperation,
+  ApiBody,
+  ApiConsumes,
+  ApiCookieAuth,
+  ApiTags,
+} from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
+import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { FlightsService } from './flights.service';
+import { AirlineUpdate } from './update-airline.dto';
 
 @ApiTags('Airlines')
 @Controller('airlines')
 export class AirlinesController {
-  constructor(private readonly flightsService: FlightsService) {}
+  constructor(
+    private readonly flightsService: FlightsService,
+    private readonly uploads: UploadsService,
+  ) {}
 
   @ApiCookieAuth()
   @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
@@ -36,11 +54,29 @@ export class AirlinesController {
 
   @ApiCookieAuth()
   @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
+  @ApiConsumes('application/json', 'multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        iataCode: { type: 'string', example: 'MS' },
+        logo: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @UseInterceptors(
+    FileInterceptor('logo', { limits: { fileSize: maxLogoBytes, files: 1 } }),
+  )
   @Patch(':id')
-  @ApiOperation({ summary: 'FLT-01: Update airline profile' })
-  updateAirline() {
-    throw new NotImplementedException(
-      'PATCH /api/airlines/:id not implemented yet',
+  updateAirline(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: AirlineUpdate,
+    @UploadedFile() logo?: Express.Multer.File,
+  ) {
+    return this.uploads.withAirlineLogo(logo, (url) =>
+      this.flightsService.updateAirline(id, user, input, url),
     );
   }
 
