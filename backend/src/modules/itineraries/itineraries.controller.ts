@@ -342,10 +342,11 @@ export class ItinerariesController {
   @ApiOperation({
     summary: 'ITN-21: Clone public itinerary preserving attribution',
   })
-  cloneItinerary() {
-    throw new NotImplementedException(
-      'POST /api/itineraries/:id/clone not implemented yet',
-    );
+  cloneItinerary(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.cloneItinerary(id, user.userId);
   }
 
   @ApiCookieAuth()

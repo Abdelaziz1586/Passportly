@@ -641,6 +641,81 @@ describe('Itinerary endpoints and persistence', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('SCRUM-112: deep-clones children and image files with new IDs, private visibility, and attribution', async () => {
+    const { itinerary, dayId } = await itineraryWithDay();
+    const id = String(itinerary._id);
+    const activity = await service.addActivity(id, dayId, ownerId, {
+      title: 'Museum',
+    });
+    await request(server())
+      .post(`/api/activities/${String(activity._id)}/images`)
+      .set('x-test-user', ownerId)
+      .attach('file', png, { filename: 'image.png', contentType: 'image/png' })
+      .expect(201);
+    await service.addBudgetEntry(id, dayId, ownerId, budget);
+    await service.addTransportCost(id, ownerId, {
+      amount: 5,
+      currency: 'USD',
+      departureDayId: dayId,
+    });
+    await service.updateItinerary(id, ownerId, {
+      visibility: ItineraryVisibility.PUBLIC,
+    });
+    const clone = await service.cloneItinerary(id, otherId);
+    expect(clone.visibility).toBe(ItineraryVisibility.PRIVATE);
+    expect(String(clone.clonedFromItinerary)).toBe(id);
+    expect(String(clone.clonedFromUser)).toBe(ownerId);
+    const clonedId = String(clone._id);
+    const clonedActivity = await service.activityModel
+      .findOne({ itinerary: clonedId })
+      .orFail();
+    const clonedBudget = await service.budgetEntryModel
+      .findOne({ itinerary: clonedId })
+      .orFail();
+    expect(String(clonedActivity.user)).toBe(otherId);
+    expect(String(clonedActivity.dayId)).not.toBe(dayId);
+    expect(String(clonedBudget.dayId)).toBe(String(clonedActivity.dayId));
+    const sourceActivity = await service.activityModel
+      .findById(activity._id)
+      .orFail();
+    const sourceImage = sourceActivity.images[0];
+    expect(clonedActivity.images[0].filename).not.toBe(sourceImage.filename);
+    await service.deleteActivityImage(
+      String(activity._id),
+      String(sourceImage._id),
+      ownerId,
+    );
+    expect(
+      await readFile(path.join(directory, clonedActivity.images[0].filename)),
+    ).toEqual(png);
+    expect(
+      (await service.itineraryModel.findById(id).orFail()).cloneCount,
+    ).toBe(1);
+    expect(clone.attachedFlightBookings).toEqual([]);
+  });
+
+  it('SCRUM-112: refuses cloning private itineraries and cleans up a failed child copy', async () => {
+    const { itinerary, dayId } = await itineraryWithDay();
+    const id = String(itinerary._id);
+    await expect(service.cloneItinerary(id, otherId)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    await service.addBudgetEntry(id, dayId, ownerId, budget);
+    await service.updateItinerary(id, ownerId, {
+      visibility: ItineraryVisibility.PUBLIC,
+    });
+    jest
+      .spyOn(service.budgetEntryModel, 'insertMany')
+      .mockRejectedValueOnce(new Error('copy failed'));
+    await expect(service.cloneItinerary(id, otherId)).rejects.toThrow(
+      'copy failed',
+    );
+    expect(await service.itineraryModel.countDocuments()).toBe(1);
+    expect(
+      (await service.itineraryModel.findById(id).orFail()).cloneCount,
+    ).toBe(0);
+  });
+
   it('SCRUM-93: cascade-deletes activities, budgets and transport costs', async () => {
     const { itinerary, dayId } = await itineraryWithDay();
     const id = String(itinerary._id);

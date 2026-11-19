@@ -29,6 +29,7 @@ parent lands. Each pull request shows only its own ticket delta.
 | SCRUM-109 | ITN-18 | Calculate a budget summary with cached FX rates |
 | SCRUM-110 | ITN-20 | Search and filter public itineraries |
 | SCRUM-111 | ITN-21 | Read public itinerary details and attribution |
+| SCRUM-112 | ITN-21 | Clone a public itinerary into a private copy |
 
 Each ticket is checked with `npm run lint`, `npm run build` and `npm test`.
 Database tests use an isolated local MongoDB replica set and never load application environment files.

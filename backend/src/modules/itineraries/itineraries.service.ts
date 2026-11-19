@@ -24,6 +24,7 @@ import {
   TransportMode,
 } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
+import type { MediaItem } from '../../common/schemas/media-item.schema';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
 import { AttractionDocument } from '../reference-data/schemas/attraction.schema';
 import { CityDocument } from '../reference-data/schemas/city.schema';
@@ -713,6 +714,149 @@ export class ItinerariesService {
       select: 'firstName lastName avatarUrl',
     });
     return this.getItineraryDetails(itinerary);
+  }
+
+  async cloneItinerary(id: string, userId: string) {
+    const source = await this.findItineraryById(id);
+    if (source.visibility !== ItineraryVisibility.PUBLIC || source.isHidden) {
+      throw new NotFoundException('Public itinerary not found');
+    }
+
+    const sourcePlain = source.toObject();
+    const clone = await this.itineraryModel.create({
+      user: this.objectId(userId, 'userId'),
+      title: `${source.title} (Copy)`,
+      description: source.description,
+      countries: source.countries,
+      startDate: source.startDate,
+      displayCurrency: source.displayCurrency,
+      visibility: ItineraryVisibility.PRIVATE,
+      isHidden: false,
+      days: sourcePlain.days.map((day) => ({
+        dayNumber: day.dayNumber,
+        date: day.date,
+        city: day.city ?? null,
+        cityName: day.cityName,
+        title: day.title,
+        notes: day.notes,
+      })),
+      clonedFromItinerary: source._id,
+      clonedFromUser: source.user,
+      coverImageUrl: source.coverImageUrl,
+      cloneCount: 0,
+    });
+
+    const dayIdMap = new Map<string, Types.ObjectId>();
+    sourcePlain.days.forEach((day, index) => {
+      const cloneDay = clone.days[index];
+      if (day._id && cloneDay?._id) {
+        dayIdMap.set(String(day._id), cloneDay._id);
+      }
+    });
+
+    const copiedImages: MediaItem[] = [];
+    try {
+      const [activities, budgetEntries, transportCosts] = await Promise.all([
+        this.activityModel.find({ itinerary: source._id }).lean().exec(),
+        this.budgetEntryModel.find({ itinerary: source._id }).lean().exec(),
+        this.transportCostModel.find({ itinerary: source._id }).lean().exec(),
+      ]);
+      const clonedActivities = [] as Array<{
+        itinerary: Types.ObjectId;
+        dayId: Types.ObjectId;
+        user: Types.ObjectId;
+        title: string;
+        description?: string;
+        category?: string;
+        attraction?: Types.ObjectId | null;
+        locationName?: string;
+        startTime?: string;
+        endTime?: string;
+        orderIndex: number;
+        images: MediaItem[];
+      }>;
+      for (const activity of activities) {
+        const dayId = dayIdMap.get(String(activity.dayId));
+        if (!dayId) continue;
+        const images: MediaItem[] = [];
+        for (const image of activity.images) {
+          const copy = await this.uploadsService.copyImage(image);
+          copiedImages.push(copy);
+          images.push(copy);
+        }
+        clonedActivities.push({
+          itinerary: clone._id,
+          dayId,
+          user: clone.user,
+          title: activity.title,
+          description: activity.description,
+          category: activity.category,
+          attraction: activity.attraction,
+          locationName: activity.locationName,
+          startTime: activity.startTime,
+          endTime: activity.endTime,
+          orderIndex: activity.orderIndex,
+          images,
+        });
+      }
+      const clonedBudgets = budgetEntries.flatMap((entry) => {
+        const dayId = dayIdMap.get(String(entry.dayId));
+        if (!dayId) return [];
+        return [
+          {
+            itinerary: clone._id,
+            dayId,
+            user: clone.user,
+            category: entry.category,
+            title: entry.title,
+            notes: entry.notes,
+            amount: entry.amount,
+            currency: entry.currency,
+          },
+        ];
+      });
+      const clonedTransportCosts = transportCosts.map((cost) => ({
+        itinerary: clone._id,
+        user: clone.user,
+        fromCity: cost.fromCity,
+        toCity: cost.toCity,
+        fromCityName: cost.fromCityName,
+        toCityName: cost.toCityName,
+        mode: cost.mode,
+        departureDayId: cost.departureDayId
+          ? (dayIdMap.get(String(cost.departureDayId)) ?? null)
+          : null,
+        amount: cost.amount,
+        currency: cost.currency,
+        notes: cost.notes,
+      }));
+
+      if (clonedActivities.length) {
+        await this.activityModel.insertMany(clonedActivities);
+      }
+      if (clonedBudgets.length) {
+        await this.budgetEntryModel.insertMany(clonedBudgets);
+      }
+      if (clonedTransportCosts.length) {
+        await this.transportCostModel.insertMany(clonedTransportCosts);
+      }
+      await this.itineraryModel
+        .updateOne({ _id: source._id }, { $inc: { cloneCount: 1 } })
+        .exec();
+    } catch (error: unknown) {
+      await Promise.allSettled([
+        this.activityModel.deleteMany({ itinerary: clone._id }).exec(),
+        this.budgetEntryModel.deleteMany({ itinerary: clone._id }).exec(),
+        this.transportCostModel.deleteMany({ itinerary: clone._id }).exec(),
+        clone.deleteOne(),
+        ...copiedImages.map((image) =>
+          this.uploadsService.removeImage(image.filename),
+        ),
+      ]);
+      throw error;
+    }
+
+    return this.getItineraryDetails(clone);
   }
 
   private async getItineraryDetails(
