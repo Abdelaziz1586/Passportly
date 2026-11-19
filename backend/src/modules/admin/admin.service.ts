@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { isValidObjectId, Model, Types } from 'mongoose';
 import { BookingStatus, BookingType } from '../../common/enums';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import {
@@ -131,6 +131,9 @@ export class AdminService {
       filter.status = query.status;
     }
     if (query.userId) {
+      if (!isValidObjectId(query.userId)) {
+        throw new BadRequestException('Invalid userId');
+      }
       filter.user = new Types.ObjectId(query.userId);
     }
     if (query.fromDate || query.toDate) {
@@ -308,17 +311,17 @@ export class AdminService {
     if (sortBy === 'totalPrice') {
       cmp = a.totalPrice - b.totalPrice;
     } else if (sortBy === 'status') {
-      cmp = a.status.localeCompare(b.status);
+      cmp = a.status < b.status ? -1 : a.status > b.status ? 1 : 0;
     } else {
-      const aTime =
-        (sortBy === 'updatedAt' ? a.updatedAt : a.createdAt)?.getTime() ?? 0;
-      const bTime =
-        (sortBy === 'updatedAt' ? b.updatedAt : b.createdAt)?.getTime() ?? 0;
+      const aVal = sortBy === 'updatedAt' ? a.updatedAt : a.createdAt;
+      const bVal = sortBy === 'updatedAt' ? b.updatedAt : b.createdAt;
+      const aTime = aVal ? new Date(aVal).getTime() : 0;
+      const bTime = bVal ? new Date(bVal).getTime() : 0;
       cmp = aTime - bTime;
     }
     if (cmp !== 0) {
       return cmp * direction;
     }
-    return a.id.localeCompare(b.id) * direction;
+    return (a.id < b.id ? -1 : a.id > b.id ? 1 : 0) * direction;
   }
 }
