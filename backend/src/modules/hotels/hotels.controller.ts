@@ -89,10 +89,7 @@ export class HotelsController {
     @Body() dto: UpdateHotelDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    void [id, dto, user];
-    throw new NotImplementedException(
-      'Implemented by the subsequent SCRUM-55 PR in this stack',
-    );
+    return this.hotelsService.updateHotel(id, dto, user);
   }
 
   @ApiCookieAuth()
@@ -246,10 +243,7 @@ export class HotelsController {
     @UploadedFiles() files: Express.Multer.File[],
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    void [id, files, user];
-    throw new NotImplementedException(
-      'Implemented by the subsequent SCRUM-55 PR in this stack',
-    );
+    return this.hotelsService.uploadImages(id, files ?? [], user);
   }
 
   @ApiCookieAuth()
