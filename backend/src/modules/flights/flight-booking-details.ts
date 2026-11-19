@@ -360,10 +360,13 @@ export function buildPolicySnapshot(
         },
         cancellationPolicy: {
           allowCancellation: cancellation.allowCancellation,
-          tiers: (cancellation.tiers ?? []).map((tier) => ({
-            daysBeforeDeparture: tier.daysBeforeDeparture,
-            refundPercentage: tier.refundPercentage,
-          })),
+          // Highest threshold first: the refund uses the first tier whose threshold the days left reach.
+          tiers: (cancellation.tiers ?? [])
+            .map((tier) => ({
+              daysBeforeDeparture: tier.daysBeforeDeparture,
+              refundPercentage: tier.refundPercentage,
+            }))
+            .sort((a, b) => b.daysBeforeDeparture - a.daysBeforeDeparture),
           freeCancellationHoursBeforeDeparture:
             cancellation.freeCancellationHoursBeforeDeparture,
           cancellationFeePercentage: cancellation.cancellationFeePercentage,

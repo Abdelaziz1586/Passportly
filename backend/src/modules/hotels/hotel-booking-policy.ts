@@ -6,7 +6,7 @@ export interface HotelCancellationTier {
   refundPercentage: number;
 }
 
-/** Plain, JSON-safe copy of the hotel policies in force when the reservation was created (HTL-09, HTL-10). */
+/** Plain-object copy of the hotel policies in force when the reservation was created (HTL-09, HTL-10). */
 export interface HotelPolicySnapshot {
   capturedAt: Date;
   hotelId: string;
@@ -15,7 +15,12 @@ export interface HotelPolicySnapshot {
   checkOutTime: string;
   cancellationPolicy: {
     allowCancellation: boolean;
+    /** HTL-10 refund tiers, highest threshold first. Empty when the hotel defined none. */
     tiers: HotelCancellationTier[];
+    /** Existing hotel policy fields, kept so a booking never loses terms the hotel did store. */
+    freeCancellationDaysBeforeCheckIn: number | null;
+    cancellationFeePercentage: number | null;
+    noShowFeePercentage: number | null;
     termsText: string | null;
   };
 }
@@ -28,6 +33,9 @@ export interface HotelPolicySource {
     checkInTime?: string;
     checkOutTime?: string;
     allowCancellation?: boolean;
+    freeCancellationDaysBeforeCheckIn?: number;
+    cancellationFeePercentage?: number;
+    noShowFeePercentage?: number;
     termsText?: string;
     /** HTL-10 tiers; read from the raw document so this works before the schema carries them. */
     cancellationTiers?: {
@@ -58,6 +66,8 @@ export function buildHotelPolicySnapshot(
       });
     }
   }
+  // Highest threshold first: the refund uses the first tier whose threshold the days left reach.
+  tiers.sort((a, b) => b.daysBeforeCheckIn - a.daysBeforeCheckIn);
   return {
     capturedAt,
     hotelId: hotel._id.toString(),
@@ -67,6 +77,10 @@ export function buildHotelPolicySnapshot(
     cancellationPolicy: {
       allowCancellation: policies.allowCancellation ?? true,
       tiers,
+      freeCancellationDaysBeforeCheckIn:
+        policies.freeCancellationDaysBeforeCheckIn ?? null,
+      cancellationFeePercentage: policies.cancellationFeePercentage ?? null,
+      noShowFeePercentage: policies.noShowFeePercentage ?? null,
       termsText: policies.termsText ?? null,
     },
   };

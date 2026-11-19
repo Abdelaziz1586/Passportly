@@ -189,7 +189,7 @@ export class BookingPoliciesService {
       bookingId: booking._id.toString(),
       bookingReference: booking.bookingReference,
       policyAcceptedAt: booking.policyAcceptedAt as Date,
-      policyAcceptedBy: (booking.policyAcceptedBy as Types.ObjectId).toString(),
+      policyAcceptedBy: booking.policyAcceptedBy?.toString() ?? '',
     };
   }
 }

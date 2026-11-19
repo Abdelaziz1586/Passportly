@@ -246,6 +246,19 @@ describe('BookingPoliciesService.acceptPolicies', () => {
     expect(reservation.policyAcceptedAt).toBeInstanceOf(Date);
   });
 
+  it('does not crash on a stored acceptance without an accepting user', async () => {
+    const booking = makeBooking({ policyAcceptedAt: new Date() });
+    const { service } = build([booking]);
+
+    const result = await service.acceptPolicies(
+      userId.toString(),
+      BookingType.FLIGHT,
+      booking._id.toString(),
+    );
+
+    expect(result.policyAcceptedBy).toBe('');
+  });
+
   it('keeps the first acceptance and changes nothing on a second call', async () => {
     const acceptedAt = new Date('2026-11-19T10:00:00.000Z');
     const booking = makeBooking({
