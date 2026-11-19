@@ -5,12 +5,14 @@ import {
   NotImplementedException,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiConflictResponse,
   ApiCookieAuth,
   ApiCreatedResponse,
+  ApiOkResponse,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
@@ -20,6 +22,8 @@ import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.inte
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { SafeUserResponseDto } from './dto/safe-user-response.dto';
+import { VerifyEmailQueryDto } from './dto/verify-email-query.dto';
+import { VerifyEmailResponseDto } from './dto/verify-email-response.dto';
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -46,10 +50,17 @@ export class AuthController {
   @Public()
   @Get('verify-email')
   @ApiOperation({ summary: 'ACC-02 (Optional): Verify email address' })
-  verifyEmail() {
-    throw new NotImplementedException(
-      'GET /api/auth/verify-email not implemented yet',
-    );
+  @ApiOkResponse({
+    description: 'Email address verified successfully',
+    type: VerifyEmailResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Missing, invalid, or expired email verification token',
+  })
+  verifyEmail(
+    @Query() query: VerifyEmailQueryDto,
+  ): Promise<VerifyEmailResponseDto> {
+    return this.authService.verifyEmail(query);
   }
 
   @Public()

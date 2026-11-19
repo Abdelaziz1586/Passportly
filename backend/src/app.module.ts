@@ -16,6 +16,7 @@ import { BlogModule } from './modules/blog/blog.module';
 import { FlightsModule } from './modules/flights/flights.module';
 import { HotelsModule } from './modules/hotels/hotels.module';
 import { ItinerariesModule } from './modules/itineraries/itineraries.module';
+import { MailModule } from './modules/mail/mail.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { ReferenceDataModule } from './modules/reference-data/reference-data.module';
@@ -35,6 +36,7 @@ import { UsersModule } from './modules/users/users.module';
     DatabaseModule,
     AuditLogsModule,
     NotificationsModule,
+    MailModule,
     UploadsModule,
     ReferenceDataModule,
     UsersModule,

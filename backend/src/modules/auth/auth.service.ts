@@ -7,12 +7,16 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/mongoose';
 import * as bcrypt from 'bcryptjs';
+import { randomBytes } from 'crypto';
 import { Model } from 'mongoose';
 import { AccountStatus, Role } from '../../common/enums';
+import { MailService } from '../mail/mail.service';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { RegisterDto } from './dto/register.dto';
 import { SafeUserResponseDto } from './dto/safe-user-response.dto';
+import { VerifyEmailQueryDto } from './dto/verify-email-query.dto';
+import { VerifyEmailResponseDto } from './dto/verify-email-response.dto';
 import {
   UserSession,
   UserSessionDocument,
@@ -43,6 +47,7 @@ export class AuthService {
     readonly jwtService: JwtService,
     readonly configService: ConfigService,
     private readonly referenceDataService: ReferenceDataService,
+    private readonly mailService: MailService,
   ) {}
 
   /**
@@ -78,6 +83,7 @@ export class AuthService {
 
     const phone = dto.phone?.trim() || undefined;
     const nationality = dto.nationality?.trim().toUpperCase() || undefined;
+    const emailVerificationToken = randomBytes(32).toString('hex');
 
     try {
       const createdUser = await this.userModel.create({
@@ -91,6 +97,13 @@ export class AuthService {
         role: Role.REGISTERED_USER,
         status: AccountStatus.ACTIVE,
         isEmailVerified: false,
+        emailVerificationToken,
+      });
+
+      await this.mailService.sendVerificationEmail({
+        to: createdUser.email,
+        firstName: createdUser.firstName,
+        token: emailVerificationToken,
       });
 
       return this.toSafeUser(createdUser);
@@ -102,6 +115,56 @@ export class AuthService {
       }
       throw error;
     }
+  }
+
+  /**
+   * Validates an email verification token, marks the user's email as verified,
+   * and clears the single-use verification token.
+   */
+  async verifyEmail(
+    query: VerifyEmailQueryDto,
+  ): Promise<VerifyEmailResponseDto> {
+    const token = (query.emailVerificationToken ?? query.token)?.trim();
+    if (!token) {
+      throw new BadRequestException(
+        'emailVerificationToken query parameter is required',
+      );
+    }
+
+    const user = await this.userModel
+      .findOne({ emailVerificationToken: token })
+      .select('email status isEmailVerified');
+
+    if (!user) {
+      throw new BadRequestException(
+        'Invalid or expired email verification token',
+      );
+    }
+
+    if (user.status !== AccountStatus.ACTIVE) {
+      throw new BadRequestException('Account is not active');
+    }
+
+    const updated = await this.userModel.findOneAndUpdate(
+      { _id: user._id, emailVerificationToken: token },
+      {
+        $set: { isEmailVerified: true },
+        $unset: { emailVerificationToken: 1 },
+      },
+      { new: true },
+    );
+
+    if (!updated) {
+      throw new BadRequestException(
+        'Invalid or expired email verification token',
+      );
+    }
+
+    return {
+      message: 'Email address verified successfully',
+      isEmailVerified: true,
+      email: updated.email,
+    };
   }
 
   /**
