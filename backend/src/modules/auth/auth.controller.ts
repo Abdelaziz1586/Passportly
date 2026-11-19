@@ -1,15 +1,38 @@
 import {
+  Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   NotImplementedException,
   Patch,
   Post,
+  Query,
+  Req,
+  Res,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiConflictResponse,
+  ApiCookieAuth,
+  ApiCreatedResponse,
+  ApiForbiddenResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
+import type { Request, Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { AuthService } from './auth.service';
+import { LoginResponseDto } from './dto/login-response.dto';
+import { LoginDto } from './dto/login.dto';
+import { RegisterDto } from './dto/register.dto';
+import { SafeUserResponseDto } from './dto/safe-user-response.dto';
+import { VerifyEmailQueryDto } from './dto/verify-email-query.dto';
+import { VerifyEmailResponseDto } from './dto/verify-email-response.dto';
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -19,30 +42,64 @@ export class AuthController {
   @Public()
   @Post('register')
   @ApiOperation({ summary: 'ACC-01: Register a new traveler account' })
-  register() {
-    throw new NotImplementedException(
-      'POST /api/auth/register not implemented yet',
-    );
+  @ApiCreatedResponse({
+    description: 'Traveler account registered successfully',
+    type: SafeUserResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid registration payload or weak password',
+  })
+  @ApiConflictResponse({
+    description: 'An account with this email already exists',
+  })
+  register(@Body() dto: RegisterDto): Promise<SafeUserResponseDto> {
+    return this.authService.register(dto);
   }
 
   @Public()
   @Get('verify-email')
   @ApiOperation({ summary: 'ACC-02 (Optional): Verify email address' })
-  verifyEmail() {
-    throw new NotImplementedException(
-      'GET /api/auth/verify-email not implemented yet',
-    );
+  @ApiOkResponse({
+    description: 'Email address verified successfully',
+    type: VerifyEmailResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Missing, invalid, or expired email verification token',
+  })
+  verifyEmail(
+    @Query() query: VerifyEmailQueryDto,
+  ): Promise<VerifyEmailResponseDto> {
+    return this.authService.verifyEmail(query);
   }
 
   @Public()
   @Post('login')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'ACC-04, ACC-05: Login and issue httpOnly JWT cookie',
   })
-  login() {
-    throw new NotImplementedException(
-      'POST /api/auth/login not implemented yet',
-    );
+  @ApiOkResponse({
+    description: 'Login successful; httpOnly JWT cookie set',
+    type: LoginResponseDto,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Invalid email or password',
+  })
+  @ApiForbiddenResponse({
+    description:
+      'Account is suspended, deactivated, or temporarily locked due to failed attempts',
+  })
+  async login(
+    @Body() dto: LoginDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<LoginResponseDto> {
+    const result = await this.authService.login(dto, {
+      userAgent: req.get('user-agent'),
+      ipAddress: req.ip,
+    });
+    res.cookie(result.cookieName, result.accessToken, result.cookieOptions);
+    return result.response;
   }
 
   @ApiCookieAuth()
