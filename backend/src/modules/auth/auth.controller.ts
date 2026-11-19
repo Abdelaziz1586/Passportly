@@ -27,6 +27,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { AuthService } from './auth.service';
+import { AuthMeResponseDto } from './dto/auth-me-response.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -141,9 +142,17 @@ export class AuthController {
   @ApiCookieAuth()
   @Get('me')
   @ApiOperation({
-    summary: 'ACC-04, ACC-19: Get authenticated session summary',
+    summary: 'ACC-04, ACC-19: Get authenticated session & role context',
   })
-  me(@CurrentUser() user: AuthenticatedUser) {
-    return user;
+  @ApiOkResponse({
+    description:
+      'Authenticated user profile, role, account status, and moderator provider context',
+    type: AuthMeResponseDto,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Authentication required',
+  })
+  me(@CurrentUser() user: AuthenticatedUser): Promise<AuthMeResponseDto> {
+    return this.authService.getMe(user);
   }
 }
