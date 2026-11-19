@@ -7,7 +7,7 @@ export interface HotelCancellationTier {
 }
 
 /** Plain-object copy of the hotel policies in force when the reservation was created (HTL-09, HTL-10). */
-export interface HotelPolicySnapshot {
+export type HotelPolicySnapshot = {
   capturedAt: Date;
   hotelId: string;
   hotelName: string;
@@ -23,7 +23,7 @@ export interface HotelPolicySnapshot {
     noShowFeePercentage: number | null;
     termsText: string | null;
   };
-}
+};
 
 /** The part of a (lean) hotel document the snapshot reads. */
 export interface HotelPolicySource {
