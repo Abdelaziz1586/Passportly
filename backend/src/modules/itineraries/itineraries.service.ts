@@ -18,9 +18,11 @@ import {
 import { ItineraryVisibility, Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
+import { AttractionDocument } from '../reference-data/schemas/attraction.schema';
 import { CityDocument } from '../reference-data/schemas/city.schema';
 import { CreateItineraryDto } from './dto/create-itinerary.dto';
 import {
+  CreateActivityDto,
   CreateItineraryDayDto,
   ListItinerariesQueryDto,
   ReorderItineraryDaysDto,
@@ -288,6 +290,43 @@ export class ItinerariesService {
     return this.saveItinerary(itinerary);
   }
 
+  async addActivity(
+    itineraryId: string,
+    dayId: string,
+    userId: string,
+    dto: CreateActivityDto,
+  ): Promise<ActivityDocument> {
+    const itinerary = await this.findOwnedItinerary(itineraryId, userId);
+    const day = this.findDay(itinerary, dayId);
+    const attraction = dto.attractionId
+      ? await this.findAttraction(dto.attractionId)
+      : undefined;
+    this.assertValidTimeRange(dto.startTime, dto.endTime);
+    const orderIndex =
+      dto.orderIndex ??
+      (await this.activityModel
+        .countDocuments({ itinerary: itinerary._id, dayId: day._id })
+        .exec());
+
+    return this.activityModel.create({
+      itinerary: itinerary._id,
+      dayId: day._id,
+      user: this.objectId(userId, 'userId'),
+      title: dto.title.trim(),
+      ...(dto.description?.trim()
+        ? { description: dto.description.trim() }
+        : {}),
+      ...(dto.category?.trim() ? { category: dto.category.trim() } : {}),
+      ...(attraction ? { attraction: attraction._id } : {}),
+      ...(dto.locationName?.trim()
+        ? { locationName: dto.locationName.trim() }
+        : {}),
+      ...(dto.startTime ? { startTime: dto.startTime } : {}),
+      ...(dto.endTime ? { endTime: dto.endTime } : {}),
+      orderIndex,
+    });
+  }
+
   private async getItineraryDetails(
     itinerary: ItineraryDocument,
   ): Promise<Record<string, unknown>> {
@@ -365,6 +404,16 @@ export class ItinerariesService {
     return city;
   }
 
+  private async findAttraction(id: string): Promise<AttractionDocument> {
+    const attraction = await this.referenceDataService.attractionModel
+      .findById(this.objectId(id, 'attractionId'))
+      .exec();
+    if (!attraction) {
+      throw new BadRequestException('attractionId is not a valid attraction');
+    }
+    return attraction;
+  }
+
   private async validateCountryIds(
     countryIds: string[],
   ): Promise<Types.ObjectId[]> {
@@ -439,6 +488,12 @@ export class ItinerariesService {
         throw new ConflictException('Itinerary changed; reload it and retry');
       }
       throw error;
+    }
+  }
+
+  private assertValidTimeRange(startTime?: string, endTime?: string): void {
+    if (startTime && endTime && startTime > endTime) {
+      throw new BadRequestException('endTime must be after startTime');
     }
   }
 
