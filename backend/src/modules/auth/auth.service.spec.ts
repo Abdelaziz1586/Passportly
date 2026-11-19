@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { getModelToken } from '@nestjs/mongoose';
@@ -11,7 +16,7 @@ import { User } from '../users/schemas/user.schema';
 import { AuthService } from './auth.service';
 import { UserSession } from './schemas/user-session.schema';
 
-describe('AuthService (ACC-01 register, ACC-02 verify-email)', () => {
+describe('AuthService (ACC-01 register, ACC-02 verify-email, ACC-04/05 login)', () => {
   let service: AuthService;
 
   const mockUserModel = {
@@ -19,14 +24,33 @@ describe('AuthService (ACC-01 register, ACC-02 verify-email)', () => {
     create: jest.fn(),
     findOne: jest.fn(),
     findOneAndUpdate: jest.fn(),
+    findByIdAndUpdate: jest.fn(),
   };
 
-  const mockSessionModel = {};
-  const mockJwtService = {};
-  const mockConfigService = {};
+  const mockSessionModel = {
+    create: jest.fn(),
+  };
+
+  const mockJwtService = {
+    signAsync: jest.fn(),
+    decode: jest.fn(),
+  };
+
+  const mockConfigService = {
+    get: jest.fn((key: string, defaultValue?: unknown) => {
+      const values: Record<string, unknown> = {
+        'jwt.expiresIn': '1d',
+        'jwt.cookieName': 'access_token',
+        'jwt.cookieSecure': false,
+      };
+      return key in values ? values[key] : defaultValue;
+    }),
+  };
+
   const mockReferenceDataService = {
     isCurrencySupported: jest.fn(),
   };
+
   const mockMailService = {
     sendVerificationEmail: jest.fn(),
   };
@@ -315,6 +339,208 @@ describe('AuthService (ACC-01 register, ACC-02 verify-email)', () => {
       await expect(
         service.verifyEmail({ emailVerificationToken: 'race-token' }),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('login', () => {
+    it('authenticates valid user, resets failedLoginAttempts, creates UserSession, signs JWT, and returns httpOnly cookie config', async () => {
+      const passwordHash = await bcrypt.hash('StrongPass123!', 4);
+      const userDoc = {
+        _id: '507f1f77bcf86cd799439011',
+        email: 'traveler@example.com',
+        passwordHash,
+        firstName: 'Abdelaziz',
+        lastName: 'Mohamed',
+        preferredCurrency: 'USD',
+        role: Role.REGISTERED_USER,
+        status: AccountStatus.ACTIVE,
+        isEmailVerified: true,
+        failedLoginAttempts: 2,
+        lockoutUntil: null,
+        mustChangePassword: false,
+      };
+      const selectMock = jest.fn().mockResolvedValue(userDoc);
+      mockUserModel.findOne.mockReturnValue({ select: selectMock });
+      mockUserModel.findByIdAndUpdate.mockResolvedValue({
+        ...userDoc,
+        failedLoginAttempts: 0,
+        lockoutUntil: null,
+      });
+
+      const expSeconds = Math.floor(Date.now() / 1000) + 86400;
+      mockJwtService.signAsync.mockResolvedValue('signed.jwt.token');
+      mockJwtService.decode.mockReturnValue({ exp: expSeconds });
+      mockSessionModel.create.mockResolvedValue({ _id: 'session-id' });
+
+      const result = await service.login(
+        {
+          email: '  Traveler@Example.COM ',
+          password: 'StrongPass123!',
+        },
+        { userAgent: 'JestAgent', ipAddress: '127.0.0.1' },
+      );
+
+      expect(mockUserModel.findOne).toHaveBeenCalledWith({
+        email: 'traveler@example.com',
+      });
+      expect(selectMock).toHaveBeenCalledWith('+passwordHash');
+      expect(mockUserModel.findByIdAndUpdate).toHaveBeenCalledWith(
+        '507f1f77bcf86cd799439011',
+        {
+          $set: {
+            failedLoginAttempts: 0,
+            lockoutUntil: null,
+            lastLoginAt: expect.any(Date) as Date,
+          },
+        },
+        { returnDocument: 'after' },
+      );
+
+      const signCalls = mockJwtService.signAsync.mock.calls as [
+        [Record<string, unknown>],
+      ];
+      const jwtPayload = signCalls[0][0];
+      expect(jwtPayload.sub).toBe('507f1f77bcf86cd799439011');
+      expect(jwtPayload.email).toBe('traveler@example.com');
+      expect(jwtPayload.role).toBe(Role.REGISTERED_USER);
+      expect(typeof jwtPayload.jti).toBe('string');
+
+      expect(mockSessionModel.create).toHaveBeenCalledWith({
+        user: '507f1f77bcf86cd799439011',
+        jti: jwtPayload.jti,
+        expiresAt: new Date(expSeconds * 1000),
+        userAgent: 'JestAgent',
+        ipAddress: '127.0.0.1',
+      });
+
+      expect(result.accessToken).toBe('signed.jwt.token');
+      expect(result.cookieName).toBe('access_token');
+      expect(result.cookieOptions.httpOnly).toBe(true);
+      expect(result.cookieOptions.sameSite).toBe('lax');
+      expect(result.cookieOptions.secure).toBe(false);
+      expect(result.cookieOptions.path).toBe('/');
+      expect(result.response.message).toBe('Login successful');
+      expect(result.response.mustChangePassword).toBe(false);
+      expect(result.response.user.email).toBe('traveler@example.com');
+      expect('passwordHash' in result.response.user).toBe(false);
+    });
+
+    it('throws UnauthorizedException when user does not exist', async () => {
+      const selectMock = jest.fn().mockResolvedValue(null);
+      mockUserModel.findOne.mockReturnValue({ select: selectMock });
+
+      await expect(
+        service.login({
+          email: 'nobody@example.com',
+          password: 'StrongPass123!',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(mockSessionModel.create).not.toHaveBeenCalled();
+    });
+
+    it('throws ForbiddenException when account is actively locked out even if password matches', async () => {
+      const passwordHash = await bcrypt.hash('StrongPass123!', 4);
+      const futureLock = new Date(Date.now() + 10 * 60 * 1000);
+      const selectMock = jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        email: 'locked@example.com',
+        passwordHash,
+        status: AccountStatus.ACTIVE,
+        failedLoginAttempts: 5,
+        lockoutUntil: futureLock,
+      });
+      mockUserModel.findOne.mockReturnValue({ select: selectMock });
+
+      await expect(
+        service.login({
+          email: 'locked@example.com',
+          password: 'StrongPass123!',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockSessionModel.create).not.toHaveBeenCalled();
+    });
+
+    it('increments failedLoginAttempts on invalid password and locks on 5th failed attempt', async () => {
+      const passwordHash = await bcrypt.hash('StrongPass123!', 4);
+      const selectMock = jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        email: 'user@example.com',
+        passwordHash,
+        status: AccountStatus.ACTIVE,
+        failedLoginAttempts: 4,
+        lockoutUntil: null,
+      });
+      mockUserModel.findOne.mockReturnValue({ select: selectMock });
+
+      await expect(
+        service.login({
+          email: 'user@example.com',
+          password: 'WrongPassword!',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(mockUserModel.findByIdAndUpdate).toHaveBeenCalledWith(
+        '507f1f77bcf86cd799439011',
+        {
+          $set: {
+            failedLoginAttempts: 5,
+            lockoutUntil: expect.any(Date) as Date,
+          },
+        },
+      );
+      expect(mockSessionModel.create).not.toHaveBeenCalled();
+    });
+
+    it('resets attempt count from 0 after expired lockout on invalid password', async () => {
+      const passwordHash = await bcrypt.hash('StrongPass123!', 4);
+      const expiredLock = new Date(Date.now() - 60 * 1000);
+      const selectMock = jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        email: 'user@example.com',
+        passwordHash,
+        status: AccountStatus.ACTIVE,
+        failedLoginAttempts: 5,
+        lockoutUntil: expiredLock,
+      });
+      mockUserModel.findOne.mockReturnValue({ select: selectMock });
+
+      await expect(
+        service.login({
+          email: 'user@example.com',
+          password: 'WrongPassword!',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(mockUserModel.findByIdAndUpdate).toHaveBeenCalledWith(
+        '507f1f77bcf86cd799439011',
+        {
+          $set: {
+            failedLoginAttempts: 1,
+            lockoutUntil: null,
+          },
+        },
+      );
+    });
+
+    it('throws ForbiddenException when account status is SUSPENDED or DEACTIVATED', async () => {
+      const passwordHash = await bcrypt.hash('StrongPass123!', 4);
+      const selectMock = jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        email: 'suspended@example.com',
+        passwordHash,
+        status: AccountStatus.SUSPENDED,
+        failedLoginAttempts: 0,
+        lockoutUntil: null,
+      });
+      mockUserModel.findOne.mockReturnValue({ select: selectMock });
+
+      await expect(
+        service.login({
+          email: 'suspended@example.com',
+          password: 'StrongPass123!',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockSessionModel.create).not.toHaveBeenCalled();
     });
   });
 });
