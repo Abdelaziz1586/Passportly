@@ -14,6 +14,7 @@ import {
   CreateHotelDto,
   HotelDetailsQueryDto,
   HotelPoliciesDto,
+  HotelReservationsQueryDto,
   SearchHotelsDto,
   UpdateHotelDto,
 } from './dto/hotel.dto';
@@ -30,6 +31,7 @@ import {
   paged,
   pagination,
   PLATFORM_CURRENCY,
+  utcDate,
 } from './hotel-utils';
 import { MediaItem } from '../../common/schemas/media-item.schema';
 import {
@@ -281,6 +283,38 @@ export class HotelsService {
         { returnDocument: 'after', runValidators: true },
       )
       .lean();
+  }
+
+  async getHotelReservations(
+    id: string,
+    query: HotelReservationsQueryDto,
+    user: AuthenticatedUser,
+  ) {
+    const hotel = await this.access.managedHotel(id, user);
+    const filter: Record<string, unknown> = { hotel: hotel._id };
+    if (query.status) filter.status = query.status;
+    if (query.startDate && query.endDate)
+      dateRange(query.startDate, query.endDate);
+    if (query.startDate)
+      filter.checkOutDate = { $gt: utcDate(query.startDate) };
+    if (query.endDate) filter.checkInDate = { $lt: utcDate(query.endDate) };
+    const sortBy = query.sortBy ?? 'checkInDate';
+    if (
+      !['checkInDate', 'checkOutDate', 'createdAt', 'status'].includes(sortBy)
+    )
+      throw new BadRequestException('Unsupported reservation sort field');
+    const { page, limit, skip } = pagination(query.page, query.limit);
+    const data = await this.hotelBookingModel
+      .find(filter)
+      .select(
+        'bookingReference user hotel rooms checkInDate checkOutDate nights guestCount primaryGuestName primaryGuestEmail primaryGuestPhone specialRequests totalPrice currency status confirmedAt cancelledAt createdAt',
+      )
+      .sort({ [sortBy]: query.sortOrder === 'asc' ? 1 : -1, _id: 1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+    const total = await this.hotelBookingModel.countDocuments(filter);
+    return paged(data, total, page, limit);
   }
 
   async uploadImages(

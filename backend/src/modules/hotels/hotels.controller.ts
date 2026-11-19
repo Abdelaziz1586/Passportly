@@ -246,10 +246,7 @@ export class HotelsController {
     @Query() query: HotelReservationsQueryDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    void [id, query, user];
-    throw new NotImplementedException(
-      'Implemented by the subsequent SCRUM-64 PR in this stack',
-    );
+    return this.hotelsService.getHotelReservations(id, query, user);
   }
 
   @Public()
