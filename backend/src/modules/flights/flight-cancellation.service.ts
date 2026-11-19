@@ -11,6 +11,7 @@ import {
   BookingType,
   NotificationType,
   PaymentStatus,
+  RefundStatus,
 } from '../../common/enums';
 import { NotificationsService } from '../notifications/notifications.service';
 import { Payment } from '../payments/schemas/payment.schema';
@@ -51,7 +52,7 @@ export interface CancellationResult {
   policyCalculationNotes: string;
   refund: {
     id: string;
-    status: string;
+    status: RefundStatus;
     amount: number;
     currency: string;
   } | null;
@@ -113,17 +114,35 @@ export class FlightCancellationService {
     const now = new Date();
     const booking = await this.loadCancellable(userId, id, now);
     const quote = this.quote(booking, now);
-    const payment = booking.payment
-      ? await this.paymentModel.findById(booking.payment).lean()
-      : null;
-    const refundable =
-      quote.amount > 0 &&
-      !!payment &&
-      payment.status === PaymentStatus.SUCCEEDED;
+    // The traveller confirmed the refund they were shown: if time (or the policy) moved the
+    // tier meanwhile, ask them to look again instead of cancelling for another amount.
+    if (
+      dto.expectedRefundAmount !== undefined &&
+      Math.round(dto.expectedRefundAmount * 100) !==
+        Math.round(quote.amount * 100)
+    ) {
+      throw new ConflictException(
+        `The refund changed from ${dto.expectedRefundAmount.toFixed(2)} to ${quote.amount.toFixed(2)} ${booking.currency}: preview the cancellation again`,
+      );
+    }
     const owner = new Types.ObjectId(userId);
     const seats = booking.passengerCounts.totalSeatsRequired;
 
-    const refund = await this.connection.transaction(async (session) => {
+    const outcome = await this.connection.transaction(async (session) => {
+      // The payment is read inside the transaction, so what is decided here is what gets recorded.
+      const payment = booking.payment
+        ? await this.paymentModel
+            .findById(booking.payment)
+            .session(session)
+            .lean()
+        : null;
+      const refundable =
+        quote.amount > 0 &&
+        !!payment &&
+        payment.status === PaymentStatus.SUCCEEDED;
+      // Only an amount that really gets refunded is stored on the booking and announced.
+      const refundAmount = refundable ? quote.amount : 0;
+
       // One conditional update: only a CONFIRMED booking that has not departed can be cancelled.
       const cancelled = await this.bookingModel.findOneAndUpdate(
         {
@@ -136,7 +155,7 @@ export class FlightCancellationService {
           $set: {
             status: BookingStatus.CANCELLED,
             cancelledAt: now,
-            refundAmount: quote.amount,
+            refundAmount,
             ...(dto.reason ? { cancellationReason: dto.reason } : {}),
           },
         },
@@ -149,53 +168,67 @@ export class FlightCancellationService {
       }
       // The booked seats go back to the cabin of every leg.
       for (const leg of booking.legs) {
-        await this.cabinModel.updateOne(
+        const released = await this.cabinModel.updateOne(
           { _id: leg.cabin },
           { $inc: { availableSeats: seats } },
           { session },
         );
+        if (released.modifiedCount !== 1) {
+          this.logger.warn(
+            `Cabin ${leg.cabin.toString()} was not found while cancelling ${booking.bookingReference}`,
+          );
+        }
       }
-      if (!refundable || !payment) return null;
-      return this.refundsService.recordRefund(
-        {
-          payment: (payment as { _id: Types.ObjectId })._id,
-          user: owner,
-          bookingType: BookingType.FLIGHT,
-          bookingId: booking._id,
-          amount: quote.amount,
-          currency: payment.currency,
-          reason: 'Cancelled by the traveller',
-          notes: quote.notes,
-        },
-        session,
-      );
+      const refund =
+        refundable && payment
+          ? await this.refundsService.recordRefund(
+              {
+                payment: (payment as { _id: Types.ObjectId })._id,
+                user: owner,
+                bookingType: BookingType.FLIGHT,
+                bookingId: booking._id,
+                amount: quote.amount,
+                currency: payment.currency,
+                reason: 'Cancelled by the traveller',
+                notes: quote.notes,
+              },
+              session,
+            )
+          : null;
+      return { refund, refundAmount };
     });
 
     // After the commit: send the money to Stripe. A failure here is not the traveller's problem:
     // the refund stays PENDING and the refund job sends it again.
-    let current = refund;
-    if (refund) {
+    let current = outcome.refund;
+    if (outcome.refund) {
       try {
-        await this.refundsService.dispatchRefund(refund._id);
-        current = (await this.refundsService.findRefund(refund._id)) ?? refund;
+        await this.refundsService.dispatchRefund(outcome.refund._id);
+        current =
+          (await this.refundsService.findRefund(outcome.refund._id)) ??
+          outcome.refund;
       } catch (error) {
         this.logger.error(
-          `Could not send refund ${refund._id.toString()} to Stripe now`,
+          `Could not send refund ${outcome.refund._id.toString()} to Stripe now`,
           error instanceof Error ? error.stack : String(error),
         );
       }
     }
-    await this.notifyCancelled(booking, quote);
+    const notes =
+      outcome.refundAmount === 0 && quote.amount > 0
+        ? `${quote.notes}. No refund could be issued because the payment can no longer be refunded.`
+        : quote.notes;
+    await this.notifyCancelled(booking, outcome.refundAmount, quote.percentage);
 
     return {
       bookingId: booking._id.toString(),
       bookingReference: booking.bookingReference,
       status: BookingStatus.CANCELLED,
       cancelledAt: now,
-      refundPercentage: quote.percentage,
-      refundAmount: quote.amount,
+      refundPercentage: outcome.refundAmount > 0 ? quote.percentage : 0,
+      refundAmount: outcome.refundAmount,
       currency: booking.currency,
-      policyCalculationNotes: quote.notes,
+      policyCalculationNotes: notes,
       // The status right after sending it to Stripe (PENDING if Stripe has not settled it yet);
       // GET /refunds/:id and the booking details always show the current one.
       refund: current
@@ -273,12 +306,13 @@ export class FlightCancellationService {
 
   private async notifyCancelled(
     booking: Stored,
-    quote: RefundCalculation,
+    refundAmount: number,
+    percentage: number,
   ): Promise<void> {
     const refundText =
-      quote.amount > 0
-        ? ` A refund of ${quote.amount.toFixed(2)} ${booking.currency} (${quote.percentage}%) is on its way.`
-        : ' No refund applies under the airline policy.';
+      refundAmount > 0
+        ? ` A refund of ${refundAmount.toFixed(2)} ${booking.currency} (${percentage}%) has been requested.`
+        : ' No refund applies.';
     try {
       await this.notificationsService.createNotification({
         recipient: booking.user,

@@ -2,9 +2,12 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
   Equals,
+  IsNumber,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
+  Min,
   MinLength,
 } from 'class-validator';
 
@@ -34,4 +37,20 @@ export class CancelFlightBookingDto {
   @MinLength(1)
   @MaxLength(CANCELLATION_REASON_MAX_LENGTH)
   reason?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'The refund shown by the preview. If the refund is not this amount any more (time moved the tier), the cancellation is refused with 409 so the traveller can look again.',
+    example: 272.4,
+  })
+  // Keep the raw value: implicit conversion would turn "" or null into 0.
+  @Transform(
+    ({ obj }: { obj: { expectedRefundAmount?: unknown } }) =>
+      obj.expectedRefundAmount,
+  )
+  @IsOptional()
+  @IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(1_000_000_000)
+  expectedRefundAmount?: number;
 }

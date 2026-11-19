@@ -35,12 +35,28 @@ describe('CancelFlightBookingDto', () => {
     [{ confirm: true, reason: 'x'.repeat(301) }],
     [{ confirm: true, reason: 5 }],
     [{ confirm: true, reason: { $ne: null } }],
+    [{ confirm: true, expectedRefundAmount: -1 }],
+    [{ confirm: true, expectedRefundAmount: 'abc' }],
+    [{ confirm: true, expectedRefundAmount: '' }],
+    [{ confirm: true, expectedRefundAmount: 10.123 }],
+    [{ confirm: true, expectedRefundAmount: 1e12 }],
     // nothing about the money, the status or the owner can come from the client
     [{ confirm: true, refundAmount: 999 }],
     [{ confirm: true, status: 'CANCELLED' }],
     [{ confirm: true, user: '665f1c2e8a1b2c3d4e5f6a7b' }],
   ])('rejects %j', async (raw) => {
     await expect(parse(raw)).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('accepts the previewed refund amount with up to two decimals', async () => {
+    expect(
+      (await parse({ confirm: true, expectedRefundAmount: 272.4 }))
+        .expectedRefundAmount,
+    ).toBe(272.4);
+    expect(
+      (await parse({ confirm: true, expectedRefundAmount: 0 }))
+        .expectedRefundAmount,
+    ).toBe(0);
   });
 
   it('accepts a reason of exactly 300 characters', async () => {

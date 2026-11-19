@@ -13,11 +13,13 @@ import { FlightCancellationService } from './flight-cancellation.service';
 
 interface Chain<T> extends PromiseLike<T> {
   lean(): Chain<T>;
+  session(): Chain<T>;
 }
 
 function query<T>(result: T): Chain<T> {
   const q: Chain<T> = {
     lean: () => q,
+    session: () => q,
     then: (onFulfilled, onRejected) =>
       Promise.resolve(result).then(onFulfilled, onRejected),
   };
@@ -442,7 +444,9 @@ describe('FlightCancellationService.cancel', () => {
       expect.objectContaining({
         type: NotificationType.BOOKING_CANCELLED,
         recipient: userId,
-        message: expect.stringContaining('272.40 USD (80%)') as unknown,
+        message: expect.stringContaining(
+          '272.40 USD (80%) has been requested',
+        ) as unknown,
       }),
     );
   });
