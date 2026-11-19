@@ -3,14 +3,25 @@ import {
   Delete,
   Get,
   NotImplementedException,
+  Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiCookieAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+} from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import { BlogService } from './blog.service';
+import { TagPostsResponseDto } from './dto/blog-post-response.dto';
+import { ListPostsByTagQueryDto } from './dto/list-posts-by-tag-query.dto';
 
 @ApiTags('Blog & Community')
 @Controller()
@@ -146,10 +157,17 @@ export class BlogController {
   @Public()
   @Get('tags/:tag/posts')
   @ApiOperation({ summary: 'BLG-08: List published blog posts by tag' })
-  getPostsByTag() {
-    throw new NotImplementedException(
-      'GET /api/tags/:tag/posts not implemented yet',
-    );
+  @ApiParam({ name: 'tag', description: 'Tag name or normalized slug' })
+  @ApiOkResponse({
+    description: 'Paginated published blog posts matching the tag',
+    type: TagPostsResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid tag or query parameters' })
+  getPostsByTag(
+    @Param('tag') tag: string,
+    @Query() query: ListPostsByTagQueryDto,
+  ): Promise<TagPostsResponseDto> {
+    return this.blogService.getPostsByTag(tag, query);
   }
 
   @Public()
