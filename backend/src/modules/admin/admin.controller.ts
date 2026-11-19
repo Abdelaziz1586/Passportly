@@ -3,13 +3,29 @@ import {
   Delete,
   Get,
   NotImplementedException,
+  Param,
   Patch,
   Post,
+  Req,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiConflictResponse,
+  ApiCookieAuth,
+  ApiForbiddenResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+} from '@nestjs/swagger';
+import type { Request } from 'express';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
+import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { AdminService } from './admin.service';
+import { ReactivateAccountResponseDto } from './dto/reactivate-account-response.dto';
 
 @ApiTags('Administration')
 @ApiCookieAuth()
@@ -56,10 +72,21 @@ export class AdminController {
 
   @Patch('accounts/:id/reactivate')
   @ApiOperation({ summary: 'ACC-15, ACC-16: Reactivate suspended account' })
-  reactivateAccount() {
-    throw new NotImplementedException(
-      'PATCH /api/admin/accounts/:id/reactivate not implemented yet',
-    );
+  @ApiParam({ name: 'id', type: String, description: 'Target account ID' })
+  @ApiOkResponse({
+    description: 'Account reactivated and lockout/suspension flags cleared',
+    type: ReactivateAccountResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid account ID' })
+  @ApiConflictResponse({ description: 'Account is already active' })
+  @ApiForbiddenResponse({ description: 'Admin role required' })
+  @ApiNotFoundResponse({ description: 'Account not found' })
+  reactivateAccount(
+    @Param('id') id: string,
+    @CurrentUser() admin: AuthenticatedUser,
+    @Req() req: Request,
+  ): Promise<ReactivateAccountResponseDto> {
+    return this.adminService.reactivateAccount(id, admin, req.ip);
   }
 
   @Patch('providers/:type/:id/deactivate')
