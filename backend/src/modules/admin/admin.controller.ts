@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
+  ApiBody,
   ApiConflictResponse,
   ApiCookieAuth,
   ApiForbiddenResponse,
@@ -69,6 +70,7 @@ export class AdminController {
     summary: 'ACC-15, ACC-16: Suspend user or moderator account',
   })
   @ApiParam({ name: 'id', type: String, description: 'Target account ID' })
+  @ApiBody({ type: SuspendAccountDto, required: false })
   @ApiOkResponse({
     description: 'Account suspended and active sessions revoked',
     type: AccountStatusChangeResponseDto,

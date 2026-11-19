@@ -38,7 +38,7 @@ export class AdminService {
    */
   async suspendAccount(
     accountId: string,
-    dto: SuspendAccountDto,
+    dto: SuspendAccountDto = {},
     admin: AuthenticatedUser,
     ipAddress?: string,
   ): Promise<AccountStatusChangeResponseDto> {
@@ -62,7 +62,7 @@ export class AdminService {
     }
 
     const suspendedAt = new Date();
-    const suspendedReason = dto.reason?.trim() || 'Suspended by administrator';
+    const suspendedReason = dto?.reason?.trim() || 'Suspended by administrator';
 
     const updated = await this.userModel
       .findByIdAndUpdate(
