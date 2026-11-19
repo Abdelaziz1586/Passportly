@@ -778,6 +778,160 @@ describe('Itinerary endpoints and persistence', () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
+  it('SCRUM-114: searches city transitions on the destination day in the origin airport timezone', async () => {
+    const country = await reference.countryModel
+      .findOne({ code: 'US' })
+      .orFail();
+    const [origin, destination] = await reference.cityModel.create([
+      { name: 'New York', country: country._id, countryCode: 'US' },
+      { name: 'Boston', country: country._id, countryCode: 'US' },
+    ]);
+    const itinerary = await create();
+    const id = String(itinerary._id);
+    await service.addDay(id, ownerId, { cityId: String(origin._id) });
+    await service.addDay(id, ownerId, { cityId: String(destination._id) });
+    const [departure, arrival] = await reference.airportModel.create([
+      {
+        name: 'JFK',
+        iataCode: 'JFK',
+        city: origin._id,
+        timezone: 'America/New_York',
+      },
+      {
+        name: 'BOS',
+        iataCode: 'BOS',
+        city: destination._id,
+        timezone: 'America/New_York',
+      },
+    ]);
+    const flights = service.flightsService;
+    const airline = await flights.airlineModel.create({
+      name: 'Test Airline',
+      iataCode: 'TA',
+    });
+    await flights.flightModel.create([
+      {
+        airline: airline._id,
+        flightNumber: 'TA101',
+        departureAirport: departure._id,
+        arrivalAirport: arrival._id,
+        departureTime: new Date('2027-06-17T02:00:00Z'),
+        arrivalTime: new Date('2027-06-17T03:00:00Z'),
+        durationMinutes: 60,
+      },
+      {
+        airline: airline._id,
+        flightNumber: 'TA102',
+        departureAirport: departure._id,
+        arrivalAirport: arrival._id,
+        departureTime: new Date('2027-06-16T02:00:00Z'),
+        arrivalTime: new Date('2027-06-16T03:00:00Z'),
+        durationMinutes: 60,
+      },
+    ]);
+    const result = await service.searchFlightsForItinerary(id, ownerId, {});
+    expect(result.routes[0].departureDate.toISOString().slice(0, 10)).toBe(
+      '2027-06-16',
+    );
+    expect(result.flights.map((flight) => flight.flightNumber)).toEqual([
+      'TA101',
+    ]);
+    await flights.airlineModel.updateOne(
+      { _id: airline._id },
+      { isActive: false },
+    );
+    expect(
+      (await service.searchFlightsForItinerary(id, ownerId, {})).flights,
+    ).toEqual([]);
+  });
+
+  it('HTTP routes: exercises itinerary, day, activity, budget, transport, public and contextual endpoints', async () => {
+    const send = (
+      method: 'get' | 'post' | 'patch' | 'delete',
+      url: string,
+      body?: object,
+      status = 200,
+    ) => {
+      const call = request(server())
+        [method](`/api/${url}`)
+        .set('x-test-user', ownerId);
+      return (body ? call.send(body) : call).expect(status);
+    };
+    await send(
+      'post',
+      'itineraries',
+      { title: 'HTTP trip', startDate: '2027-06-15' },
+      201,
+    );
+    const itinerary = await service.itineraryModel
+      .findOne({ title: 'HTTP trip' })
+      .orFail();
+    const base = `itineraries/${String(itinerary._id)}`;
+    await send('get', 'itineraries');
+    await send('get', base);
+    await send('patch', base, {
+      title: 'Updated HTTP trip',
+      visibility: ItineraryVisibility.PUBLIC,
+    });
+    await send('post', `${base}/days`, { title: 'Day 1' }, 201);
+    await send('post', `${base}/days`, { title: 'Day 2' }, 201);
+    const updated = await service.itineraryModel
+      .findById(itinerary._id)
+      .orFail();
+    const [firstDayId, secondDayId] = updated.days.map((day) =>
+      String(day._id),
+    );
+    await send('patch', `${base}/days/${firstDayId}`, { cityName: 'Paris' });
+    await send('patch', `${base}/days/reorder`, {
+      dayIds: [secondDayId, firstDayId],
+    });
+    await send(
+      'post',
+      `${base}/days/${firstDayId}/activities`,
+      { title: 'HTTP activity' },
+      201,
+    );
+    const activity = await service.activityModel
+      .findOne({ itinerary: itinerary._id })
+      .orFail();
+    await send('patch', `activities/${String(activity._id)}`, {
+      title: 'Updated activity',
+    });
+    await send('post', `${base}/days/${firstDayId}/budgets`, budget, 201);
+    const entry = await service.budgetEntryModel
+      .findOne({ itinerary: itinerary._id })
+      .orFail();
+    await send('patch', `budgets/${String(entry._id)}`, { amount: 25 });
+    await send(
+      'post',
+      `${base}/transport-costs`,
+      { amount: 5, currency: 'USD' },
+      201,
+    );
+    const transport = await service.transportCostModel
+      .findOne({ itinerary: itinerary._id })
+      .orFail();
+    await send('patch', `transport-costs/${String(transport._id)}`, {
+      amount: 10,
+    });
+    await send('get', `${base}/budget-summary`);
+    await request(server())
+      .get('/api/itineraries/public/search?search=HTTP&minDays=2')
+      .expect(200);
+    await request(server())
+      .get(`/api/itineraries/public/${String(itinerary._id)}`)
+      .expect(200);
+    await send('post', `${base}/clone`, undefined, 201);
+    await send('get', `${base}/hotels?startDay=1&endDay=2`);
+    await send('get', `${base}/flights?startDay=1&endDay=2`);
+    await send('delete', `activities/${String(activity._id)}`);
+    await send('delete', `budgets/${String(entry._id)}`);
+    await send('delete', `transport-costs/${String(transport._id)}`);
+    await send('delete', `${base}/days/${firstDayId}`);
+    await send('delete', base);
+    await send('get', base, undefined, 404);
+  });
+
   it('SCRUM-93: cascade-deletes activities, budgets and transport costs', async () => {
     const { itinerary, dayId } = await itineraryWithDay();
     const id = String(itinerary._id);

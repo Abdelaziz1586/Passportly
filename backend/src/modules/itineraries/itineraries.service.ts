@@ -25,6 +25,7 @@ import {
 } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import type { MediaItem } from '../../common/schemas/media-item.schema';
+import { FlightsService } from '../flights/flights.service';
 import { HotelsService } from '../hotels/hotels.service';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
 import { AttractionDocument } from '../reference-data/schemas/attraction.schema';
@@ -93,6 +94,7 @@ export class ItinerariesService {
     readonly httpService: HttpService,
     readonly configService: ConfigService,
     readonly referenceDataService: ReferenceDataService,
+    readonly flightsService: FlightsService,
     readonly hotelsService: HotelsService,
     readonly uploadsService: UploadsService,
   ) {}
@@ -918,6 +920,34 @@ export class ItinerariesService {
       })),
     );
     return { itineraryId: String(itinerary._id), cityIds, stays: suggestions };
+  }
+
+  async searchFlightsForItinerary(
+    id: string,
+    userId: string,
+    query: ItineraryContextSearchQueryDto,
+  ) {
+    const itinerary = await this.findOwnedItinerary(id, userId);
+    const days = this.selectDays(itinerary, query);
+    const routes = days.slice(0, -1).flatMap((day, index) => {
+      const nextDay = days[index + 1];
+      if (
+        !day.city ||
+        !nextDay?.city ||
+        String(day.city) === String(nextDay.city)
+      ) {
+        return [];
+      }
+      return [
+        {
+          departureCityId: String(day.city),
+          arrivalCityId: String(nextDay.city),
+          departureDate: nextDay.date,
+        },
+      ];
+    });
+    const flights = await this.flightsService.searchForCityRoutes(routes);
+    return { itineraryId: String(itinerary._id), routes, flights };
   }
 
   private async getItineraryDetails(

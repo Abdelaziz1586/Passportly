@@ -1,6 +1,7 @@
 import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { FlightsModule } from '../flights/flights.module';
 import { HotelsModule } from '../hotels/hotels.module';
 import { ReferenceDataModule } from '../reference-data/reference-data.module';
 import { UploadsModule } from '../uploads/uploads.module';
@@ -21,6 +22,7 @@ import {
 @Module({
   imports: [
     HttpModule,
+    FlightsModule,
     HotelsModule,
     ReferenceDataModule,
     UploadsModule,
