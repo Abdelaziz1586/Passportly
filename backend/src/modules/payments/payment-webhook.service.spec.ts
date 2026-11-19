@@ -77,6 +77,7 @@ function intentEvent(
   return {
     id: 'evt_1',
     type,
+    created: Math.floor(Date.now() / 1000),
     data: {
       object: {
         id: 'pi_123',
@@ -91,6 +92,7 @@ function intentEvent(
 function build() {
   const paymentModel = {
     findOne: jest.fn(),
+    findById: jest.fn(),
     findOneAndUpdate: jest.fn(),
     updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
   };
@@ -101,6 +103,12 @@ function build() {
   const hotelBookingModel = {
     findOne: jest.fn(),
     findOneAndUpdate: jest.fn(),
+  };
+  const refundModel = {
+    findOne: jest.fn(() => query<unknown>(null)),
+    create: jest.fn((doc: Record<string, unknown>) =>
+      Promise.resolve({ _id: new Types.ObjectId(), ...doc }),
+    ),
   };
   const cabinModel = {
     updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
@@ -121,8 +129,9 @@ function build() {
     ),
   };
   const paymentsService = {
-    stripe,
+    stripe: stripe as unknown,
     paymentModel,
+    refundModel,
     flightBookingModel,
     hotelBookingModel,
   };
@@ -137,6 +146,7 @@ function build() {
   return {
     service,
     paymentModel,
+    refundModel,
     flightBookingModel,
     hotelBookingModel,
     cabinModel,
@@ -356,29 +366,137 @@ describe('PaymentWebhookService payment_intent.succeeded', () => {
     expect(connection.transaction).not.toHaveBeenCalled();
   });
 
-  it('keeps the money but does not confirm a booking that already expired', async () => {
-    const {
-      service,
-      paymentModel,
-      flightBookingModel,
-      cabinModel,
-      notificationsService,
-    } = setupFlight();
-    flightBookingModel.findOne.mockReturnValue(query(null)); // not PENDING_PAYMENT any more
+  describe('payment after the booking could no longer be confirmed', () => {
+    function setupOrphan() {
+      const ctx = setupFlight();
+      ctx.flightBookingModel.findOne.mockReturnValue(query(null)); // expired meanwhile
+      const refunds = {
+        create: jest
+          .fn()
+          .mockResolvedValue({ id: 're_1', status: 'succeeded' }),
+      };
+      Object.assign(ctx.paymentsService, { stripe: { refunds } });
+      // what ensureOrphanRefund reads back after the transaction flagged the payment
+      ctx.paymentModel.findById.mockReturnValue(
+        query({
+          ...ctx.payment,
+          metadata: { needsRefund: true },
+        }),
+      );
+      return { ...ctx, refunds };
+    }
 
-    const result = await service.handleEvent(
-      intentEvent('payment_intent.succeeded'),
-    );
+    it('does not confirm, refunds in full through the Stripe Refunds API, records it and tells the user', async () => {
+      const {
+        service,
+        paymentModel,
+        flightBookingModel,
+        cabinModel,
+        notificationsService,
+        refundModel,
+        refunds,
+        payment,
+      } = setupOrphan();
 
-    expect(result.outcome).toBe('orphaned');
-    expect(flightBookingModel.findOneAndUpdate).not.toHaveBeenCalled();
-    expect(cabinModel.updateOne).not.toHaveBeenCalled();
-    expect(paymentModel.updateOne).toHaveBeenCalledWith(
-      expect.anything(),
-      { $set: { 'metadata.needsRefund': true } },
-      expect.anything(),
-    );
-    expect(notificationsService.createNotification).not.toHaveBeenCalled();
+      const result = await service.handleEvent(
+        intentEvent('payment_intent.succeeded'),
+      );
+
+      expect(result.outcome).toBe('orphaned');
+      expect(flightBookingModel.findOneAndUpdate).not.toHaveBeenCalled();
+      expect(cabinModel.updateOne).not.toHaveBeenCalled();
+      expect(paymentModel.updateOne).toHaveBeenCalledWith(
+        expect.anything(),
+        { $set: { 'metadata.needsRefund': true } },
+        expect.anything(),
+      );
+      expect(refunds.create).toHaveBeenCalledWith(
+        expect.objectContaining({ payment_intent: 'pi_123' }),
+        { idempotencyKey: `orphan-refund-${payment._id.toString()}` },
+      );
+      expect(refundModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          payment: payment._id,
+          user: userId,
+          amount: 250.5,
+          currency: 'USD',
+          stripeRefundId: 're_1',
+          status: 'SUCCEEDED',
+        }),
+      );
+      expect(notificationsService.createNotification).toHaveBeenCalledTimes(1);
+      expect(notificationsService.createNotification).toHaveBeenCalledWith(
+        expect.objectContaining({ type: NotificationType.REFUND_PROCESSED }),
+      );
+      // the refund is remembered on the payment so a retried event never refunds twice
+      expect(paymentModel.updateOne).toHaveBeenCalledWith(
+        { _id: payment._id },
+        { $set: { 'metadata.orphanRefundId': expect.any(String) as unknown } },
+      );
+    });
+
+    it('lets Stripe retry the event when the refund call fails', async () => {
+      const { service, refunds } = setupOrphan();
+      refunds.create.mockRejectedValue(new Error('stripe down'));
+
+      await expect(
+        service.handleEvent(intentEvent('payment_intent.succeeded')),
+      ).rejects.toThrow('stripe down');
+    });
+
+    it('a retried event finishes a refund that never completed, but never refunds twice', async () => {
+      const retry = setupOrphan();
+      retry.paymentModel.findOne.mockReturnValue(
+        query({ ...retry.payment, metadata: { needsRefund: true } }),
+      );
+      retry.paymentModel.findOneAndUpdate.mockResolvedValue(null); // already SUCCEEDED
+
+      const result = await retry.service.handleEvent(
+        intentEvent('payment_intent.succeeded'),
+      );
+      expect(result.outcome).toBe('duplicate');
+      expect(retry.refunds.create).toHaveBeenCalledTimes(1);
+
+      const done = setupOrphan();
+      done.paymentModel.findOne.mockReturnValue(
+        query({ ...done.payment, metadata: { needsRefund: true } }),
+      );
+      done.paymentModel.findOneAndUpdate.mockResolvedValue(null);
+      done.paymentModel.findById.mockReturnValue(
+        query({
+          ...done.payment,
+          metadata: { needsRefund: true, orphanRefundId: 'abc' },
+        }),
+      );
+      await done.service.handleEvent(intentEvent('payment_intent.succeeded'));
+      expect(done.refunds.create).not.toHaveBeenCalled();
+    });
+
+    it('records a pending Stripe refund as PENDING', async () => {
+      const { service, refunds, refundModel } = setupOrphan();
+      refunds.create.mockResolvedValue({ id: 're_2', status: 'pending' });
+
+      await service.handleEvent(intentEvent('payment_intent.succeeded'));
+
+      expect(refundModel.create).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'PENDING', processedAt: undefined }),
+      );
+    });
+  });
+
+  it('only confirms a booking whose hold had not ended when the payment completed', async () => {
+    const { service, flightBookingModel } = setupFlight();
+    const paidAtSeconds = 1_800_000_000;
+
+    await service.handleEvent({
+      ...intentEvent('payment_intent.succeeded'),
+      created: paidAtSeconds,
+    });
+
+    const [filter] = flightBookingModel.findOne.mock.calls[0] as [
+      { holdExpiresAt: { $gte: Date } },
+    ];
+    expect(filter.holdExpiresAt.$gte).toEqual(new Date(paidAtSeconds * 1000));
   });
 
   it('only confirms the booking that is linked to this payment', async () => {
@@ -534,6 +652,7 @@ describe('PaymentWebhookService other events', () => {
 
   it('canceled moves an open payment to CANCELLED and ignores a replay', async () => {
     const { service, paymentModel } = build();
+    paymentModel.findOne.mockReturnValue(query({ holdExpiresAt: undefined }));
 
     expect(
       (await service.handleEvent(intentEvent('payment_intent.canceled')))
@@ -549,6 +668,53 @@ describe('PaymentWebhookService other events', () => {
     paymentModel.updateOne.mockResolvedValue({ modifiedCount: 0 });
     expect(
       (await service.handleEvent(intentEvent('payment_intent.canceled')))
+        .outcome,
+    ).toBe('ignored');
+  });
+
+  it('canceled after the hold ended is EXPIRED (whoever cancelled first)', async () => {
+    const { service, paymentModel } = build();
+    paymentModel.findOne.mockReturnValue(
+      query({ holdExpiresAt: new Date(Date.now() - 5000) }),
+    );
+
+    await service.handleEvent(intentEvent('payment_intent.canceled'));
+
+    const [, update] = paymentModel.updateOne.mock.calls[0] as [
+      unknown,
+      { $set: { status: PaymentStatus } },
+    ];
+    expect(update.$set.status).toBe(PaymentStatus.EXPIRED);
+  });
+
+  it('canceled for an unknown intent is ignored', async () => {
+    const { service, paymentModel } = build();
+    paymentModel.findOne.mockReturnValue(query(null));
+
+    expect(
+      (await service.handleEvent(intentEvent('payment_intent.canceled')))
+        .outcome,
+    ).toBe('ignored');
+    expect(paymentModel.updateOne).not.toHaveBeenCalled();
+  });
+
+  it('processing moves a PENDING payment to PROCESSING and ignores a replay', async () => {
+    const { service, paymentModel } = build();
+
+    expect(
+      (await service.handleEvent(intentEvent('payment_intent.processing')))
+        .outcome,
+    ).toBe('processing');
+    const [filter, update] = paymentModel.updateOne.mock.calls[0] as [
+      { status: PaymentStatus },
+      { $set: { status: PaymentStatus } },
+    ];
+    expect(filter.status).toBe(PaymentStatus.PENDING);
+    expect(update.$set.status).toBe(PaymentStatus.PROCESSING);
+
+    paymentModel.updateOne.mockResolvedValue({ modifiedCount: 0 });
+    expect(
+      (await service.handleEvent(intentEvent('payment_intent.processing')))
         .outcome,
     ).toBe('ignored');
   });

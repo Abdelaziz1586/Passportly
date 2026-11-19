@@ -140,8 +140,8 @@ function build({
   const hotelBookingModel = bookingModel(hotelBookings);
   const created: { doc?: Record<string, unknown> } = {};
   const paymentModel = {
-    findOne: jest.fn(() => query(null)),
-    find: jest.fn(() => query([])),
+    findOne: jest.fn((): Chain<unknown> => query<unknown>(null)),
+    find: jest.fn((): Chain<unknown> => query<unknown>([])),
     create: jest.fn((doc: Record<string, unknown>) => {
       const saved = {
         _id: new Types.ObjectId(),
@@ -214,6 +214,7 @@ describe('PaymentsService.createPayment', () => {
         currency: 'USD',
         status: PaymentStatus.PENDING,
         policyAcceptedAt: booking.policyAcceptedAt,
+        holdExpiresAt: booking.holdExpiresAt,
       }),
     );
     expect(created.doc?.stripePaymentIntentId).toBe('pi_new');
@@ -684,71 +685,5 @@ describe('PaymentsService.getPayment', () => {
     await expect(
       service.getPayment(userId.toString(), Role.ADMIN, 'bad'),
     ).rejects.toBeInstanceOf(NotFoundException);
-  });
-});
-
-describe('PaymentsService.cancelIntentsOfLapsedHolds', () => {
-  it('cancels the intent of a lapsed hold and marks the payment EXPIRED', async () => {
-    const booking = makeBooking({ holdExpiresAt: new Date(Date.now() - 1000) });
-    const payment = makePayment(booking, { status: PaymentStatus.FAILED });
-    const { service, stripe, paymentModel } = build({
-      flightBookings: [booking],
-    });
-    paymentModel.find.mockReturnValue(query([payment]));
-
-    const expired = await service.cancelIntentsOfLapsedHolds();
-
-    expect(expired).toBe(1);
-    expect(stripe.paymentIntents.cancel).toHaveBeenCalledWith('pi_existing');
-    expect(paymentModel.updateOne).toHaveBeenCalledWith(expect.anything(), {
-      $set: { status: PaymentStatus.EXPIRED },
-    });
-  });
-
-  it('also handles a booking the expiry job already flipped to EXPIRED', async () => {
-    const booking = makeBooking({ status: BookingStatus.EXPIRED });
-    const payment = makePayment(booking);
-    const { service, stripe, paymentModel } = build({
-      flightBookings: [booking],
-    });
-    paymentModel.find.mockReturnValue(query([payment]));
-
-    expect(await service.cancelIntentsOfLapsedHolds()).toBe(1);
-    expect(stripe.paymentIntents.cancel).toHaveBeenCalledTimes(1);
-  });
-
-  it('leaves payments of running holds alone', async () => {
-    const booking = makeBooking();
-    const payment = makePayment(booking);
-    const { service, stripe, paymentModel } = build({
-      flightBookings: [booking],
-    });
-    paymentModel.find.mockReturnValue(query([payment]));
-
-    expect(await service.cancelIntentsOfLapsedHolds()).toBe(0);
-    expect(stripe.paymentIntents.cancel).not.toHaveBeenCalled();
-  });
-
-  it('leaves a payment Stripe already completed to the webhook', async () => {
-    const booking = makeBooking({ holdExpiresAt: new Date(Date.now() - 1000) });
-    const payment = makePayment(booking);
-    const { service, stripe, paymentModel } = build({
-      flightBookings: [booking],
-    });
-    paymentModel.find.mockReturnValue(query([payment]));
-    stripe.paymentIntents.cancel.mockRejectedValue(
-      new Error('already succeeded'),
-    );
-    stripe.paymentIntents.retrieve.mockResolvedValue({ status: 'succeeded' });
-
-    expect(await service.cancelIntentsOfLapsedHolds()).toBe(0);
-    expect(paymentModel.updateOne).not.toHaveBeenCalled();
-  });
-
-  it('does nothing without Stripe configured', async () => {
-    const { service, paymentModel } = build({ stripeEnabled: false });
-
-    expect(await service.cancelIntentsOfLapsedHolds()).toBe(0);
-    expect(paymentModel.find).not.toHaveBeenCalled();
   });
 });

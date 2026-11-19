@@ -52,6 +52,10 @@ export class Payment {
   @Prop({ type: Date, required: true })
   policyAcceptedAt: Date;
 
+  /** The booking's hold end (fixed at creation, never extended): when it passes, open payments expire. */
+  @Prop({ type: Date, index: true })
+  holdExpiresAt?: Date;
+
   @Prop({ type: Date })
   paidAt?: Date;
 
@@ -76,6 +80,9 @@ const LIVE_PAYMENT_FILTER = {
     ],
   },
 };
+// Plain lookups by booking (history, refunds); the unique indexes below only cover live payments.
+PaymentSchema.index({ flightBooking: 1 }, { name: 'flightBooking_lookup' });
+PaymentSchema.index({ hotelBooking: 1 }, { name: 'hotelBooking_lookup' });
 PaymentSchema.index(
   { flightBooking: 1 },
   {

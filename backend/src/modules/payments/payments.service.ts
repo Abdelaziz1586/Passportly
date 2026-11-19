@@ -8,7 +8,6 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
-import { Cron, CronExpression } from '@nestjs/schedule';
 import { isValidObjectId, Model, Types } from 'mongoose';
 import Stripe from 'stripe';
 import {
@@ -35,7 +34,6 @@ export const LIVE_PAYMENT_STATUSES: PaymentStatus[] = [
   ...OPEN_PAYMENT_STATUSES,
   PaymentStatus.SUCCEEDED,
 ];
-const EXPIRY_BATCH_SIZE = 100;
 const REUSABLE_INTENT_STATUSES: Stripe.PaymentIntent.Status[] = [
   'requires_payment_method',
   'requires_confirmation',
@@ -106,7 +104,6 @@ type PayableBookingModel = Model<
 @Injectable()
 export class PaymentsService {
   private readonly logger = new Logger(PaymentsService.name);
-  private expiryRunning = false;
   readonly stripe: Stripe | null;
 
   constructor(
@@ -168,6 +165,7 @@ export class PaymentsService {
         currency: booking.currency,
         status: PaymentStatus.PENDING,
         policyAcceptedAt: booking.policyAcceptedAt,
+        holdExpiresAt: booking.holdExpiresAt,
         metadata: { intentAttempts: 1 },
       });
     } catch (error) {
@@ -196,7 +194,7 @@ export class PaymentsService {
       { $set: { payment: payment._id } },
     );
     if (linked.matchedCount !== 1) {
-      await this.cancelIntentQuietly(stripe, intent.id);
+      await this.cancelIntent(stripe, intent.id);
       await this.paymentModel.updateOne(
         { _id: payment._id },
         { $set: { status: PaymentStatus.CANCELLED } },
@@ -296,79 +294,8 @@ export class PaymentsService {
     return this.toPaymentResponse(payment as unknown as StoredPayment);
   }
 
-  /**
-   * When a hold ends, its PaymentIntent is cancelled at Stripe (PAY-01) and the
-   * payment is marked EXPIRED. A payment Stripe already completed is left for
-   * the webhook.
-   */
-  @Cron(CronExpression.EVERY_MINUTE, { name: 'payment-intent-expiry' })
-  async cancelIntentsOfLapsedHolds(): Promise<number> {
-    if (!this.stripe || this.expiryRunning) return 0;
-    this.expiryRunning = true;
-    try {
-      const now = new Date();
-      const open = await this.paymentModel
-        .find({ status: { $in: OPEN_PAYMENT_STATUSES } })
-        .sort({ updatedAt: 1 })
-        .limit(EXPIRY_BATCH_SIZE)
-        .lean();
-      let expired = 0;
-      for (const payment of open) {
-        try {
-          if (await this.expireIfHoldLapsed(this.stripe, payment, now)) {
-            expired++;
-          }
-        } catch (error) {
-          this.logger.error(
-            `Failed to expire payment ${payment._id.toString()}`,
-            error instanceof Error ? error.stack : String(error),
-          );
-        }
-      }
-      if (expired > 0) this.logger.log(`Expired ${expired} payment(s)`);
-      return expired;
-    } finally {
-      this.expiryRunning = false;
-    }
-  }
-
-  private async expireIfHoldLapsed(
-    stripe: Stripe,
-    payment: Payment & { _id: Types.ObjectId },
-    now: Date,
-  ): Promise<boolean> {
-    const { bookingType, bookingId } = this.linkedBooking(payment);
-    const booking = await this.bookingModelFor(bookingType)
-      .findById(bookingId)
-      .select('status holdExpiresAt')
-      .lean();
-    const lapsed =
-      !booking ||
-      booking.status === BookingStatus.EXPIRED ||
-      (booking.status === BookingStatus.PENDING_PAYMENT &&
-        !!booking.holdExpiresAt &&
-        booking.holdExpiresAt <= now);
-    if (!lapsed) return false;
-
-    if (payment.stripePaymentIntentId) {
-      const cancelled = await this.cancelIntentQuietly(
-        stripe,
-        payment.stripePaymentIntentId,
-      );
-      if (!cancelled) return false; // already paid or processing: the webhook decides
-    }
-    const result = await this.paymentModel.updateOne(
-      { _id: payment._id, status: { $in: OPEN_PAYMENT_STATUSES } },
-      { $set: { status: PaymentStatus.EXPIRED } },
-    );
-    return result.modifiedCount === 1;
-  }
-
   /** Cancels an intent; false when Stripe says it can no longer be cancelled (paid or processing). */
-  private async cancelIntentQuietly(
-    stripe: Stripe,
-    intentId: string,
-  ): Promise<boolean> {
+  async cancelIntent(stripe: Stripe, intentId: string): Promise<boolean> {
     try {
       await stripe.paymentIntents.cancel(intentId);
       return true;

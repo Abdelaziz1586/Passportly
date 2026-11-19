@@ -13,6 +13,7 @@ import {
   BookingType,
   NotificationType,
   PaymentStatus,
+  RefundStatus,
 } from '../../common/enums';
 import { CabinInventory } from '../flights/schemas/cabin-inventory.schema';
 import { RoomAvailability } from '../hotels/schemas/room-availability.schema';
@@ -29,6 +30,7 @@ export type WebhookOutcome =
   | 'unknown_payment'
   | 'failed'
   | 'cancelled'
+  | 'processing'
   | 'refunded'
   | 'ignored';
 
@@ -98,7 +100,16 @@ export class PaymentWebhookService {
     let outcome: WebhookOutcome;
     switch (event.type) {
       case 'payment_intent.succeeded':
-        outcome = await this.onSucceeded(event.data.object);
+        outcome = await this.processSucceededIntent(
+          event.data.object,
+          // When Stripe says the payment completed, not when this request arrived.
+          typeof event.created === 'number'
+            ? new Date(event.created * 1000)
+            : new Date(),
+        );
+        break;
+      case 'payment_intent.processing':
+        outcome = await this.onProcessing(event.data.object);
         break;
       case 'payment_intent.payment_failed':
         outcome = await this.onFailed(event.data.object);
@@ -115,7 +126,13 @@ export class PaymentWebhookService {
     return { received: true, outcome };
   }
 
-  private async onSucceeded(intent: Stripe.PaymentIntent) {
+  /**
+   * A PaymentIntent succeeded. `paidAt` is when the payment completed: only a
+   * payment completed inside the booking hold confirms the booking, a later one
+   * is refunded in full. Also used by the expiry job to reconcile an intent whose
+   * webhook never arrived.
+   */
+  async processSucceededIntent(intent: Stripe.PaymentIntent, paidAt: Date) {
     const payment = await this.paymentsService.paymentModel
       .findOne({ stripePaymentIntentId: intent.id })
       .lean();
@@ -139,6 +156,8 @@ export class PaymentWebhookService {
           $set: {
             status: PaymentStatus.FAILED,
             failureReason: 'Paid amount or currency does not match the booking',
+            // Money was taken that the server did not ask for: flag it for a manual refund.
+            'metadata.needsRefund': true,
           },
         },
       );
@@ -146,13 +165,20 @@ export class PaymentWebhookService {
     }
 
     const result = await this.connection.transaction((session) =>
-      this.confirmPayment(payment._id, session),
+      this.confirmPayment(payment._id, paidAt, session),
     );
-    if (result === 'duplicate') return 'duplicate' as const;
+    if (result === 'duplicate') {
+      // A retried event: finish a refund that an earlier attempt could not complete.
+      if (payment.metadata?.needsRefund === true) {
+        await this.ensureOrphanRefund(payment._id, intent.id);
+      }
+      return 'duplicate' as const;
+    }
     if (result === 'orphaned') {
-      this.logger.error(
-        `Payment ${payment._id.toString()} succeeded but its booking can no longer be confirmed (expired or cancelled): refund needed`,
+      this.logger.warn(
+        `Payment ${payment._id.toString()} succeeded after its booking expired or was cancelled: refunding`,
       );
+      await this.ensureOrphanRefund(payment._id, intent.id);
       return 'orphaned' as const;
     }
     await this.notifyConfirmed(result, payment.amount, payment.currency);
@@ -167,12 +193,13 @@ export class PaymentWebhookService {
    */
   private async confirmPayment(
     paymentId: Types.ObjectId,
+    paidAt: Date,
     session: ClientSession,
   ): Promise<ConfirmedBooking | 'duplicate' | 'orphaned'> {
     const paid = await this.paymentsService.paymentModel.findOneAndUpdate(
       { _id: paymentId, status: { $in: OPEN_PAYMENT_STATUSES } },
       {
-        $set: { status: PaymentStatus.SUCCEEDED, paidAt: new Date() },
+        $set: { status: PaymentStatus.SUCCEEDED, paidAt },
         $unset: { failureReason: 1 },
       },
       { returnDocument: 'after', session },
@@ -181,8 +208,8 @@ export class PaymentWebhookService {
 
     const confirmed =
       paid.bookingType === BookingType.FLIGHT
-        ? await this.confirmFlight(paid, session)
-        : await this.confirmHotel(paid, session);
+        ? await this.confirmFlight(paid, paidAt, session)
+        : await this.confirmHotel(paid, paidAt, session);
     if (!confirmed) {
       await this.paymentsService.paymentModel.updateOne(
         { _id: paymentId },
@@ -196,6 +223,7 @@ export class PaymentWebhookService {
 
   private async confirmFlight(
     payment: PaymentDocument,
+    paidAt: Date,
     session: ClientSession,
   ): Promise<ConfirmedBooking | null> {
     const model = this.paymentsService.flightBookingModel;
@@ -204,6 +232,7 @@ export class PaymentWebhookService {
         _id: payment.flightBooking,
         status: BookingStatus.PENDING_PAYMENT,
         payment: payment._id,
+        holdExpiresAt: { $gte: paidAt },
       })
       .session(session);
     if (!booking) return null;
@@ -249,6 +278,7 @@ export class PaymentWebhookService {
 
   private async confirmHotel(
     payment: PaymentDocument,
+    paidAt: Date,
     session: ClientSession,
   ): Promise<ConfirmedBooking | null> {
     const model = this.paymentsService.hotelBookingModel;
@@ -257,6 +287,7 @@ export class PaymentWebhookService {
         _id: payment.hotelBooking,
         status: BookingStatus.PENDING_PAYMENT,
         payment: payment._id,
+        holdExpiresAt: { $gte: paidAt },
       })
       .session(session);
     if (!booking) return null;
@@ -330,17 +361,126 @@ export class PaymentWebhookService {
     return 'failed' as const;
   }
 
+  private async onProcessing(intent: Stripe.PaymentIntent) {
+    const result = await this.paymentsService.paymentModel.updateOne(
+      { stripePaymentIntentId: intent.id, status: PaymentStatus.PENDING },
+      { $set: { status: PaymentStatus.PROCESSING } },
+    );
+    return result.modifiedCount === 1
+      ? ('processing' as const)
+      : ('ignored' as const);
+  }
+
   private async onCanceled(intent: Stripe.PaymentIntent) {
+    const payment = await this.paymentsService.paymentModel
+      .findOne({ stripePaymentIntentId: intent.id })
+      .select('holdExpiresAt')
+      .lean();
+    if (!payment) return 'ignored' as const;
+    // An intent cancelled because its hold ended is EXPIRED, whichever of the
+    // expiry job and this event gets there first.
+    const holdEnded =
+      !!payment.holdExpiresAt && payment.holdExpiresAt.getTime() <= Date.now();
     const result = await this.paymentsService.paymentModel.updateOne(
       {
         stripePaymentIntentId: intent.id,
         status: { $in: OPEN_PAYMENT_STATUSES },
       },
-      { $set: { status: PaymentStatus.CANCELLED } },
+      {
+        $set: {
+          status: holdEnded ? PaymentStatus.EXPIRED : PaymentStatus.CANCELLED,
+        },
+      },
     );
     return result.modifiedCount === 1
       ? ('cancelled' as const)
       : ('ignored' as const);
+  }
+
+  /**
+   * A payment that completed after its booking could no longer be confirmed is
+   * refunded in full through the Stripe Refunds API, recorded as a Refund and
+   * the user is told. The idempotency key makes a webhook retry safe; if Stripe
+   * is unreachable the error propagates so Stripe retries the event.
+   */
+  private async ensureOrphanRefund(
+    paymentId: Types.ObjectId,
+    intentId: string,
+  ): Promise<void> {
+    const stripe = this.paymentsService.stripe;
+    if (!stripe) return;
+    const payment = await this.paymentsService.paymentModel
+      .findById(paymentId)
+      .lean();
+    if (
+      !payment ||
+      payment.metadata?.needsRefund !== true ||
+      payment.metadata?.orphanRefundId
+    ) {
+      return;
+    }
+
+    const refund = await stripe.refunds.create(
+      {
+        payment_intent: intentId,
+        metadata: {
+          paymentId: paymentId.toString(),
+          cause: 'payment_after_booking_expired',
+        },
+      },
+      { idempotencyKey: `orphan-refund-${paymentId.toString()}` },
+    );
+    const status =
+      refund.status === 'succeeded'
+        ? RefundStatus.SUCCEEDED
+        : refund.status === 'failed' || refund.status === 'canceled'
+          ? RefundStatus.FAILED
+          : RefundStatus.PENDING;
+    const bookingId =
+      payment.bookingType === BookingType.FLIGHT
+        ? payment.flightBooking
+        : payment.hotelBooking;
+    if (!bookingId) {
+      this.logger.error(
+        `Payment ${payment._id.toString()} has no booking to refund against`,
+      );
+      return;
+    }
+    const existing = await this.paymentsService.refundModel
+      .findOne({ stripeRefundId: refund.id })
+      .select('_id')
+      .lean();
+    const recordId: Types.ObjectId =
+      existing?._id ??
+      (
+        await this.paymentsService.refundModel.create({
+          payment: payment._id,
+          user: payment.user,
+          bookingType: payment.bookingType,
+          bookingId,
+          amount: payment.amount,
+          currency: payment.currency,
+          stripeRefundId: refund.id,
+          status,
+          reason: 'Payment received after the booking hold ended',
+          policyCalculationNotes:
+            'Full refund: the payment completed after the booking expired or was cancelled, so the booking was not confirmed.',
+          processedAt:
+            status === RefundStatus.SUCCEEDED ? new Date() : undefined,
+        })
+      )._id;
+    await this.paymentsService.paymentModel.updateOne(
+      { _id: payment._id },
+      { $set: { 'metadata.orphanRefundId': recordId.toString() } },
+    );
+    await this.notify(
+      payment.user,
+      NotificationType.REFUND_PROCESSED,
+      'Payment refunded',
+      `Your payment of ${payment.amount.toFixed(2)} ${payment.currency} arrived after the booking hold ended, so the booking was not confirmed. It is being refunded in full.`,
+      recordId,
+      'Refund',
+    );
   }
 
   private async onChargeRefunded(charge: Stripe.Charge) {

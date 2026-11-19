@@ -17,6 +17,7 @@ import {
   RoomAvailabilitySchema,
 } from '../hotels/schemas/room-availability.schema';
 import { BookingPoliciesService } from './booking-policies.service';
+import { PaymentExpiryService } from './payment-expiry.service';
 import { PaymentWebhookService } from './payment-webhook.service';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
@@ -35,7 +36,12 @@ import { Refund, RefundSchema } from './schemas/refund.schema';
     ]),
   ],
   controllers: [PaymentsController],
-  providers: [PaymentsService, PaymentWebhookService, BookingPoliciesService],
+  providers: [
+    PaymentsService,
+    PaymentWebhookService,
+    PaymentExpiryService,
+    BookingPoliciesService,
+  ],
   exports: [PaymentsService, BookingPoliciesService, MongooseModule],
 })
 export class PaymentsModule {}
