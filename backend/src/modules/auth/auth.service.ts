@@ -11,7 +11,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import * as bcrypt from 'bcryptjs';
 import { randomBytes, randomUUID } from 'crypto';
 import type { CookieOptions } from 'express';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { AccountStatus, Role } from '../../common/enums';
 import type { JwtPayload } from '../../common/interfaces/jwt-payload.interface';
 import { MailService } from '../mail/mail.service';
@@ -344,6 +344,22 @@ export class AuthService {
       cookieName,
       cookieOptions,
     };
+  }
+
+  /**
+   * Revokes all active sessions for the given user account.
+   */
+  async revokeUserSessions(userId: string | Types.ObjectId): Promise<number> {
+    const result = await this.sessionModel.updateMany(
+      {
+        user: new Types.ObjectId(userId),
+        revokedAt: null,
+      },
+      {
+        $set: { revokedAt: new Date() },
+      },
+    );
+    return result.modifiedCount ?? 0;
   }
 
   /**

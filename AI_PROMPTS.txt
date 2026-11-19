@@ -82,3 +82,17 @@ Details: Verify credentials, enforce failed-login lockout & AccountStatus.ACTIVE
 How the output was used:
 Implemented LoginDto, LoginResponseDto, AuthService.login (email normalization, bcrypt password check, 5-attempt / 15-minute failed-login lockout, AccountStatus.ACTIVE enforcement, UserSession creation with jti and JWT-aligned expiresAt, httpOnly cookie configuration), and AuthController.login wiring with @Public() and Swagger annotations. Added unit tests in auth.service.spec.ts and auth.controller.spec.ts and verified with npm run lint, npm run build, and npm test.
 ================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-07a (POST /api/admin/users/:id/reset-password, SCRUM-22)
+
+Prompt:
+Implement SCRUM-22 (POST /api/admin/users/:id/reset-password): Allow ADMIN to set a new temporary password for user :id, set mustChangePassword = true, revoke user sessions, create Notification & AuditLog.
+
+How the output was used:
+Added AuthService.revokeUserSessions helper, imported AuthModule into AdminModule, implemented AdminResetPasswordDto, AdminResetPasswordResponseDto, AdminService.resetUserPassword (bcrypt hashing, mustChangePassword = true, session revocation, in-app notification, ADMIN_PASSWORD_RESET audit log), and AdminController.resetUserPassword. Added unit tests in auth.service.spec.ts, admin.service.spec.ts, and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================

@@ -29,6 +29,7 @@ describe('AuthService (ACC-01 register, ACC-02 verify-email, ACC-04/05 login)', 
 
   const mockSessionModel = {
     create: jest.fn(),
+    updateMany: jest.fn(),
   };
 
   const mockJwtService = {
@@ -541,6 +542,26 @@ describe('AuthService (ACC-01 register, ACC-02 verify-email, ACC-04/05 login)', 
         }),
       ).rejects.toThrow(ForbiddenException);
       expect(mockSessionModel.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('revokeUserSessions', () => {
+    it('revokes all unrevoked sessions for a user and returns modified count', async () => {
+      mockSessionModel.updateMany.mockResolvedValue({ modifiedCount: 2 });
+
+      const count = await service.revokeUserSessions(
+        '507f1f77bcf86cd799439011',
+      );
+
+      expect(count).toBe(2);
+      expect(mockSessionModel.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ revokedAt: null }) as unknown,
+        expect.objectContaining({
+          $set: expect.objectContaining({
+            revokedAt: expect.any(Date) as unknown,
+          }) as unknown,
+        }),
+      );
     });
   });
 });
