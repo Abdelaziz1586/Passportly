@@ -21,6 +21,7 @@ parent lands. Each pull request shows only its own ticket delta.
 | SCRUM-101 | ITN-12 | Upload a validated activity image |
 | SCRUM-102 | ITN-12 | Remove an activity image |
 | SCRUM-103 | ITN-14 | Add a daily budget entry |
+| SCRUM-104 | ITN-14 | Update an owned budget entry |
 
 Each ticket is checked with `npm run lint`, `npm run build` and `npm test`.
 Database tests use an isolated local MongoDB replica set and never load application environment files.

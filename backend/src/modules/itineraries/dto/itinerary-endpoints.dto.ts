@@ -283,3 +283,38 @@ export class CreateBudgetEntryDto {
   @Matches(/^[A-Z]{3}$/)
   currency: string;
 }
+
+export class UpdateBudgetEntryDto {
+  @ApiPropertyOptional({ enum: BudgetCategory })
+  @IsOptional()
+  @IsEnum(BudgetCategory)
+  category?: BudgetCategory;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trimString)
+  @IsString()
+  @IsNotEmpty()
+  title?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trimString)
+  @IsString()
+  notes?: string;
+
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  amount?: number;
+
+  @ApiPropertyOptional({ example: 'EUR', minLength: 3, maxLength: 3 })
+  @IsOptional()
+  @Transform(normalizeCurrency)
+  @IsString()
+  @Length(3, 3)
+  @Matches(/^[A-Z]{3}$/)
+  currency?: string;
+}

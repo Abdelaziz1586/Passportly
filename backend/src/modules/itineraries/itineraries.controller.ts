@@ -33,6 +33,7 @@ import {
   ListItinerariesQueryDto,
   ReorderItineraryDaysDto,
   UpdateActivityDto,
+  UpdateBudgetEntryDto,
   UpdateItineraryDayDto,
   UpdateItineraryDto,
 } from './dto/itinerary-endpoints.dto';
@@ -265,10 +266,12 @@ export class ItinerariesController {
   @Roles(Role.REGISTERED_USER)
   @Patch('budgets/:id')
   @ApiOperation({ summary: 'ITN-14: Update budget entry' })
-  updateBudgetEntry() {
-    throw new NotImplementedException(
-      'PATCH /api/budgets/:id not implemented yet',
-    );
+  updateBudgetEntry(
+    @Param('id') id: string,
+    @Body() dto: UpdateBudgetEntryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.updateBudgetEntry(id, user.userId, dto);
   }
 
   @ApiCookieAuth()

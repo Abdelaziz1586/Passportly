@@ -29,6 +29,7 @@ import {
   ListItinerariesQueryDto,
   ReorderItineraryDaysDto,
   UpdateActivityDto,
+  UpdateBudgetEntryDto,
   UpdateItineraryDayDto,
   UpdateItineraryDto,
 } from './dto/itinerary-endpoints.dto';
@@ -427,6 +428,29 @@ export class ItinerariesService {
     });
   }
 
+  async updateBudgetEntry(
+    id: string,
+    userId: string,
+    dto: UpdateBudgetEntryDto,
+  ): Promise<BudgetEntryDocument> {
+    const entry = await this.findOwnedBudgetEntry(id, userId);
+    if (dto.category) entry.category = dto.category;
+    if (typeof dto.title === 'string') {
+      const title = dto.title.trim();
+      if (!title) throw new BadRequestException('title must not be empty');
+      entry.title = title;
+    }
+    if (typeof dto.notes === 'string')
+      entry.notes = dto.notes.trim() || undefined;
+    if (typeof dto.amount === 'number') entry.amount = dto.amount;
+    if (typeof dto.currency === 'string') {
+      const currency = dto.currency.trim().toUpperCase();
+      await this.assertSupportedCurrency(currency);
+      entry.currency = currency;
+    }
+    return entry.save();
+  }
+
   private async getItineraryDetails(
     itinerary: ItineraryDocument,
   ): Promise<Record<string, unknown>> {
@@ -499,6 +523,20 @@ export class ItinerariesService {
       throw new ForbiddenException('You do not own this activity');
     }
     return activity;
+  }
+
+  private async findOwnedBudgetEntry(
+    id: string,
+    userId: string,
+  ): Promise<BudgetEntryDocument> {
+    const entry = await this.budgetEntryModel
+      .findById(this.objectId(id, 'id'))
+      .exec();
+    if (!entry) throw new NotFoundException('Budget entry not found');
+    if (String(entry.user) !== userId) {
+      throw new ForbiddenException('You do not own this budget entry');
+    }
+    return entry;
   }
 
   private findDay(itinerary: ItineraryDocument, dayId: string) {
