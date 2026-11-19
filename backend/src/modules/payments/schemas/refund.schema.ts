@@ -57,13 +57,25 @@ export class Refund {
   /** How many times the Stripe call was tried. */
   @Prop({ type: Number, default: 0, min: 0 })
   attempts: number;
+
+  /**
+   * FLT-27: names the event that caused this refund (for example
+   * `change-<changeId>`), so asking for it twice returns the same refund. A
+   * payment may have several keyed refunds as long as their total stays within
+   * the payment. Refunds recorded without a key (cancellations, a payment that
+   * arrived after its hold) keep the old rule: at most one per payment.
+   */
+  @Prop({ type: String, trim: true })
+  key?: string;
 }
 
 export const RefundSchema = SchemaFactory.createForClass(Refund);
-// A payment is refunded at most once (a cancellation, or a payment that arrived after the hold).
+// One refund per (payment, key). Refunds without a key all index as key=null, so a payment still has
+// at most one of them (a cancellation, or a payment that arrived after the hold), exactly as before;
+// keyed refunds (FLT-27) are distinct per key. Their total is capped in RefundsService.
 RefundSchema.index(
-  { payment: 1 },
-  { name: 'payment_one_refund', unique: true },
+  { payment: 1, key: 1 },
+  { name: 'payment_refund_key', unique: true },
 );
 // Looking a refund up from its booking.
 RefundSchema.index(
