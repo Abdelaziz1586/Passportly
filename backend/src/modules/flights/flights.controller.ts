@@ -1,15 +1,20 @@
 import {
+  NotImplementedException,
+  Body,
   Controller,
   Get,
-  NotImplementedException,
+  Param,
   Patch,
   Post,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiCookieAuth, ApiTags } from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
+import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { FlightsService } from './flights.service';
+import { CabinCreate } from './add-flight-cabin.dto';
 
 @ApiTags('Flights')
 @Controller('flights')
@@ -67,11 +72,12 @@ export class FlightsController {
   @ApiCookieAuth()
   @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
   @Post(':id/cabins')
-  @ApiOperation({ summary: 'FLT-04: Add cabin inventory to a flight' })
-  addCabin() {
-    throw new NotImplementedException(
-      'POST /api/flights/:id/cabins not implemented yet',
-    );
+  addCabin(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: CabinCreate,
+  ) {
+    return this.flightsService.addCabin(id, user, input);
   }
 
   @ApiCookieAuth()
