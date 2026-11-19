@@ -192,3 +192,14 @@ Implement POST /api/hotel-bookings: one reservation for one or more rooms of the
 How the output was used:
 The generated service, DTOs, date helpers, controller wiring, schema fields and tests were integrated and checked with lint, build, unit tests, 60 live checks and a Swagger "Try it out" run.
 ================================================
+================================================
+Date: 2026-11-19
+Student: Abdulrahman Ahmed
+Branch: feature/SCRUM-79-HTL-20-list-get-hotel-bookings (stacked on feature/SCRUM-78-HTL-16-hotel-booking-hold)
+Tool: Claude Code (terminal, Claude Sonnet 5.5)
+Related Requirement: HTL-20 (GET /api/hotel-bookings, GET /api/hotel-bookings/:id), GEN-11, HTL-23 (Completed rule), PAY-03 (refund on the details)
+Prompt:
+Implement GET /api/hotel-bookings (the signed-in user's own reservations, paginated, filterable by status and by group Upcoming / Past / Cancelled, sortable, owner from the JWT) and GET /api/hotel-bookings/:id (owner, admin or the moderator of that hotel; details with rooms, guests, policies, payment summary and refund status; a moderator only sees the stay facts). Statuses are reported as they are now: a lapsed hold is Expired (and expired through the same code as the job when listing), a confirmed stay whose check-out date has passed is Completed. Then write unit tests and run live checks plus the Swagger page in a browser.
+How the output was used:
+The generated query DTO, status/group helpers, view service, response DTOs, controller wiring and tests were integrated and checked with lint, build, unit tests, 54 live checks and a Swagger "Try it out" run for the list and the details.
+================================================

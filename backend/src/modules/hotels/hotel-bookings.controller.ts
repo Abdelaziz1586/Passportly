@@ -4,8 +4,10 @@ import {
   Delete,
   Get,
   NotImplementedException,
+  Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -14,6 +16,7 @@ import {
   ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
+  ApiOkResponse,
   ApiOperation,
   ApiTags,
   ApiUnauthorizedResponse,
@@ -24,8 +27,19 @@ import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { CreateHotelBookingDto } from './dto/create-hotel-booking.dto';
 import { HotelBookingResponseDto } from './dto/hotel-booking-response.dto';
+import {
+  HotelBookingDetailsResponseDto,
+  HotelBookingListResponseDto,
+} from './dto/hotel-booking-view-response.dto';
+import { HotelBookingIdParamDto } from './dto/hotel-booking-id-param.dto';
+import { ListHotelBookingsQueryDto } from './dto/list-hotel-bookings-query.dto';
 import { HotelBookingsService } from './hotel-bookings.service';
 import type { HotelBookingResponse } from './hotel-bookings.service';
+import { HotelBookingViewService } from './hotel-booking-view.service';
+import type {
+  HotelBookingDetails,
+  HotelBookingListResponse,
+} from './hotel-booking-view';
 import { HotelsService } from './hotels.service';
 
 @ApiTags('Hotel Bookings & Reviews')
@@ -35,6 +49,7 @@ export class HotelBookingsController {
   constructor(
     private readonly hotelsService: HotelsService,
     private readonly hotelBookingsService: HotelBookingsService,
+    private readonly hotelBookingViewService: HotelBookingViewService,
   ) {}
 
   @Roles(Role.REGISTERED_USER)
@@ -69,20 +84,53 @@ export class HotelBookingsController {
 
   @Roles(Role.REGISTERED_USER, Role.ADMIN)
   @Get('hotel-bookings')
-  @ApiOperation({ summary: 'HTL-20: List current user hotel bookings' })
-  listBookings() {
-    throw new NotImplementedException(
-      'GET /api/hotel-bookings not implemented yet',
-    );
+  @ApiOperation({
+    summary: 'HTL-20: List current user hotel bookings',
+    description:
+      "Paginated list of the signed-in user's own reservations (admins also see only their own), with reference, hotel, rooms, dates, guests, total and status. `group` shows Upcoming (awaiting payment or confirmed, stay not over), Past (completed or expired) or Cancelled; `status` filters by one or more statuses (repeat or comma-separate); both narrow each other. Sort by createdAt, checkInDate or totalPrice. Statuses are as they are now: a hold that ran out is EXPIRED, a confirmed stay whose check-out date passed is COMPLETED.",
+  })
+  @ApiOkResponse({
+    description: 'One page of reservations and the pagination meta',
+    type: HotelBookingListResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description:
+      'Invalid page, limit (1-50), status, group, sortBy or sortOrder, or an unknown query parameter',
+  })
+  @ApiUnauthorizedResponse({ description: 'Not signed in' })
+  @ApiForbiddenResponse({
+    description: 'Only registered users and admins may list reservations',
+  })
+  listBookings(
+    @Query() query: ListHotelBookingsQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<HotelBookingListResponse> {
+    return this.hotelBookingViewService.listBookings(user.userId, query);
   }
 
   @Roles(Role.REGISTERED_USER, Role.ADMIN, Role.HOTEL_MODERATOR)
   @Get('hotel-bookings/:id')
-  @ApiOperation({ summary: 'HTL-20: Get hotel booking details' })
-  getBooking() {
-    throw new NotImplementedException(
-      'GET /api/hotel-bookings/:id not implemented yet',
-    );
+  @ApiOperation({
+    summary: 'HTL-20: Get hotel booking details',
+    description:
+      "Full details of one reservation: hotel, every room with its guests and price, dates, guest contact, the policies captured at booking time, status and timestamps, a payment summary and the refund with its status. Readable by the reservation's owner, an admin, or the moderator of that hotel; for anyone else the reservation looks like it does not exist. A hotel moderator gets the stay facts (guest name, rooms, dates, status) but no contact details, prices, payment, policies or refund.",
+  })
+  @ApiOkResponse({
+    description: 'The reservation',
+    type: HotelBookingDetailsResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid id' })
+  @ApiUnauthorizedResponse({ description: 'Not signed in' })
+  @ApiForbiddenResponse({
+    description:
+      'Only registered users, admins and hotel moderators may call this',
+  })
+  @ApiNotFoundResponse({ description: 'Reservation not found or not yours' })
+  getBooking(
+    @Param() params: HotelBookingIdParamDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<HotelBookingDetails> {
+    return this.hotelBookingViewService.getBooking(user, params.id);
   }
 
   @Roles(Role.REGISTERED_USER)
