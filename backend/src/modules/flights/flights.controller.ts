@@ -1,15 +1,17 @@
 import {
+  NotImplementedException,
   Controller,
   Get,
-  NotImplementedException,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiCookieAuth, ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import { FlightsService } from './flights.service';
+import { FlightSearch } from './flight-search.dto';
 
 @ApiTags('Flights')
 @Controller('flights')
@@ -18,13 +20,8 @@ export class FlightsController {
 
   @Public()
   @Get('search')
-  @ApiOperation({
-    summary: 'FLT-11, FLT-12, FLT-15: Search one-way & round-trip flights',
-  })
-  searchFlights() {
-    throw new NotImplementedException(
-      'GET /api/flights/search not implemented yet',
-    );
+  searchFlights(@Query() query: FlightSearch) {
+    return this.flightsService.searchFlights(query);
   }
 
   @ApiCookieAuth()
