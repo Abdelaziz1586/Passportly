@@ -1,12 +1,25 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { ClientSession, Connection, Model, Types } from 'mongoose';
-import { BookingStatus } from '../../common/enums';
-import { HotelPaginationDto } from './dto/hotel.dto';
+import { BookingStatus, Role } from '../../common/enums';
+import { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
+import { CreateReviewDto, HotelPaginationDto } from './dto/hotel.dto';
 import { HotelAccessService } from './hotel-access.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
-import { paged, pagination, todayUtc } from './hotel-utils';
+import {
+  isDuplicateKey,
+  objectId,
+  paged,
+  pagination,
+  todayUtc,
+} from './hotel-utils';
 import {
   HotelBooking,
   HotelBookingDocument,
@@ -81,6 +94,97 @@ export class HotelReviewsService {
         : 0;
     }
     return result;
+  }
+
+  private async lockHotel(
+    hotelId: Types.ObjectId,
+    session: ClientSession,
+  ): Promise<void> {
+    // Acquire the hotel write lock BEFORE reading reviews; transaction retries see all committed changes.
+    const hotel = await this.hotels.updateOne(
+      { _id: hotelId },
+      { $inc: { reviewRevision: 1 } },
+      { session },
+    );
+    if (!hotel.matchedCount) throw new NotFoundException('Hotel not found');
+  }
+
+  /** Call inside the same transaction as a visibility or review mutation. */
+  async recalculateRating(
+    hotelId: Types.ObjectId,
+    session: ClientSession,
+  ): Promise<void> {
+    const summary = (await this.summaries([hotelId], session)).get(
+      hotelId.toString(),
+    )!;
+    await this.hotels.updateOne(
+      { _id: hotelId },
+      {
+        $set: {
+          averageRating: summary.averageRating,
+          reviewCount: summary.reviewCount,
+        },
+      },
+      { session },
+    );
+  }
+
+  async createReview(
+    bookingId: string,
+    dto: CreateReviewDto,
+    user: AuthenticatedUser,
+  ) {
+    const id = objectId(bookingId, 'bookingId');
+    if (user.role !== Role.REGISTERED_USER)
+      throw new ForbiddenException('Only travelers can review their own stays');
+    try {
+      return await this.connection.transaction(async (session) => {
+        const booking = await this.bookings
+          .findById(id)
+          .session(session)
+          .lean();
+        if (!booking) throw new NotFoundException('Booking not found');
+        if (booking.user.toString() !== user.userId)
+          throw new ForbiddenException('You can review only your own booking');
+        if (
+          ![BookingStatus.CONFIRMED, BookingStatus.COMPLETED].includes(
+            booking.status,
+          ) ||
+          booking.checkOutDate > todayUtc()
+        ) {
+          throw new BadRequestException(
+            'Reviews require a completed, paid stay after check-out',
+          );
+        }
+        await this.lockHotel(booking.hotel, session);
+        if (await this.reviews.exists({ booking: id }).session(session))
+          throw new ConflictException('This booking already has a review');
+        if (booking.status === BookingStatus.CONFIRMED)
+          await this.bookings.updateOne(
+            { _id: id, status: BookingStatus.CONFIRMED },
+            { $set: { status: BookingStatus.COMPLETED } },
+            { session },
+          );
+        const [review] = await this.reviews.create(
+          [
+            {
+              ...dto,
+              comment: dto.comment ?? '',
+              hotel: booking.hotel,
+              booking: id,
+              user: objectId(user.userId, 'userId'),
+            },
+          ],
+          { session },
+        );
+        await this.recalculateRating(booking.hotel, session);
+        return review;
+      });
+    } catch (error) {
+      if (isDuplicateKey(error))
+        throw new ConflictException('This booking already has a review');
+      throw error;
+    }
   }
 
   async list(hotelId: string, query: HotelPaginationDto) {
