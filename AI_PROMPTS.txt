@@ -104,3 +104,14 @@ Implement POST /api/flight-bookings: passenger details (name, date of birth, pas
 How the output was used:
 The generated code and tests were integrated, then run (lint, build, unit tests, live and concurrency tests on a throw-away database). Rules that had been assumed were replaced with the ones from the official requirements sheet.
 ================================================
+================================================
+Date: 2026-11-19
+Student: Abdulrahman Ahmed
+Branch: feature/SCRUM-72-FLT-25-list-flight-bookings (stacked on feature/SCRUM-71-FLT-19-create-flight-booking)
+Tool: Claude Code (terminal, Claude Sonnet 5.5)
+Related Requirement: FLT-25 (GET /api/flight-bookings)
+Prompt:
+Implement GET /api/flight-bookings: list only the current user's flight bookings (owner from the JWT, never the query) with page/limit, status filter (single or several GEN-11 statuses), a whitelisted sort, and a { data, meta } response. A past-due PENDING_PAYMENT hold must not be listed as pending, reusing the FLT-22 expiry. Then write unit tests and run live checks against a throw-away database with two users, and report anything that blocks testing.
+How the output was used:
+The generated DTOs, service method, controller wiring, schema indexes and tests were integrated and checked with lint, build, unit tests and a live run on a throw-away database (65 live checks). The live run hit the known JwtStrategy 401 (session user stored as ObjectId, queried as a string); that was not changed here and was reported instead, and the live checks used a scratch copy of the build with that one lookup cast.
+================================================
