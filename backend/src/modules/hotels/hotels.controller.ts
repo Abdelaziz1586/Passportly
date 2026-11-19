@@ -133,10 +133,7 @@ export class HotelsController {
   @Get(':id/rooms/available')
   @ApiOperation({ summary: 'HTL-15: List available rooms for stay dates' })
   getAvailableRooms(@Param('id') id: string, @Query() query: StayQueryDto) {
-    void [id, query];
-    throw new NotImplementedException(
-      'Implemented by the subsequent SCRUM-59 PR in this stack',
-    );
+    return this.inventory.getAvailableRooms(id, query);
   }
 
   @ApiCookieAuth()
