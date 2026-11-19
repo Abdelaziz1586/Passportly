@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Airport, AirportDocument } from './schemas/airport.schema';
 import { Attraction, AttractionDocument } from './schemas/attraction.schema';
 import { City, CityDocument } from './schemas/city.schema';
@@ -15,6 +15,34 @@ export class ReferenceDataService {
     @InjectModel(Attraction.name)
     readonly attractionModel: Model<AttractionDocument>,
   ) {}
+
+  async hotelLocation(cityId: string, countryId?: string) {
+    const city = await this.cityModel.findById(cityId).lean();
+    if (!city)
+      throw new BadRequestException(
+        'City must exist in the seeded reference data',
+      );
+    if (countryId && !city.country.equals(new Types.ObjectId(countryId))) {
+      throw new BadRequestException('Country does not match the selected city');
+    }
+    const country = await this.countryModel.findById(city.country).lean();
+    if (!country)
+      throw new BadRequestException('City has no valid seeded country');
+    return {
+      city: city._id,
+      cityName: city.name,
+      country: country._id,
+      countryCode: country.code,
+    };
+  }
+
+  async countryIdsMatching(pattern: RegExp) {
+    const countries = await this.countryModel
+      .find({ $or: [{ name: pattern }, { code: pattern }] })
+      .select('_id')
+      .lean();
+    return countries.map((country) => country._id);
+  }
 
   /**
    * Validates a 3-letter ISO currency code against seeded Country records.
