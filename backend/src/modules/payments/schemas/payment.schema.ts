@@ -80,9 +80,8 @@ const LIVE_PAYMENT_FILTER = {
     ],
   },
 };
-// Plain lookups by booking (history, refunds); the unique indexes below only cover live payments.
-PaymentSchema.index({ flightBooking: 1 }, { name: 'flightBooking_lookup' });
-PaymentSchema.index({ hotelBooking: 1 }, { name: 'hotelBooking_lookup' });
+// No plain {flightBooking}/{hotelBooking} index here: a shared database that ran the old schema already has
+// flightBooking_1 / hotelBooking_1, and a second plain index on the same key with another name is rejected.
 PaymentSchema.index(
   { flightBooking: 1 },
   {
