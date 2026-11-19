@@ -82,3 +82,17 @@ Details: Verify credentials, enforce failed-login lockout & AccountStatus.ACTIVE
 How the output was used:
 Implemented LoginDto, LoginResponseDto, AuthService.login (email normalization, bcrypt password check, 5-attempt / 15-minute failed-login lockout, AccountStatus.ACTIVE enforcement, UserSession creation with jti and JWT-aligned expiresAt, httpOnly cookie configuration), and AuthController.login wiring with @Public() and Swagger annotations. Added unit tests in auth.service.spec.ts and auth.controller.spec.ts and verified with npm run lint, npm run build, and npm test.
 ================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: GEN-11 (GET /api/notifications, SCRUM-35)
+
+Prompt:
+Implement SCRUM-35 (GET /api/notifications): Return paginated Notification records for CurrentUser with optional unread-only filter and unread count, supporting all authenticated roles.
+
+How the output was used:
+Implemented ListNotificationsQueryDto, NotificationItemDto, PaginatedNotificationsResponseDto, NotificationsService.listMyNotifications, and NotificationsController.listMine with Swagger annotations, strict unreadOnly boolean transformation, and unit tests in notifications.service.spec.ts and notifications.controller.spec.ts. Verified with npm run lint, npm test, and tsc check.
+================================================
