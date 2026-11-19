@@ -115,3 +115,14 @@ Implement GET /api/flight-bookings: list only the current user's flight bookings
 How the output was used:
 The generated DTOs, service method, controller wiring, schema indexes and tests were integrated and checked with lint, build, unit tests and a live run on a throw-away database (65 live checks). The live run hit the known JwtStrategy 401 (session user stored as ObjectId, queried as a string); that was not changed here and was reported instead, and the live checks used a scratch copy of the build with that one lookup cast.
 ================================================
+================================================
+Date: 2026-11-19
+Student: Abdulrahman Ahmed
+Branch: feature/SCRUM-82-PAY-02-booking-policies (stacked on feature/SCRUM-72-FLT-25-list-flight-bookings)
+Tool: Claude Code (terminal, Claude Sonnet 5.5)
+Related Requirement: PAY-02 (GET /api/bookings/:type/:id/policies, POST /api/bookings/:type/:id/accept-policies), FLT-09 (tiers in the policy snapshot)
+Prompt:
+Implement PAY-02: show the provider policies of a flight or hotel booking before payment (airline baggage and cancellation tiers, hotel check-in/check-out times and cancellation tiers) and record policy acceptance with a server timestamp and the accepting user, only for the owner, only while the PENDING_PAYMENT hold is running. Copy the refund tiers into the flight policy snapshot so later refunds use the booking-time policy. Then write unit tests and run live checks on a throw-away database plus the Swagger page in a browser.
+How the output was used:
+The generated service, DTOs, controller wiring, hotel snapshot helper and tests were integrated and checked with lint, build, unit tests, 52 live checks and a Swagger "Try it out" run. A live/unit check found that the global implicit conversion turned the strings "no" and "false" into true for the acceptance checkbox, so the DTO now keeps the raw value and only a real boolean true is accepted.
+================================================
