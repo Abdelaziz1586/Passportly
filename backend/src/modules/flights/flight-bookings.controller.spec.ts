@@ -8,6 +8,7 @@ import { ListFlightBookingsQueryDto } from './dto/list-flight-bookings-query.dto
 import { FlightBookingsController } from './flight-bookings.controller';
 import { ETicketFormat, ETicketQueryDto } from './dto/e-ticket-query.dto';
 import { FlightBookingIdParamDto } from './dto/flight-booking-id-param.dto';
+import { FlightBookingViewService } from './flight-booking-view.service';
 import { FlightETicketService } from './flight-e-ticket.service';
 import {
   FlightBookingListResponse,
@@ -25,6 +26,7 @@ describe('FlightBookingsController.listBookings', () => {
   const controller = new FlightBookingsController(
     { listBookings } as unknown as FlightBookingsService,
     {} as FlightETicketService,
+    {} as FlightBookingViewService,
   );
 
   const user: AuthenticatedUser = {
@@ -86,6 +88,7 @@ describe('FlightBookingsController.getETicket (FLT-23)', () => {
   const controller = new FlightBookingsController(
     {} as FlightBookingsService,
     { getETicket, toPdf } as unknown as FlightETicketService,
+    {} as FlightBookingViewService,
   );
   const user: AuthenticatedUser = {
     userId: '665f1c2e8a1b2c3d4e5f6a7b',
@@ -139,6 +142,42 @@ describe('FlightBookingsController.getETicket (FLT-23)', () => {
     );
     expect(Reflect.getMetadata(PATH_METADATA, handlers.getETicket)).toBe(
       ':id/e-ticket',
+    );
+  });
+});
+
+describe('FlightBookingsController.getBooking (FLT-25 details)', () => {
+  const getBooking = jest.fn();
+  const controller = new FlightBookingsController(
+    {} as FlightBookingsService,
+    {} as FlightETicketService,
+    { getBooking } as unknown as FlightBookingViewService,
+  );
+  const user: AuthenticatedUser = {
+    userId: '665f1c2e8a1b2c3d4e5f6a7b',
+    email: 'a@example.com',
+    role: Role.REGISTERED_USER,
+    jti: 'jti',
+  };
+
+  afterEach(() => jest.clearAllMocks());
+
+  it('reads the booking for the JWT user, never an owner from the request', async () => {
+    getBooking.mockResolvedValue({ id: 'b1' });
+    const params = Object.assign(new FlightBookingIdParamDto(), {
+      id: '665f1c2e8a1b2c3d4e5f6a7c',
+    });
+
+    const result = await controller.getBooking(params, user);
+
+    expect(getBooking).toHaveBeenCalledWith(user, params.id);
+    expect(result).toEqual({ id: 'b1' });
+  });
+
+  it('is open to the owner, admins and airline moderators only', () => {
+    const roles = Reflect.getMetadata(ROLES_KEY, handlers.getBooking) as Role[];
+    expect([...roles].sort()).toEqual(
+      [Role.ADMIN, Role.AIRLINE_MODERATOR, Role.REGISTERED_USER].sort(),
     );
   });
 });
