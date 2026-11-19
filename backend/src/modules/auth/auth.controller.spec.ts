@@ -1,16 +1,29 @@
 import { BadRequestException, ValidationPipe } from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
+import { ConfigService } from '@nestjs/config';
+import { APP_GUARD, Reflector } from '@nestjs/core';
+import { JwtService } from '@nestjs/jwt';
+import { getModelToken } from '@nestjs/mongoose';
 import { Test, TestingModule } from '@nestjs/testing';
 import type { Request, Response } from 'express';
+import request from 'supertest';
+import type { App } from 'supertest/types';
 import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
 import { AccountStatus, Role } from '../../common/enums';
+import { AllExceptionsFilter } from '../../common/filters/http-exception.filter';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { MailService } from '../mail/mail.service';
+import { ReferenceDataService } from '../reference-data/reference-data.service';
+import { User } from '../users/schemas/user.schema';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { VerifyEmailQueryDto } from './dto/verify-email-query.dto';
+import { UserSession } from './schemas/user-session.schema';
 
-describe('AuthController (ACC-01 register, ACC-02 verify-email, ACC-04/05 login)', () => {
+describe('AuthController (ACC-01 register, ACC-02 verify-email, ACC-04/05 login, ACC-07 forgot-password)', () => {
   let controller: AuthController;
   const validationPipe = new ValidationPipe({
     whitelist: true,
@@ -25,6 +38,7 @@ describe('AuthController (ACC-01 register, ACC-02 verify-email, ACC-04/05 login)
     register: jest.fn(),
     verifyEmail: jest.fn(),
     login: jest.fn(),
+    forgotPassword: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -246,6 +260,187 @@ describe('AuthController (ACC-01 register, ACC-02 verify-email, ACC-04/05 login)
           { type: 'body', metatype: LoginDto },
         ),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('forgotPassword', () => {
+    it('marks forgotPassword endpoint as @Public()', () => {
+      const reflector = new Reflector();
+      const handler = Object.getOwnPropertyDescriptor(
+        AuthController.prototype,
+        'forgotPassword',
+      )?.value as (...args: never[]) => unknown;
+      const isPublic = reflector.get<boolean>(IS_PUBLIC_KEY, handler);
+      expect(isPublic).toBe(true);
+    });
+
+    it('delegates normalized ForgotPasswordDto to AuthService.forgotPassword', async () => {
+      const expected = {
+        message:
+          'If an active account exists with that email, a password reset link has been sent.',
+      };
+      mockAuthService.forgotPassword.mockResolvedValue(expected);
+
+      const dto = (await validationPipe.transform(
+        { email: '  Traveler@Example.com ' },
+        { type: 'body', metatype: ForgotPasswordDto },
+      )) as ForgotPasswordDto;
+
+      const result = await controller.forgotPassword(dto);
+      expect(dto.email).toBe('traveler@example.com');
+      expect(mockAuthService.forgotPassword).toHaveBeenCalledWith(dto);
+      expect(result).toEqual(expected);
+    });
+
+    it('rejects invalid email and unknown properties on ForgotPasswordDto', async () => {
+      await expect(
+        validationPipe.transform(
+          { email: 'not-an-email' },
+          { type: 'body', metatype: ForgotPasswordDto },
+        ),
+      ).rejects.toThrow(BadRequestException);
+
+      await expect(
+        validationPipe.transform(
+          { email: 'traveler@example.com', role: 'ADMIN' },
+          { type: 'body', metatype: ForgotPasswordDto },
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('HTTP integration (ACC-07 forgot-password)', () => {
+    it('returns identical 200 response for active, unknown, and suspended accounts without leaking tokens or existence', async () => {
+      const fakeUsers = new Map<
+        string,
+        {
+          _id: string;
+          email: string;
+          firstName: string;
+          status: AccountStatus;
+          passwordResetToken?: string;
+          passwordResetExpiresAt?: Date;
+        }
+      >([
+        [
+          'active@example.com',
+          {
+            _id: '507f1f77bcf86cd799439011',
+            email: 'active@example.com',
+            firstName: 'Active',
+            status: AccountStatus.ACTIVE,
+          },
+        ],
+        [
+          'suspended@example.com',
+          {
+            _id: '507f1f77bcf86cd799439012',
+            email: 'suspended@example.com',
+            firstName: 'Suspended',
+            status: AccountStatus.SUSPENDED,
+          },
+        ],
+      ]);
+
+      const fakeUserModel = {
+        findOne: jest.fn(({ email }: { email: string }) => ({
+          select: jest.fn().mockResolvedValue(fakeUsers.get(email) ?? null),
+        })),
+        findByIdAndUpdate: jest.fn(
+          (
+            id: string,
+            update: {
+              $set: {
+                passwordResetToken: string;
+                passwordResetExpiresAt: Date;
+              };
+            },
+          ) => {
+            for (const user of fakeUsers.values()) {
+              if (user._id === id) {
+                user.passwordResetToken = update.$set.passwordResetToken;
+                user.passwordResetExpiresAt =
+                  update.$set.passwordResetExpiresAt;
+              }
+            }
+            return Promise.resolve({ _id: id });
+          },
+        ),
+      };
+
+      const sendPasswordResetEmail = jest.fn().mockResolvedValue(true);
+
+      const moduleRef = await Test.createTestingModule({
+        controllers: [AuthController],
+        providers: [
+          AuthService,
+          { provide: getModelToken(User.name), useValue: fakeUserModel },
+          { provide: getModelToken(UserSession.name), useValue: {} },
+          { provide: JwtService, useValue: {} },
+          {
+            provide: ConfigService,
+            useValue: { get: jest.fn((_k: string, d?: unknown) => d) },
+          },
+          {
+            provide: ReferenceDataService,
+            useValue: { isCurrencySupported: jest.fn() },
+          },
+          {
+            provide: MailService,
+            useValue: {
+              sendVerificationEmail: jest.fn(),
+              sendPasswordResetEmail,
+            },
+          },
+          { provide: APP_GUARD, useClass: JwtAuthGuard },
+          { provide: APP_GUARD, useClass: RolesGuard },
+        ],
+      }).compile();
+
+      const app = moduleRef.createNestApplication();
+      app.setGlobalPrefix('api');
+      app.useGlobalPipes(
+        new ValidationPipe({
+          whitelist: true,
+          forbidNonWhitelisted: true,
+          transform: true,
+          transformOptions: { enableImplicitConversion: true },
+        }),
+      );
+      app.useGlobalFilters(new AllExceptionsFilter());
+      await app.init();
+
+      try {
+        const resActive = await request(app.getHttpServer() as App)
+          .post('/api/auth/forgot-password')
+          .send({ email: 'ACTIVE@Example.com' })
+          .expect(200);
+        const resUnknown = await request(app.getHttpServer() as App)
+          .post('/api/auth/forgot-password')
+          .send({ email: 'missing@example.com' })
+          .expect(200);
+        const resSuspended = await request(app.getHttpServer() as App)
+          .post('/api/auth/forgot-password')
+          .send({ email: 'suspended@example.com' })
+          .expect(200);
+
+        expect(resActive.body).toEqual(resUnknown.body);
+        expect(resActive.body).toEqual(resSuspended.body);
+        expect(
+          fakeUsers.get('active@example.com')?.passwordResetToken,
+        ).toHaveLength(64);
+        expect(
+          fakeUsers.get('suspended@example.com')?.passwordResetToken,
+        ).toBeUndefined();
+        expect(sendPasswordResetEmail).toHaveBeenCalledTimes(1);
+
+        await request(app.getHttpServer() as App)
+          .post('/api/auth/forgot-password')
+          .send({ email: 'bad-email' })
+          .expect(400);
+      } finally {
+        await app.close();
+      }
     });
   });
 });

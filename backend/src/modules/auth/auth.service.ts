@@ -17,6 +17,8 @@ import type { JwtPayload } from '../../common/interfaces/jwt-payload.interface';
 import { MailService } from '../mail/mail.service';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
 import { User, UserDocument } from '../users/schemas/user.schema';
+import { ForgotPasswordResponseDto } from './dto/forgot-password-response.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -89,6 +91,9 @@ export class AuthService {
   private static readonly BCRYPT_SALT_ROUNDS = 12;
   private static readonly MAX_FAILED_LOGIN_ATTEMPTS = 5;
   private static readonly LOCKOUT_DURATION_MS = 15 * 60 * 1000;
+  private static readonly PASSWORD_RESET_TTL_MINUTES = 15;
+  private static readonly PASSWORD_RESET_TTL_MS =
+    AuthService.PASSWORD_RESET_TTL_MINUTES * 60 * 1000;
 
   constructor(
     @InjectModel(User.name) readonly userModel: Model<UserDocument>,
@@ -343,6 +348,45 @@ export class AuthService {
       accessToken,
       cookieName,
       cookieOptions,
+    };
+  }
+
+  /**
+   * Generates a short-lived passwordResetToken and passwordResetExpiresAt for
+   * active accounts without leaking whether an account exists.
+   */
+  async forgotPassword(
+    dto: ForgotPasswordDto,
+  ): Promise<ForgotPasswordResponseDto> {
+    const email = dto.email.trim().toLowerCase();
+    const user = await this.userModel
+      .findOne({ email })
+      .select('email firstName status');
+
+    if (user && user.status === AccountStatus.ACTIVE) {
+      const passwordResetToken = randomBytes(32).toString('hex');
+      const passwordResetExpiresAt = new Date(
+        Date.now() + AuthService.PASSWORD_RESET_TTL_MS,
+      );
+
+      await this.userModel.findByIdAndUpdate(user._id, {
+        $set: {
+          passwordResetToken,
+          passwordResetExpiresAt,
+        },
+      });
+
+      await this.mailService.sendPasswordResetEmail({
+        to: user.email,
+        firstName: user.firstName,
+        token: passwordResetToken,
+        expiresInMinutes: AuthService.PASSWORD_RESET_TTL_MINUTES,
+      });
+    }
+
+    return {
+      message:
+        'If an active account exists with that email, a password reset link has been sent.',
     };
   }
 
