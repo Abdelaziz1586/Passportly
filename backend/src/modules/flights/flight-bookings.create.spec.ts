@@ -940,6 +940,7 @@ describe('FlightBookingsService.createBooking', () => {
       });
       expect(leg.cancellationPolicy).toEqual({
         allowCancellation: true,
+        tiers: [],
         freeCancellationHoursBeforeDeparture: 24,
         cancellationFeePercentage: 20,
         fixedCancellationFee: 5,

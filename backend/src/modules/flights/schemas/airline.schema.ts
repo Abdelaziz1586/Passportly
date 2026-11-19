@@ -45,6 +45,14 @@ export class AirlineCancellationPolicy {
   @Prop({ default: true })
   allowCancellation: boolean;
 
+  @Prop({
+    type: [
+      { _id: false, daysBeforeDeparture: Number, refundPercentage: Number },
+    ],
+    default: undefined,
+  })
+  tiers?: { daysBeforeDeparture: number; refundPercentage: number }[];
+
   @Prop({ type: Number, default: 24, min: 0 })
   freeCancellationHoursBeforeDeparture: number;
 
