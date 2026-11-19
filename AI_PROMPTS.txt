@@ -31,3 +31,17 @@ Finish the base required so we can directly work on the endpoints and their func
 How the output was used:
 Used the generated structure and code to initialize the repository layout (backend/, frontend/, docs/, .env.example, .gitignore, README.md), scaffold the NestJS backend with global /api prefix, Swagger UI (/api/docs), ValidationPipe, exception filter, httpOnly cookie JWT/RBAC guards, database seed script, and Mongoose schemas and controller skeletons across all domain modules (auth, users, admin, reference-data, flights, hotels, payments, itineraries, blog, notifications, reports, audit-logs, uploads). Verified with npm run lint, npm run build, and npm test.
 ================================================
+
+================================================
+Date: 2026-11-18
+Student: Abdelrahman Ahmed
+Tool: Claude (Claude Code / Claude Sonnet 5.5)
+Related Requirement: FLT-22
+
+Prompt:
+[Attached: Software Project I Winter 2026 Project Description PDF and the repository]
+Implement FLT-22 (POST /api/flight-bookings/hold): use an atomic MongoDB update/transaction on CabinInventory (availableSeats >= seatsRequired) to decrement availableSeats and increment heldSeats, set holdExpiresAt and create a HELD FlightBooking, and add an @Cron expiry job that releases expired holds.
+
+How the output was used:
+Reviewed and used the generated HoldSeatsDto, FlightBookingsService (transactional conditional seat decrement across all legs, HELD booking creation, idempotent hold-expiry cron with BOOKING_HOLD_EXPIRED notifications) and controller wiring, plus a Jest suite covering overselling, round trips and expiry. Verified with npm run lint, npm run build and npm test.
+================================================
