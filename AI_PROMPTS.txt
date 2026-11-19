@@ -82,3 +82,17 @@ Details: Verify credentials, enforce failed-login lockout & AccountStatus.ACTIVE
 How the output was used:
 Implemented LoginDto, LoginResponseDto, AuthService.login (email normalization, bcrypt password check, 5-attempt / 15-minute failed-login lockout, AccountStatus.ACTIVE enforcement, UserSession creation with jti and JWT-aligned expiresAt, httpOnly cookie configuration), and AuthController.login wiring with @Public() and Swagger annotations. Added unit tests in auth.service.spec.ts and auth.controller.spec.ts and verified with npm run lint, npm run build, and npm test.
 ================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-15 (PATCH /api/admin/providers/:type/:id/reactivate, SCRUM-28)
+
+Prompt:
+Implement SCRUM-28 (PATCH /api/admin/providers/:type/:id/reactivate): Set isActive = true on Airline or Hotel (:type = airline|hotel), send in-app Notification to assigned moderator, and write AuditLog.
+
+How the output was used:
+Implemented ReactivateProviderResponseDto, AdminService.reactivateProvider (validating provider type/ID, restoring isActive=true and clearing deactivation fields, notifying assigned moderators via PROVIDER_REACTIVATED, and logging PROVIDER_REACTIVATED audit entry), and AdminController.reactivateProvider. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================

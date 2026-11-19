@@ -3,13 +3,29 @@ import {
   Delete,
   Get,
   NotImplementedException,
+  Param,
   Patch,
   Post,
+  Req,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiConflictResponse,
+  ApiCookieAuth,
+  ApiForbiddenResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+} from '@nestjs/swagger';
+import type { Request } from 'express';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { Role } from '../../common/enums';
+import { ProviderType, Role } from '../../common/enums';
+import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { AdminService } from './admin.service';
+import { ReactivateProviderResponseDto } from './dto/reactivate-provider-response.dto';
 
 @ApiTags('Administration')
 @ApiCookieAuth()
@@ -74,10 +90,29 @@ export class AdminController {
 
   @Patch('providers/:type/:id/reactivate')
   @ApiOperation({ summary: 'ACC-15: Reactivate airline or hotel provider' })
-  reactivateProvider() {
-    throw new NotImplementedException(
-      'PATCH /api/admin/providers/:type/:id/reactivate not implemented yet',
-    );
+  @ApiParam({
+    name: 'type',
+    enum: ProviderType,
+    description: 'Provider type (airline or hotel)',
+  })
+  @ApiParam({ name: 'id', type: String, description: 'Provider ID' })
+  @ApiOkResponse({
+    description: 'Provider reactivated and assigned moderator notified',
+    type: ReactivateProviderResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid provider type or provider ID',
+  })
+  @ApiConflictResponse({ description: 'Provider is already active' })
+  @ApiForbiddenResponse({ description: 'Admin role required' })
+  @ApiNotFoundResponse({ description: 'Provider not found' })
+  reactivateProvider(
+    @Param('type') type: string,
+    @Param('id') id: string,
+    @CurrentUser() admin: AuthenticatedUser,
+    @Req() req: Request,
+  ): Promise<ReactivateProviderResponseDto> {
+    return this.adminService.reactivateProvider(type, id, admin, req.ip);
   }
 
   @Get('bookings')
