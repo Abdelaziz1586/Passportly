@@ -65,6 +65,7 @@ interface UpdateArgs {
     user: Types.ObjectId;
     status: BookingStatus;
     holdExpiresAt: { $gt: Date };
+    'passengers.0': { $exists: boolean };
   };
   update: { $set: Record<string, unknown> };
 }
@@ -160,7 +161,7 @@ describe('FlightBookingsService.createBooking', () => {
       _id: new Types.ObjectId(),
       user: userId,
       bookingReference: 'ABCD2345',
-      status: BookingStatus.HELD,
+      status: BookingStatus.PENDING_PAYMENT,
       tripType: TripType.ONE_WAY,
       holdExpiresAt: new Date(Date.now() + 10 * MINUTE),
       legs: [
@@ -287,6 +288,7 @@ describe('FlightBookingsService.createBooking', () => {
           !store._id.equals(filter._id) ||
           !store.user.equals(filter.user) ||
           store.status !== filter.status ||
+          store.passengers.length > 0 ||
           !(store.holdExpiresAt.getTime() > filter.holdExpiresAt.$gt.getTime())
         ) {
           return Promise.resolve(null);
@@ -697,6 +699,23 @@ describe('FlightBookingsService.createBooking', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
+    it('detects a second submit by the passengers already being there, not by the status', async () => {
+      seedOneWay({ passengers: [{ firstName: 'Layla' }] });
+      expect(store!.status).toBe(BookingStatus.PENDING_PAYMENT);
+
+      await expect(submit(twoAdults())).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(bookingModel.findOneAndUpdate).not.toHaveBeenCalled();
+
+      // even if the pre-check were skipped, the atomic update refuses it too
+      bookingModel.findOne.mockResolvedValueOnce({ ...store, passengers: [] });
+      await expect(submit(twoAdults())).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(store!.passengers).toHaveLength(1);
+    });
+
     it('returns 409 once the hold has expired, even if the cron has not run yet', async () => {
       seedOneWay({ holdExpiresAt: new Date(Date.now() - 1000) });
       await expect(submit(twoAdults())).rejects.toBeInstanceOf(
@@ -706,11 +725,11 @@ describe('FlightBookingsService.createBooking', () => {
     });
 
     it.each([
+      BookingStatus.HELD, // legacy status, no longer part of the lifecycle
       BookingStatus.EXPIRED,
       BookingStatus.CANCELLED,
       BookingStatus.CONFIRMED,
       BookingStatus.COMPLETED,
-      BookingStatus.PENDING_PAYMENT,
     ])('returns 409 for a %s booking', async (status) => {
       seedOneWay({ status });
       await expect(submit(twoAdults())).rejects.toBeInstanceOf(
@@ -758,15 +777,24 @@ describe('FlightBookingsService.createBooking', () => {
   });
 
   describe('the atomic update and the snapshot', () => {
-    it('is one conditional update on owner + HELD + unexpired hold', async () => {
+    it('is one conditional update on owner + PENDING_PAYMENT + unexpired hold + no passengers yet', async () => {
       await submit(twoAdults([1, 0]));
 
       expect(bookingModel.findOneAndUpdate).toHaveBeenCalledTimes(1);
-      const { filter, update } = lastUpdate();
-      expect(filter.status).toBe(BookingStatus.HELD);
+      const { filter } = lastUpdate();
+      expect(filter.status).toBe(BookingStatus.PENDING_PAYMENT);
       expect(filter.user.equals(userId)).toBe(true);
       expect(filter.holdExpiresAt.$gt).toBeInstanceOf(Date);
-      expect(update.$set.status).toBe(BookingStatus.PENDING_PAYMENT);
+      expect(filter['passengers.0']).toEqual({ $exists: false });
+    });
+
+    it('fills in the details without touching the status', async () => {
+      const result = await submit(twoAdults([1, 0]));
+
+      expect(lastUpdate().update.$set).not.toHaveProperty('status');
+      expect(result.status).toBe(BookingStatus.PENDING_PAYMENT);
+      expect(store!.status).toBe(BookingStatus.PENDING_PAYMENT);
+      expect(store!.passengers).toHaveLength(2);
     });
 
     it('never confirms, never extends the hold, never issues tickets or seats', async () => {

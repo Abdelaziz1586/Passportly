@@ -133,7 +133,8 @@ export class PassengerDetailsDto {
 
 export class CreateFlightBookingDto {
   @ApiProperty({
-    description: 'The HELD booking returned by POST /flight-bookings/hold',
+    description:
+      'The PENDING_PAYMENT booking returned by POST /flight-bookings/hold',
     example: '665f1c2e8a1b2c3d4e5f6a7b',
   })
   @IsMongoId()

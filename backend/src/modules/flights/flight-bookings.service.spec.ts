@@ -139,7 +139,7 @@ describe('FlightBookingsService', () => {
   });
 
   describe('holdSeats', () => {
-    it('holds seats atomically and creates a HELD booking', async () => {
+    it('holds seats atomically and creates a PENDING_PAYMENT booking', async () => {
       const dto = holdDto({ adults: 1, children: 1, infants: 1 });
       const before = Date.now();
 
@@ -156,7 +156,12 @@ describe('FlightBookingsService', () => {
       expect(filter.availableSeats).toEqual({ $gte: 2 });
       expect(update.$inc).toEqual({ availableSeats: -2, heldSeats: 2 });
 
-      expect(result.status).toBe(BookingStatus.HELD);
+      expect(result.status).toBe(BookingStatus.PENDING_PAYMENT);
+      const [[[created]]] = bookingModel.create.mock.calls as [
+        [[{ status: BookingStatus; passengers: unknown[] }]],
+      ];
+      expect(created.status).toBe(BookingStatus.PENDING_PAYMENT); // never HELD (GEN-11)
+      expect(created.passengers).toEqual([]);
       expect(result.passengerCounts.totalSeatsRequired).toBe(2);
       expect(result.baseFareTotal).toBe(170); // 100 + 60 + 10% of 100
       expect(result.bookingReference).toMatch(/^[A-Z2-9]{8}$/);

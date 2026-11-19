@@ -154,7 +154,7 @@ export class FlightBookingsService {
   /**
    * FLT-22: temporarily reserve seats on every leg of a trip.
    *
-   * All legs and the HELD booking are written in one transaction, and each
+   * All legs and the PENDING_PAYMENT booking are written in one transaction, and each
    * seat decrement is a conditional update (availableSeats >= seatsRequired),
    * so concurrent requests can never oversell a cabin.
    */
@@ -189,13 +189,14 @@ export class FlightBookingsService {
   }
 
   /**
-   * FLT-19, FLT-21: attach passenger and baggage details to a HELD booking,
-   * price the extras, snapshot the airline policies and move the booking to
-   * PENDING_PAYMENT (never CONFIRMED: only a verified payment may do that).
+   * FLT-19, FLT-21: attach passenger and baggage details to the PENDING_PAYMENT
+   * booking created by the hold and price the extras. Its status does not change
+   * (GEN-11: Pending Payment -> Confirmed only after a verified payment), and
+   * holdExpiresAt is left untouched.
    *
-   * The state change is one conditional update (owner + HELD + hold not yet
-   * expired), so it cannot race with the expiry cron or a double submit.
-   * holdExpiresAt is deliberately left untouched.
+   * The write is one conditional update (owner + PENDING_PAYMENT + hold not yet
+   * expired + no passengers yet), so it cannot race with the expiry cron, and a
+   * double submit is detected by the passengers already being there.
    */
   async createBooking(
     userId: string,
@@ -243,8 +244,9 @@ export class FlightBookingsService {
       {
         _id: bookingId,
         user: owner,
-        status: BookingStatus.HELD,
+        status: BookingStatus.PENDING_PAYMENT,
         holdExpiresAt: { $gt: now },
+        'passengers.0': { $exists: false },
       },
       {
         $set: {
@@ -256,7 +258,6 @@ export class FlightBookingsService {
           taxesAndFees: taxesCents / 100,
           totalPrice,
           policySnapshot: snapshot,
-          status: BookingStatus.PENDING_PAYMENT,
         },
       },
       { returnDocument: 'after' },
@@ -271,14 +272,14 @@ export class FlightBookingsService {
   }
 
   private assertAwaitingDetails(booking: FlightBookingDocument, now: Date) {
-    if (booking.status === BookingStatus.PENDING_PAYMENT) {
-      throw new ConflictException(
-        'Passenger details were already submitted for this booking',
-      );
-    }
-    if (booking.status !== BookingStatus.HELD) {
+    if (booking.status !== BookingStatus.PENDING_PAYMENT) {
       throw new ConflictException(
         `A ${booking.status} booking cannot receive passenger details`,
+      );
+    }
+    if (booking.passengers.length > 0) {
+      throw new ConflictException(
+        'Passenger details were already submitted for this booking',
       );
     }
     if (
@@ -562,7 +563,7 @@ export class FlightBookingsService {
           taxesAndFees: 0,
           totalPrice: baseFareTotal,
           currency,
-          status: BookingStatus.HELD,
+          status: BookingStatus.PENDING_PAYMENT,
           holdExpiresAt: new Date(now.getTime() + holdMinutes * 60_000),
         },
       ],
