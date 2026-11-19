@@ -152,3 +152,17 @@ The user supplied the Passportly repository, project-description PDF and Jira sc
 How the output was used:
 Validate unique room names, bed counts, occupancy, positive nightly prices and unit capacity; reject cross-hotel moderator access. Reviewed the implementation against the ticket and workbook; branch lint, build, unit/integration and health e2e checks are recorded in its PR. No team Atlas credentials or .env files were read. Changes outside these assigned hotel tickets retain team ownership.
 ================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Ahmed
+Tool: OpenAI Codex
+Related Requirement: SCRUM-57; HTL-05
+
+Prompt:
+"finish all of those tickets and make sure everything is perfectly done and push the branches on github then open a pr for each one of them to the develop branch"
+The user supplied the Passportly repository, project-description PDF and Jira screenshots. The linked official workbook was read for acceptance details.
+
+How the output was used:
+Enforce hotel and room ownership, preserve booking prices, protect allocated unit counts and reject unsafe deactivation. Reviewed the implementation against the ticket and workbook; branch lint, build, unit/integration and health e2e checks are recorded in its PR. No team Atlas credentials or .env files were read. Changes outside these assigned hotel tickets retain team ownership.
+================================================
