@@ -1,16 +1,21 @@
 import {
+  NotImplementedException,
+  Body,
   Controller,
   Get,
-  NotImplementedException,
+  Param,
   Patch,
   Post,
   Put,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiCookieAuth, ApiTags } from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
+import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { FlightsService } from './flights.service';
+import { CancellationPolicy } from './airline-cancellation-policy.dto';
 
 @ApiTags('Airlines')
 @Controller('airlines')
@@ -57,10 +62,11 @@ export class AirlinesController {
   @ApiCookieAuth()
   @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
   @Put(':id/cancellation-policy')
-  @ApiOperation({ summary: 'FLT-09: Set airline cancellation policy' })
-  updateCancellationPolicy() {
-    throw new NotImplementedException(
-      'PUT /api/airlines/:id/cancellation-policy not implemented yet',
-    );
+  updateCancellationPolicy(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: CancellationPolicy,
+  ) {
+    return this.flightsService.updateCancellation(id, user, input);
   }
 }
