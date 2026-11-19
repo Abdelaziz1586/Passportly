@@ -17,20 +17,10 @@ export class Payment {
   })
   bookingType: BookingType;
 
-  @Prop({
-    type: Types.ObjectId,
-    ref: 'FlightBooking',
-    default: null,
-    index: true,
-  })
+  @Prop({ type: Types.ObjectId, ref: 'FlightBooking', default: null })
   flightBooking?: Types.ObjectId | null;
 
-  @Prop({
-    type: Types.ObjectId,
-    ref: 'HotelBooking',
-    default: null,
-    index: true,
-  })
+  @Prop({ type: Types.ObjectId, ref: 'HotelBooking', default: null })
   hotelBooking?: Types.ObjectId | null;
 
   @Prop({ required: true, min: 0 })
@@ -70,3 +60,42 @@ export class Payment {
 }
 
 export const PaymentSchema = SchemaFactory.createForClass(Payment);
+
+/**
+ * PAY-01: a booking has at most one payment in progress or paid (the fields above
+ * must not also say `index: true`, or Mongoose drops this definition as a duplicate). Failed,
+ * cancelled and expired payments do not count, so a new attempt is possible.
+ */
+const LIVE_PAYMENT_FILTER = {
+  status: {
+    $in: [
+      PaymentStatus.PENDING,
+      PaymentStatus.PROCESSING,
+      PaymentStatus.FAILED,
+      PaymentStatus.SUCCEEDED,
+    ],
+  },
+};
+PaymentSchema.index(
+  { flightBooking: 1 },
+  {
+    // Own name: an older plain flightBooking_1 index may already exist in a shared database.
+    name: 'flightBooking_one_live_payment',
+    unique: true,
+    partialFilterExpression: {
+      flightBooking: { $type: 'objectId' },
+      ...LIVE_PAYMENT_FILTER,
+    },
+  },
+);
+PaymentSchema.index(
+  { hotelBooking: 1 },
+  {
+    name: 'hotelBooking_one_live_payment',
+    unique: true,
+    partialFilterExpression: {
+      hotelBooking: { $type: 'objectId' },
+      ...LIVE_PAYMENT_FILTER,
+    },
+  },
+);
