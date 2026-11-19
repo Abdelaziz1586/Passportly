@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { isValidObjectId, Model, Types } from 'mongoose';
 import { Role } from '../../common/enums';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import {
@@ -102,6 +102,9 @@ export class AdminService {
 
     const filter: Record<string, unknown> = {};
     if (query.actor) {
+      if (!isValidObjectId(query.actor)) {
+        throw new BadRequestException('Invalid actor ID');
+      }
       filter.actor = new Types.ObjectId(query.actor);
     }
     if (query.action && query.action.trim().length > 0) {
