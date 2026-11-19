@@ -5,11 +5,23 @@ import {
   NotImplementedException,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiCookieAuth,
+  ApiForbiddenResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import { AdminService } from './admin.service';
+import {
+  ListAccountsQueryDto,
+  PaginatedAccountsResponseDto,
+} from './dto/list-accounts-query.dto';
 
 @ApiTags('Administration')
 @ApiCookieAuth()
@@ -38,10 +50,17 @@ export class AdminController {
 
   @Get('accounts')
   @ApiOperation({ summary: 'ACC-14: List and filter platform accounts' })
-  listAccounts() {
-    throw new NotImplementedException(
-      'GET /api/admin/accounts not implemented yet',
-    );
+  @ApiOkResponse({
+    description:
+      'Paginated platform accounts with moderator provider assignment metadata',
+    type: PaginatedAccountsResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid filter or pagination query' })
+  @ApiForbiddenResponse({ description: 'Admin role required' })
+  listAccounts(
+    @Query() query: ListAccountsQueryDto,
+  ): Promise<PaginatedAccountsResponseDto> {
+    return this.adminService.listAccounts(query);
   }
 
   @Patch('accounts/:id/suspend')
