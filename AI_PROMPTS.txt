@@ -137,3 +137,14 @@ Implement PAY-01 with Stripe in test mode: create a PaymentIntent for a PENDING_
 How the output was used:
 The generated services, DTOs, controller wiring, schema indexes and tests were integrated and checked with lint, build, unit tests, 97 live checks and a Swagger "Try it out" run. The live run found that the unique partial indexes ("one live payment per booking") were silently dropped by Mongoose because the same fields also had index: true; this was fixed and the live run now asserts the indexes exist and that five concurrent payment requests create exactly one payment. A separate review then found that a payment completing after the hold ended kept the customer's money; the webhook now refunds it in full through the Stripe Refunds API, only a payment completed inside the hold confirms a booking, and the expiry job runs per payment hold and reconciles paid intents whose webhook never arrived.
 ================================================
+================================================
+Date: 2026-11-19
+Student: Abdulrahman Ahmed
+Branch: feature/SCRUM-76-FLT-23-flight-e-ticket (stacked on feature/SCRUM-84-PAY-01-stripe-payments)
+Tool: Claude Code (terminal, Claude Sonnet 5.5)
+Related Requirement: FLT-23 (GET /api/flight-bookings/:id/e-ticket), GEN-06
+Prompt:
+Implement GET /api/flight-bookings/:id/e-ticket for a CONFIRMED booking: the booking reference (PNR), each passenger's e-ticket number, every flight with departure and arrival in UTC and in the airport's own IANA time zone, masked passport numbers, and a downloadable PDF with ?format=pdf. Readable by the owner, admins and the moderator of the operating airline only; everyone else gets 404. Then write unit tests and run live checks (real hold, Stripe test payment and signed webhook, then the ticket) plus the Swagger page in a browser.
+How the output was used:
+The generated service, shared booking access helper, dependency-free PDF builder, DTOs, controller wiring and tests were integrated and checked with lint, build, unit tests, 27 live checks, a PDFKit open of the generated file and a Swagger "Try it out" run for both formats.
+================================================
