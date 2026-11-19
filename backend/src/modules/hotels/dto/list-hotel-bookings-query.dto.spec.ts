@@ -31,6 +31,10 @@ describe('ListHotelBookingsQueryDto', () => {
     expect(dto.group).toBeUndefined();
   });
 
+  it('accepts the biggest allowed page', async () => {
+    expect((await parse({ page: '100000' })).page).toBe(100000);
+  });
+
   it('coerces page and limit and accepts every sort field and group', async () => {
     expect(await parse({ page: '3', limit: '50' })).toMatchObject({
       page: 3,
@@ -60,6 +64,8 @@ describe('ListHotelBookingsQueryDto', () => {
   it.each([
     [{ page: '0' }],
     [{ page: 'abc' }],
+    [{ page: '1e300' }],
+    [{ page: '100001' }],
     [{ limit: '0' }],
     [{ limit: '51' }],
     [{ status: 'HELD' }],

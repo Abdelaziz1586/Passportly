@@ -18,10 +18,11 @@ export function effectiveHotelStatus(
   now: Date,
 ): BookingStatus {
   if (HOLDING.includes(booking.status)) {
+    // A hold always has an end; one without (legacy data) can never be paid, so it counts as ended.
     return booking.holdExpiresAt &&
-      booking.holdExpiresAt.getTime() <= now.getTime()
-      ? BookingStatus.EXPIRED
-      : BookingStatus.PENDING_PAYMENT;
+      booking.holdExpiresAt.getTime() > now.getTime()
+      ? BookingStatus.PENDING_PAYMENT
+      : BookingStatus.EXPIRED;
   }
   if (
     booking.status === BookingStatus.CONFIRMED &&
@@ -72,7 +73,10 @@ export function statusCondition(
       return {
         $or: [
           { status: BookingStatus.EXPIRED },
-          { status: { $in: HOLDING }, holdExpiresAt: { $lte: now } },
+          {
+            status: { $in: HOLDING },
+            $or: [{ holdExpiresAt: { $lte: now } }, { holdExpiresAt: null }],
+          },
         ],
       };
     case BookingStatus.CONFIRMED:

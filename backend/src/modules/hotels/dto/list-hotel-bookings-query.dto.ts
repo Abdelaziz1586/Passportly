@@ -51,7 +51,23 @@ function toStatusList({ value }: { value: unknown }): unknown {
     .filter((part) => part.length > 0);
 }
 
+/** Technical bound: a huge page would overflow the skip and end in a 500. */
+export const HOTEL_BOOKING_LIST_MAX_PAGE = 100_000;
+
 export class ListHotelBookingsQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional({
+    default: 1,
+    minimum: 1,
+    maximum: HOTEL_BOOKING_LIST_MAX_PAGE,
+    description: 'Page number',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(HOTEL_BOOKING_LIST_MAX_PAGE)
+  override page?: number = 1;
+
   @ApiPropertyOptional({
     default: HOTEL_BOOKING_LIST_DEFAULT_LIMIT,
     minimum: 1,

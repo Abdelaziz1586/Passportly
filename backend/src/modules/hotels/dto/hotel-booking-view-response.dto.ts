@@ -4,7 +4,10 @@ import {
   PaymentStatus,
   RefundStatus,
 } from '../../../common/enums';
-import { HotelBookingGroup } from './list-hotel-bookings-query.dto';
+import {
+  HotelBookingGroup,
+  LISTABLE_HOTEL_STATUSES,
+} from './list-hotel-bookings-query.dto';
 
 /** Swagger-only shapes: they document what HotelBookingViewService returns. */
 
@@ -19,7 +22,7 @@ export class HotelBookingListItemDto {
   @ApiProperty() id: string;
   @ApiProperty() bookingReference: string;
   @ApiProperty({
-    enum: BookingStatus,
+    enum: LISTABLE_HOTEL_STATUSES,
     description:
       'As it is now: a hold that ran out is EXPIRED, a confirmed stay whose check-out date passed is COMPLETED',
   })
@@ -104,7 +107,7 @@ export class HotelDetailsRefundDto {
 export class HotelBookingDetailsResponseDto {
   @ApiProperty() id: string;
   @ApiProperty() bookingReference: string;
-  @ApiProperty({ enum: BookingStatus }) status: BookingStatus;
+  @ApiProperty({ enum: LISTABLE_HOTEL_STATUSES }) status: BookingStatus;
   @ApiProperty({ enum: HotelBookingGroup }) group: HotelBookingGroup;
   @ApiProperty() hotelId: string;
   @ApiProperty({ nullable: true, type: String }) hotelName: string | null;

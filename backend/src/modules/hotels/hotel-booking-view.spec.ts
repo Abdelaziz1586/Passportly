@@ -23,16 +23,18 @@ describe('effectiveHotelStatus', () => {
       BookingStatus.PENDING_PAYMENT,
     ],
     [BookingStatus.HELD, future, '2026-12-20', BookingStatus.PENDING_PAYMENT],
+    // a hold without an end (legacy data) can never be paid: it counts as ended
     [
       BookingStatus.PENDING_PAYMENT,
       undefined,
       '2026-12-20',
-      BookingStatus.PENDING_PAYMENT,
+      BookingStatus.EXPIRED,
     ],
     [BookingStatus.CONFIRMED, undefined, '2026-12-20', BookingStatus.CONFIRMED],
     // HTL-23: Completed once the check-out date has passed (today's check-out is not passed yet)
     [BookingStatus.CONFIRMED, undefined, '2026-12-10', BookingStatus.CONFIRMED],
     [BookingStatus.CONFIRMED, undefined, '2026-12-09', BookingStatus.COMPLETED],
+    [BookingStatus.CONFIRMED, undefined, '2026-12-11', BookingStatus.CONFIRMED],
     [BookingStatus.COMPLETED, undefined, '2026-12-01', BookingStatus.COMPLETED],
     [BookingStatus.CANCELLED, past, '2026-12-01', BookingStatus.CANCELLED],
     [BookingStatus.EXPIRED, past, '2026-12-20', BookingStatus.EXPIRED],
@@ -111,7 +113,7 @@ describe('statusCondition mirrors the effective status', () => {
         { status: BookingStatus.EXPIRED },
         {
           status: { $in: [BookingStatus.PENDING_PAYMENT, BookingStatus.HELD] },
-          holdExpiresAt: { $lte: now },
+          $or: [{ holdExpiresAt: { $lte: now } }, { holdExpiresAt: null }],
         },
       ],
     });

@@ -515,6 +515,35 @@ describe('HotelBookingViewService.getBooking', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
+  it('has no payment summary when the payment record is missing', async () => {
+    const booking = makeBooking();
+    const ctx = build([booking]);
+    ctx.paymentModel.findById.mockReturnValue(query(null) as never);
+
+    const view = await ctx.service.getBooking(owner, booking._id.toString());
+
+    expect(view.payment).toBeNull();
+  });
+
+  it('a stay is CONFIRMED on its check-out day and COMPLETED from the next UTC day', async () => {
+    const onDay = makeBooking({
+      checkInDate: utcMidnight(-3),
+      checkOutDate: utcMidnight(0),
+    });
+    const dayAfter = makeBooking({
+      checkInDate: utcMidnight(-4),
+      checkOutDate: utcMidnight(-1),
+    });
+    const { service } = build([onDay, dayAfter]);
+
+    expect((await service.getBooking(owner, onDay._id.toString())).status).toBe(
+      BookingStatus.CONFIRMED,
+    );
+    expect(
+      (await service.getBooking(owner, dayAfter._id.toString())).status,
+    ).toBe(BookingStatus.COMPLETED);
+  });
+
   it('has no payment or refund before paying starts, and reports a lapsed hold as EXPIRED', async () => {
     const booking = makeBooking({
       status: BookingStatus.PENDING_PAYMENT,
