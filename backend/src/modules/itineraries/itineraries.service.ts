@@ -23,6 +23,7 @@ import { CreateItineraryDto } from './dto/create-itinerary.dto';
 import {
   CreateItineraryDayDto,
   ListItinerariesQueryDto,
+  UpdateItineraryDayDto,
   UpdateItineraryDto,
 } from './dto/itinerary-endpoints.dto';
 import { Activity, ActivityDocument } from './schemas/activity.schema';
@@ -196,6 +197,28 @@ export class ItinerariesService {
     return saved.days[saved.days.length - 1];
   }
 
+  async updateDay(
+    id: string,
+    dayId: string,
+    userId: string,
+    dto: UpdateItineraryDayDto,
+  ) {
+    const itinerary = await this.findOwnedItinerary(id, userId);
+    const day = this.findDay(itinerary, dayId);
+    if (typeof dto.cityId === 'string') {
+      const city = await this.findCity(dto.cityId);
+      day.city = city._id;
+      if (typeof dto.cityName !== 'string') day.cityName = city.name;
+    }
+    if (typeof dto.cityName === 'string') day.cityName = dto.cityName.trim();
+    if (typeof dto.title === 'string') day.title = dto.title.trim();
+    if (typeof dto.notes === 'string') day.notes = dto.notes.trim();
+    const saved = await this.saveItinerary(itinerary);
+    return saved.days.find(
+      (savedDay) => String(savedDay._id) === String(day._id),
+    );
+  }
+
   private async getItineraryDetails(
     itinerary: ItineraryDocument,
   ): Promise<Record<string, unknown>> {
@@ -254,6 +277,15 @@ export class ItinerariesService {
     if (String(itinerary.user) !== userId) {
       throw new ForbiddenException('You do not own this itinerary');
     }
+  }
+
+  private findDay(itinerary: ItineraryDocument, dayId: string) {
+    const dayObjectId = this.objectId(dayId, 'dayId');
+    const day = itinerary.days.find(
+      (currentDay) => String(currentDay._id) === String(dayObjectId),
+    );
+    if (!day) throw new NotFoundException('Itinerary day not found');
+    return day;
   }
 
   private async findCity(id: string): Promise<CityDocument> {

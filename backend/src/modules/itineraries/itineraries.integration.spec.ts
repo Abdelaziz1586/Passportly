@@ -161,6 +161,15 @@ describe('Itinerary endpoints and persistence', () => {
       startDate: '2027-06-15',
     });
 
+  const addDay = (id: string) =>
+    service.addDay(id, ownerId, { title: 'Sightseeing' });
+
+  const itineraryWithDay = async () => {
+    const itinerary = await create();
+    const day = await addDay(String(itinerary._id));
+    return { itinerary, dayId: String(day._id) };
+  };
+
   it('SCRUM-89/90: creates a private itinerary, normalizes currency, and lists only the owner records', async () => {
     const itinerary = await service.createItinerary(ownerId, {
       title: '  Paris  ',
@@ -220,6 +229,25 @@ describe('Itinerary endpoints and persistence', () => {
     await expect(
       service.getItinerary(new Types.ObjectId().toString(), user),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('SCRUM-92/94/95: derives day dates and updates city metadata and the start date', async () => {
+    const { itinerary, dayId } = await itineraryWithDay();
+    const id = String(itinerary._id);
+    await service.updateDay(id, dayId, ownerId, {
+      cityName: 'Paris',
+      notes: 'Museum',
+    });
+    const updated = await service.updateItinerary(id, ownerId, {
+      startDate: '2027-06-20',
+      visibility: ItineraryVisibility.PUBLIC,
+    });
+    expect(updated.days[0]).toMatchObject({
+      dayNumber: 1,
+      cityName: 'Paris',
+      notes: 'Museum',
+    });
+    expect(updated.days[0].date.toISOString()).toBe('2027-06-20T00:00:00.000Z');
   });
   it('SCRUM-89: creates an owned private itinerary through HTTP', async () => {
     await request(server())

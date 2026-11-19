@@ -107,3 +107,28 @@ export class CreateItineraryDayDto {
   @IsString()
   notes?: string;
 }
+
+export class UpdateItineraryDayDto {
+  @ApiPropertyOptional({ description: 'MongoDB city ID' })
+  @IsOptional()
+  @IsMongoId()
+  cityId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trimString)
+  @IsString()
+  cityName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trimString)
+  @IsString()
+  title?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trimString)
+  @IsString()
+  notes?: string;
+}
