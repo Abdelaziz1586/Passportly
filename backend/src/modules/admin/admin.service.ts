@@ -111,8 +111,8 @@ export class AdminService {
     const resolutionNotes = dto.resolutionNotes?.trim() || undefined;
 
     const updated = await this.reportModel
-      .findByIdAndUpdate(
-        report._id,
+      .findOneAndUpdate(
+        { _id: report._id, status: ReportStatus.PENDING },
         {
           $set: {
             status: dto.status,
@@ -125,7 +125,12 @@ export class AdminService {
       )
       .lean();
 
+    if (!updated) {
+      throw new ConflictException('Report has already been resolved');
+    }
+
     await this.notifyModerationParties(
+      report._id,
       report.targetType,
       report.targetId,
       report.reporter,
@@ -148,13 +153,12 @@ export class AdminService {
       ipAddress,
     });
 
-    const finalDoc = updated ?? report;
     return {
-      id: String(finalDoc._id),
-      reporter: String(finalDoc.reporter),
-      targetType: finalDoc.targetType,
-      targetId: String(finalDoc.targetId),
-      reason: finalDoc.reason,
+      id: String(updated._id),
+      reporter: String(updated.reporter),
+      targetType: updated.targetType,
+      targetId: String(updated.targetId),
+      reason: updated.reason,
       status: dto.status,
       reviewedBy: admin.userId,
       reviewedAt,
@@ -298,6 +302,7 @@ export class AdminService {
   }
 
   private async notifyModerationParties(
+    reportId: Types.ObjectId,
     targetType: ReportTargetType,
     targetId: Types.ObjectId,
     reporterId: Types.ObjectId,
@@ -338,7 +343,7 @@ export class AdminService {
             title: 'Report Resolved',
             message: `Your report regarding a ${entityType} was reviewed and the content has been ${actionLabel}.`,
             relatedEntityType: 'Report',
-            relatedEntityId: targetId,
+            relatedEntityId: reportId,
           }),
         );
       }
@@ -350,7 +355,7 @@ export class AdminService {
           title: 'Report Reviewed',
           message: `Your report regarding a ${entityType} was reviewed and dismissed.`,
           relatedEntityType: 'Report',
-          relatedEntityId: targetId,
+          relatedEntityId: reportId,
         }),
       );
     }

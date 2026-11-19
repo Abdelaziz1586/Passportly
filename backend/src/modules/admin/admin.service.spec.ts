@@ -34,7 +34,7 @@ describe('AdminService (GEN-10 resolve report)', () => {
 
   const mockReportModel = {
     findById: jest.fn(),
-    findByIdAndUpdate: jest.fn(),
+    findOneAndUpdate: jest.fn(),
   };
   const mockBlogPostModel = {
     findByIdAndUpdate: jest.fn(),
@@ -126,7 +126,7 @@ describe('AdminService (GEN-10 resolve report)', () => {
         lean: jest.fn().mockResolvedValue({ _id: postId, author: authorId }),
       }),
     });
-    mockReportModel.findByIdAndUpdate.mockReturnValue({
+    mockReportModel.findOneAndUpdate.mockReturnValue({
       lean: jest.fn().mockResolvedValue({
         _id: reportId,
         reporter: reporterId,
@@ -156,6 +156,16 @@ describe('AdminService (GEN-10 resolve report)', () => {
       expect.objectContaining({
         recipient: authorId,
         type: NotificationType.MODERATION_ACTION,
+        relatedEntityType: 'BlogPost',
+        relatedEntityId: postId,
+      }),
+    );
+    expect(mockNotificationsService.createNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recipient: reporterId,
+        type: NotificationType.MODERATION_ACTION,
+        relatedEntityType: 'Report',
+        relatedEntityId: reportId,
       }),
     );
     expect(mockAuditLogsService.log).toHaveBeenCalledWith(
@@ -196,7 +206,7 @@ describe('AdminService (GEN-10 resolve report)', () => {
       }),
     });
     mockHotelModel.updateOne.mockResolvedValue({});
-    mockReportModel.findByIdAndUpdate.mockReturnValue({
+    mockReportModel.findOneAndUpdate.mockReturnValue({
       lean: jest.fn().mockResolvedValue({
         _id: reportId,
         reporter: reporterId,
