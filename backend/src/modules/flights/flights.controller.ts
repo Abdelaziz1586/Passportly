@@ -1,11 +1,12 @@
 import {
+  NotImplementedException,
   Controller,
   Get,
-  NotImplementedException,
+  Param,
   Patch,
   Post,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiCookieAuth, ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
@@ -37,11 +38,8 @@ export class FlightsController {
 
   @Public()
   @Get(':id')
-  @ApiOperation({ summary: 'FLT-17: Get flight details & cabin availability' })
-  getFlight() {
-    throw new NotImplementedException(
-      'GET /api/flights/:id not implemented yet',
-    );
+  getFlight(@Param('id') id: string) {
+    return this.flightsService.getFlight(id);
   }
 
   @ApiCookieAuth()
