@@ -20,6 +20,7 @@ import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.inte
 import { ReferenceDataService } from '../reference-data/reference-data.service';
 import { AttractionDocument } from '../reference-data/schemas/attraction.schema';
 import { CityDocument } from '../reference-data/schemas/city.schema';
+import { UploadsService } from '../uploads/uploads.service';
 import { CreateItineraryDto } from './dto/create-itinerary.dto';
 import {
   CreateActivityDto,
@@ -61,6 +62,7 @@ export class ItinerariesService {
     readonly httpService: HttpService,
     readonly configService: ConfigService,
     readonly referenceDataService: ReferenceDataService,
+    readonly uploadsService: UploadsService,
   ) {}
 
   async createItinerary(
@@ -364,6 +366,27 @@ export class ItinerariesService {
     const activity = await this.findOwnedActivity(id, userId);
     await activity.deleteOne();
     return { deleted: true, activityId: id };
+  }
+
+  async uploadActivityImage(
+    id: string,
+    userId: string,
+    file: Express.Multer.File,
+  ) {
+    const activity = await this.findOwnedActivity(id, userId);
+    const image = await this.uploadsService.saveImage(file);
+    activity.images.push(image);
+    try {
+      await activity.save();
+    } catch (error: unknown) {
+      await this.uploadsService
+        .removeImage(image.filename)
+        .catch(() => undefined);
+      throw error;
+    }
+    return activity.images.find(
+      (savedImage) => savedImage.filename === image.filename,
+    );
   }
 
   private async getItineraryDetails(
