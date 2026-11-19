@@ -99,6 +99,9 @@ function build(
       query<unknown>(rowsByRoom[filter.room.toString()] ?? []),
     ),
     updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
+    updateMany: jest.fn((filter: { _id: { $in: unknown[] } }) =>
+      Promise.resolve({ modifiedCount: filter._id.$in.length }),
+    ),
   };
   const bookingModel = {
     create: jest.fn((docs: Record<string, unknown>[]) =>
@@ -202,21 +205,33 @@ describe('HotelBookingsService.createBooking', () => {
     expect(hold).toBeLessThanOrEqual(
       Date.now() + HOTEL_HOLD_MINUTES * 60_000 + 50,
     );
-    // three nights, one conditional held-unit increment each, all in the transaction
-    expect(ctx.availabilityModel.updateOne).toHaveBeenCalledTimes(3);
-    for (const [filter, update, options] of ctx.availabilityModel.updateOne.mock
-      .calls as unknown as [
-      { isBlocked: boolean; $expr: unknown },
+    // ONE conditional bulk update for the room covering its three nights, inside the transaction
+    expect(ctx.availabilityModel.updateMany).toHaveBeenCalledTimes(1);
+    const [filter, update, options] = ctx.availabilityModel.updateMany.mock
+      .calls[0] as unknown as [
+      { _id: { $in: Types.ObjectId[] }; isBlocked: unknown; $expr: unknown },
       { $inc: Record<string, number> },
       { session: unknown },
-    ][]) {
-      expect(filter.isBlocked).toBe(false);
-      expect(filter.$expr).toEqual({
-        $lte: [{ $add: ['$bookedUnits', '$heldUnits', 1] }, '$totalUnits'],
-      });
-      expect(update.$inc).toEqual({ heldUnits: 1 });
-      expect(options.session).toBe(ctx.session);
-    }
+    ];
+    expect(filter._id.$in.map(String)).toEqual(
+      rows.map((row) => String(row._id)),
+    );
+    expect(filter.isBlocked).toEqual({ $ne: true });
+    // a missing counter counts as 0, so it can never make the check vacuously true
+    expect(filter.$expr).toEqual({
+      $lte: [
+        {
+          $add: [
+            { $ifNull: ['$bookedUnits', 0] },
+            { $ifNull: ['$heldUnits', 0] },
+            1,
+          ],
+        },
+        '$totalUnits',
+      ],
+    });
+    expect(update.$inc).toEqual({ heldUnits: 1 });
+    expect(options.session).toBe(ctx.session);
   });
 
   it('owner comes from the JWT user id, the hotel policies are copied onto the reservation', async () => {
@@ -288,7 +303,7 @@ describe('HotelBookingsService.createBooking', () => {
       ['101', 300, 1, [4]],
       ['102', 241.5, 2, [9, 12]],
     ]);
-    expect(ctx.availabilityModel.updateOne).toHaveBeenCalledTimes(6); // 2 rooms x 3 nights
+    expect(ctx.availabilityModel.updateMany).toHaveBeenCalledTimes(2); // one bulk update per room
     expect(ctx.bookingModel.create).toHaveBeenCalledTimes(1); // one reservation
     expect(ctx.connection.transaction).toHaveBeenCalledTimes(1); // one transaction
   });
@@ -365,13 +380,10 @@ describe('HotelBookingsService.createBooking', () => {
         [a._id.toString()]: nightsRows(a, utcMidnight(10), 3),
         [b._id.toString()]: nightsRows(b, utcMidnight(10), 3),
       });
-      // room a: 3 nights ok; room b: first night ok, second night already held by someone else
-      ctx.availabilityModel.updateOne
-        .mockResolvedValueOnce({ modifiedCount: 1 })
-        .mockResolvedValueOnce({ modifiedCount: 1 })
-        .mockResolvedValueOnce({ modifiedCount: 1 })
-        .mockResolvedValueOnce({ modifiedCount: 1 })
-        .mockResolvedValueOnce({ modifiedCount: 0 });
+      // room a: all 3 nights taken; room b: only 2 of its 3 nights could take the unit (one is held by someone else)
+      ctx.availabilityModel.updateMany
+        .mockResolvedValueOnce({ modifiedCount: 3 })
+        .mockResolvedValueOnce({ modifiedCount: 2 });
 
       await expect(
         ctx.service.createBooking(userId.toString(), dto([a, b])),
@@ -545,6 +557,38 @@ describe('HotelBookingsService.createBooking', () => {
     });
   });
 
+  it('refuses rooms that have no price for the nights (a hold that could never be paid)', async () => {
+    const room = makeRoom({ basePricePerNight: 0 });
+    const ctx = build([room], {
+      [room._id.toString()]: nightsRows(room, utcMidnight(10), 3),
+    });
+
+    await expect(
+      ctx.service.createBooking(userId.toString(), dto([room])),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(ctx.bookingModel.create).not.toHaveBeenCalled();
+  });
+
+  it('counts the 10 minutes from when the reservation is written, not from the request start', async () => {
+    const room = makeRoom();
+    const ctx = build([room], {
+      [room._id.toString()]: nightsRows(room, utcMidnight(10), 3),
+    });
+    // the write happens 30 seconds after the request started (e.g. after a transaction retry)
+    const realNow = Date.now();
+    jest.spyOn(Date, 'now').mockReturnValue(realNow + 30_000);
+
+    const booking = await ctx.service.createBooking(
+      userId.toString(),
+      dto([room]),
+    );
+    jest.restoreAllMocks();
+
+    expect(booking.holdExpiresAt!.getTime()).toBe(
+      realNow + 30_000 + 10 * 60_000,
+    );
+  });
+
   it('tries a new reference when a random one collides', async () => {
     const room = makeRoom();
     const ctx = build([room], {
@@ -618,7 +662,7 @@ describe('HotelBookingsService hold expiry (HTL-18)', () => {
     expect(update.$set.status).toBe(BookingStatus.EXPIRED);
     expect(options.session).toBe(ctx.session);
 
-    expect(ctx.availabilityModel.updateOne).toHaveBeenCalledTimes(4); // 2 rooms x 2 nights
+    expect(ctx.availabilityModel.updateOne).toHaveBeenCalledTimes(4); // release: 2 rooms x 2 nights
     const nights = (
       ctx.availabilityModel.updateOne.mock.calls as unknown as [
         { date: Date; heldUnits: { $gte: number } },

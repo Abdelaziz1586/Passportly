@@ -37,6 +37,27 @@ describe('CreateHotelBookingDto', () => {
     expect(dto.rooms[0].roomId).toBe(id);
   });
 
+  it('lower-cases ids so an upper-case id cannot dodge the duplicate-room check', async () => {
+    const upper = id.toUpperCase();
+    const dto = await parse({
+      ...valid(),
+      hotelId: upper,
+      rooms: [{ roomId: upper, adults: 1 }],
+    });
+
+    expect(dto.hotelId).toBe(id);
+    expect(dto.rooms[0].roomId).toBe(id);
+  });
+
+  it('accepts names with combining marks (decomposed accents)', async () => {
+    const dto = await parse({
+      ...valid(),
+      primaryGuestName: 'Jose\u0301 Garci\u0301a',
+    });
+
+    expect(dto.primaryGuestName).toBe('Jose\u0301 Garci\u0301a');
+  });
+
   it('accepts a room without children', async () => {
     const dto = await parse({ ...valid(), rooms: [{ roomId: id, adults: 1 }] });
 

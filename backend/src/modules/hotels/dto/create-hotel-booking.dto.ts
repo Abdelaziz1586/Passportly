@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -23,13 +23,17 @@ export const MAX_CHILD_AGE = 17;
 export const MAX_ROOMS_PER_RESERVATION = 50;
 export const MAX_GUESTS_PER_ROOM_FIELD = 100;
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const NAME_PATTERN = /^\p{L}[\p{L} '.-]*$/u;
+const NAME_PATTERN = /^\p{L}[\p{L}\p{M} '.-]*$/u;
+/** IsMongoId accepts upper-case hex; ids are compared as lower-case strings. */
+const lowerCaseId = ({ value }: { value: unknown }): unknown =>
+  typeof value === 'string' ? value.toLowerCase() : value;
 
 export class HotelRoomSelectionDto {
   @ApiProperty({
     description: 'Room to reserve (an individually bookable unit of the hotel)',
     example: '665f1c2e8a1b2c3d4e5f6a7b',
   })
+  @Transform(lowerCaseId)
   @IsMongoId()
   roomId: string;
 
@@ -63,6 +67,7 @@ export class CreateHotelBookingDto {
     description: 'Hotel of all the rooms',
     example: '665f1c2e8a1b2c3d4e5f6a7c',
   })
+  @Transform(lowerCaseId)
   @IsMongoId()
   hotelId: string;
 

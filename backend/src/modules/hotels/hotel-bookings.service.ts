@@ -270,29 +270,35 @@ export class HotelBookingsService {
       });
     }
 
-    // Phase 2: take the units. A conditional update per night, so concurrent requests
-    // can never hold more than totalUnits; any failure aborts the whole transaction.
+    // Phase 2: take the units. ONE conditional bulk update per room (every night at once), so a big
+    // request is a handful of round trips, and concurrent requests can never hold more than
+    // totalUnits. A missing counter counts as 0. If any night of any room did not take the
+    // unit, the whole transaction aborts and nothing stays held.
     for (const { room, rows } of priced) {
-      for (const row of rows) {
-        const held = await this.availabilityModel.updateOne(
-          {
-            _id: row._id,
-            isBlocked: false,
-            $expr: {
-              $lte: [
-                { $add: ['$bookedUnits', '$heldUnits', 1] },
-                '$totalUnits',
-              ],
-            },
+      const held = await this.availabilityModel.updateMany(
+        {
+          _id: { $in: rows.map((row) => row._id) },
+          isBlocked: { $ne: true },
+          $expr: {
+            $lte: [
+              {
+                $add: [
+                  { $ifNull: ['$bookedUnits', 0] },
+                  { $ifNull: ['$heldUnits', 0] },
+                  1,
+                ],
+              },
+              '$totalUnits',
+            ],
           },
-          { $inc: { heldUnits: 1 } },
-          { session },
+        },
+        { $inc: { heldUnits: 1 } },
+        { session },
+      );
+      if (held.modifiedCount !== rows.length) {
+        throw new ConflictException(
+          `Room ${room.name} is no longer available for the whole stay`,
         );
-        if (held.modifiedCount !== 1) {
-          throw new ConflictException(
-            `Room ${room.name} is no longer available for the whole stay`,
-          );
-        }
       }
     }
 
@@ -312,6 +318,11 @@ export class HotelBookingsService {
     const totalPrice = this.round2(
       roomItems.reduce((sum, item) => sum + item.subtotal, 0),
     );
+    if (!(totalPrice > 0)) {
+      throw new ConflictException(
+        'These rooms have no price for the selected nights, so they cannot be reserved',
+      );
+    }
     const [booking] = await this.bookingModel.create(
       [
         {
@@ -330,7 +341,8 @@ export class HotelBookingsService {
           totalPrice,
           currency: priced[0].room.currency,
           status: BookingStatus.PENDING_PAYMENT,
-          holdExpiresAt: new Date(now.getTime() + HOTEL_HOLD_MINUTES * 60_000),
+          // Counted from the moment the reservation is written (a transaction retry must not eat into the 10 minutes).
+          holdExpiresAt: new Date(Date.now() + HOTEL_HOLD_MINUTES * 60_000),
           policySnapshot: buildHotelPolicySnapshot(hotel, now),
         },
       ],
