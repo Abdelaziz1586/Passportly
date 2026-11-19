@@ -5,11 +5,23 @@ import {
   NotImplementedException,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiCookieAuth,
+  ApiForbiddenResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import { AdminService } from './admin.service';
+import {
+  ListReportsQueryDto,
+  PaginatedReportsResponseDto,
+} from './dto/list-reports-query.dto';
 
 @ApiTags('Administration')
 @ApiCookieAuth()
@@ -92,10 +104,16 @@ export class AdminController {
 
   @Get('reports')
   @ApiOperation({ summary: 'GEN-09, GEN-10: List submitted content reports' })
-  listReports() {
-    throw new NotImplementedException(
-      'GET /api/admin/reports not implemented yet',
-    );
+  @ApiOkResponse({
+    description: 'Paginated content moderation reports with reporter details',
+    type: PaginatedReportsResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid filter or pagination query' })
+  @ApiForbiddenResponse({ description: 'Admin role required' })
+  listReports(
+    @Query() query: ListReportsQueryDto,
+  ): Promise<PaginatedReportsResponseDto> {
+    return this.adminService.listReports(query);
   }
 
   @Patch('reports/:id')
