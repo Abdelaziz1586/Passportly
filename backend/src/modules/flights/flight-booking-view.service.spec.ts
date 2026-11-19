@@ -140,14 +140,23 @@ function build(booking: ReturnType<typeof makeBooking> | null) {
       }),
     ),
   };
+  const refundModel = { findOne: jest.fn(() => query<unknown>(null)) };
   const service = new FlightBookingViewService(
     bookingModel as never,
     flightModel as never,
     airlineModel as never,
     airportModel as never,
     paymentModel as never,
+    refundModel as never,
   );
-  return { service, bookingModel, flightModel, airlineModel, paymentModel };
+  return {
+    service,
+    bookingModel,
+    flightModel,
+    airlineModel,
+    paymentModel,
+    refundModel,
+  };
 }
 
 const owner: AuthenticatedUser = {
@@ -371,6 +380,56 @@ describe('FlightBookingViewService.getBooking', () => {
     expect(view.passengers).toEqual([]);
     expect(view.confirmedAt).toBeNull();
     expect(paymentModel.findById).not.toHaveBeenCalled();
+  });
+
+  it('shows the refund of a cancelled booking with its status (PAY-03)', async () => {
+    const booking = makeBooking({ status: BookingStatus.CANCELLED });
+    const { service, refundModel } = build(booking);
+    const refundId = new Types.ObjectId();
+    refundModel.findOne.mockReturnValue(
+      query({
+        _id: refundId,
+        status: 'PENDING',
+        amount: 170,
+        currency: 'USD',
+        reason: 'Cancelled by the traveller',
+        policyCalculationNotes: '10 day(s) before departure: 50%',
+        stripeRefundId: 're_secret',
+      }),
+    );
+
+    const view = await service.getBooking(owner, booking._id.toString());
+
+    expect(view.refund).toEqual({
+      id: refundId.toString(),
+      status: 'PENDING',
+      amount: 170,
+      currency: 'USD',
+      reason: 'Cancelled by the traveller',
+      policyCalculationNotes: '10 day(s) before departure: 50%',
+      processedAt: null,
+    });
+    expect(JSON.stringify(view)).not.toContain('re_secret');
+    const [filter] = refundModel.findOne.mock.calls[0] as unknown as [
+      { bookingType: string; bookingId: Types.ObjectId },
+    ];
+    expect(filter.bookingType).toBe('flight');
+    expect(filter.bookingId.equals(booking._id)).toBe(true);
+  });
+
+  it('has no refund when none was issued, and a moderator never sees or loads one', async () => {
+    const booking = makeBooking();
+    const { service, refundModel, flightModel } = build(booking);
+
+    expect(
+      (await service.getBooking(owner, booking._id.toString())).refund,
+    ).toBeNull();
+
+    flightModel.exists.mockResolvedValue({ _id: flight._id });
+    refundModel.findOne.mockClear();
+    const view = await service.getBooking(moderator, booking._id.toString());
+    expect(view.refund).toBeNull();
+    expect(refundModel.findOne).not.toHaveBeenCalled();
   });
 
   it('shows cancellation details of a cancelled booking', async () => {

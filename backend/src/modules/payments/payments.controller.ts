@@ -5,7 +5,6 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
-  NotImplementedException,
   Param,
   Post,
   Req,
@@ -41,6 +40,8 @@ import { AcceptPoliciesDto } from './dto/accept-policies.dto';
 import { BookingParamsDto } from './dto/booking-params.dto';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { PaymentParamsDto } from './dto/payment-params.dto';
+import { RefundParamsDto } from './dto/refund-params.dto';
+import { RefundResponseDto } from './dto/refund-response.dto';
 import {
   PaymentIntentResponseDto,
   PaymentResponseDto,
@@ -58,6 +59,8 @@ import {
   PaymentResponse,
   PaymentsService,
 } from './payments.service';
+import { RefundsService } from './refunds.service';
+import type { RefundResponse } from './refunds.service';
 
 @ApiTags('Payments & Refunds')
 @Controller()
@@ -66,6 +69,7 @@ export class PaymentsController {
     private readonly paymentsService: PaymentsService,
     private readonly bookingPoliciesService: BookingPoliciesService,
     private readonly paymentWebhookService: PaymentWebhookService,
+    private readonly refundsService: RefundsService,
   ) {}
 
   @ApiCookieAuth()
@@ -268,10 +272,22 @@ export class PaymentsController {
   @ApiCookieAuth()
   @Roles(Role.REGISTERED_USER, Role.ADMIN)
   @Get('refunds/:id')
-  @ApiOperation({ summary: 'PAY-03: Get refund status and details' })
-  getRefund() {
-    throw new NotImplementedException(
-      'GET /api/refunds/:id not implemented yet',
-    );
+  @ApiOperation({
+    summary: 'PAY-03: Get refund status and details',
+    description:
+      'Returns the refund of a cancellation: amount, currency, status (PENDING = being processed, SUCCEEDED = refunded, FAILED), the reason, how the amount was computed from the tiers stored on the booking (policyCalculationNotes) and processedAt. The refund itself is issued through the Stripe Refunds API when a booking is cancelled. The owner can read their own refunds; an admin can read any.',
+  })
+  @ApiOkResponse({ description: 'The refund', type: RefundResponseDto })
+  @ApiBadRequestResponse({ description: 'Invalid id' })
+  @ApiUnauthorizedResponse({ description: 'Not signed in' })
+  @ApiForbiddenResponse({
+    description: 'Only registered users and admins may read refunds',
+  })
+  @ApiNotFoundResponse({ description: 'Refund not found or not yours' })
+  getRefund(
+    @Param() params: RefundParamsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<RefundResponse> {
+    return this.refundsService.getRefund(user.userId, user.role, params.id);
   }
 }

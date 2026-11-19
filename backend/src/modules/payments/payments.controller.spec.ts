@@ -11,6 +11,8 @@ import { PaymentParamsDto } from './dto/payment-params.dto';
 import { BookingParamsDto } from './dto/booking-params.dto';
 import { PaymentWebhookService } from './payment-webhook.service';
 import { PaymentsController } from './payments.controller';
+import { RefundParamsDto } from './dto/refund-params.dto';
+import { RefundsService } from './refunds.service';
 import { PaymentsService } from './payments.service';
 
 const handlers = PaymentsController.prototype as unknown as Record<
@@ -25,6 +27,7 @@ describe('PaymentsController PAY-02', () => {
     {} as PaymentsService,
     { getPolicies, acceptPolicies } as unknown as BookingPoliciesService,
     {} as PaymentWebhookService,
+    {} as RefundsService,
   );
   const user: AuthenticatedUser = {
     userId: '665f1c2e8a1b2c3d4e5f6a7b',
@@ -97,6 +100,7 @@ describe('PaymentsController PAY-01', () => {
     { createPayment, retryPayment, getPayment } as unknown as PaymentsService,
     {} as BookingPoliciesService,
     { verifyEvent, handleEvent } as unknown as PaymentWebhookService,
+    {} as RefundsService,
   );
   const user: AuthenticatedUser = {
     userId: '665f1c2e8a1b2c3d4e5f6a7b',
@@ -178,6 +182,58 @@ describe('PaymentsController PAY-01', () => {
     );
     expect(Reflect.getMetadata(PATH_METADATA, handlers.handleWebhook)).toBe(
       'payments/webhook',
+    );
+  });
+});
+
+describe('PaymentsController PAY-03', () => {
+  const getRefund = jest.fn();
+  const controller = new PaymentsController(
+    {} as PaymentsService,
+    {} as BookingPoliciesService,
+    {} as PaymentWebhookService,
+    { getRefund } as unknown as RefundsService,
+  );
+  const user: AuthenticatedUser = {
+    userId: '665f1c2e8a1b2c3d4e5f6a7b',
+    email: 'a@example.com',
+    role: Role.REGISTERED_USER,
+    jti: 'jti',
+  };
+
+  afterEach(() => jest.clearAllMocks());
+
+  it('reads the refund for the JWT user and role', async () => {
+    getRefund.mockResolvedValue({ id: 'r1' });
+    const params = Object.assign(new RefundParamsDto(), {
+      id: '665f1c2e8a1b2c3d4e5f6a7d',
+    });
+
+    await controller.getRefund(params, user);
+    await controller.getRefund(params, { ...user, role: Role.ADMIN });
+
+    expect(getRefund).toHaveBeenNthCalledWith(
+      1,
+      user.userId,
+      Role.REGISTERED_USER,
+      params.id,
+    );
+    expect(getRefund).toHaveBeenNthCalledWith(
+      2,
+      user.userId,
+      Role.ADMIN,
+      params.id,
+    );
+  });
+
+  it('is for registered users and admins only, and not public', () => {
+    expect(Reflect.getMetadata(ROLES_KEY, handlers.getRefund)).toEqual([
+      Role.REGISTERED_USER,
+      Role.ADMIN,
+    ]);
+    expect(Reflect.getMetadata(IS_PUBLIC_KEY, handlers.getRefund)).toBeFalsy();
+    expect(Reflect.getMetadata(PATH_METADATA, handlers.getRefund)).toBe(
+      'refunds/:id',
     );
   });
 });

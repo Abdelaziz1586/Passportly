@@ -4,6 +4,7 @@ import {
   FlightStatus,
   PassengerType,
   PaymentStatus,
+  RefundStatus,
   TripType,
 } from '../../common/enums';
 import { maskPassport } from './flight-booking-details';
@@ -56,6 +57,16 @@ export interface BookingViewPayment {
   paidAt: Date | null;
 }
 
+export interface BookingViewRefund {
+  id: string;
+  status: RefundStatus;
+  amount: number;
+  currency: string;
+  reason: string | null;
+  policyCalculationNotes: string | null;
+  processedAt: Date | null;
+}
+
 export interface FlightBookingDetails {
   id: string;
   bookingReference: string;
@@ -82,6 +93,8 @@ export interface FlightBookingDetails {
   cancellationReason: string | null;
   refundAmount: number | null;
   payment: BookingViewPayment | null;
+  /** The refund of this booking (PAY-03), if one was issued. */
+  refund: BookingViewRefund | null;
   createdAt: Date;
   updatedAt: Date;
 }

@@ -10,6 +10,7 @@ import {
   AirportSchema,
 } from '../reference-data/schemas/airport.schema';
 import { Payment, PaymentSchema } from '../payments/schemas/payment.schema';
+import { Refund, RefundSchema } from '../payments/schemas/refund.schema';
 import { FlightBookingViewService } from './flight-booking-view.service';
 import { FlightETicketService } from './flight-e-ticket.service';
 import { Airline, AirlineSchema } from './schemas/airline.schema';
@@ -32,6 +33,7 @@ import { Flight, FlightSchema } from './schemas/flight.schema';
       { name: FlightBooking.name, schema: FlightBookingSchema },
       { name: Airport.name, schema: AirportSchema },
       { name: Payment.name, schema: PaymentSchema },
+      { name: Refund.name, schema: RefundSchema },
     ]),
   ],
   controllers: [
