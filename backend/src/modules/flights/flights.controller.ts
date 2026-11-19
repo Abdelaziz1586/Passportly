@@ -1,15 +1,19 @@
 import {
+  NotImplementedException,
+  Body,
   Controller,
   Get,
-  NotImplementedException,
   Patch,
   Post,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiCookieAuth, ApiTags } from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
+import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { FlightsService } from './flights.service';
+import { FlightCreate } from './create-flight.dto';
 
 @ApiTags('Flights')
 @Controller('flights')
@@ -30,9 +34,11 @@ export class FlightsController {
   @ApiCookieAuth()
   @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
   @Post()
-  @ApiOperation({ summary: 'FLT-03: Create a flight' })
-  createFlight() {
-    throw new NotImplementedException('POST /api/flights not implemented yet');
+  createFlight(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: FlightCreate,
+  ) {
+    return this.flightsService.createFlight(user, input);
   }
 
   @Public()
