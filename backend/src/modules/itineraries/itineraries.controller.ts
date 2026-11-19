@@ -315,10 +315,11 @@ export class ItinerariesController {
   @Roles(Role.REGISTERED_USER)
   @Delete('transport-costs/:id')
   @ApiOperation({ summary: 'ITN-16: Delete intercity transport cost' })
-  deleteTransportCost() {
-    throw new NotImplementedException(
-      'DELETE /api/transport-costs/:id not implemented yet',
-    );
+  deleteTransportCost(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.deleteTransportCost(id, user.userId);
   }
 
   @ApiCookieAuth()

@@ -536,6 +536,12 @@ export class ItinerariesService {
     return cost.save();
   }
 
+  async deleteTransportCost(id: string, userId: string) {
+    const cost = await this.findOwnedTransportCost(id, userId);
+    await cost.deleteOne();
+    return { deleted: true, transportCostId: id };
+  }
+
   private async getItineraryDetails(
     itinerary: ItineraryDocument,
   ): Promise<Record<string, unknown>> {
