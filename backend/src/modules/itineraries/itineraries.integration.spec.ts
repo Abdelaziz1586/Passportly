@@ -325,6 +325,39 @@ describe('Itinerary endpoints and persistence', () => {
       (await service.itineraryModel.findById(itinerary._id).orFail()).days,
     ).toHaveLength(1);
   });
+
+  it('SCRUM-98/99/100: creates, updates, and deletes activities with valid day and time checks', async () => {
+    const { itinerary, dayId } = await itineraryWithDay();
+    const id = String(itinerary._id);
+    const activity = await service.addActivity(id, dayId, ownerId, {
+      title: 'Museum',
+      startTime: '09:00',
+      endTime: '11:00',
+    });
+    await expect(
+      service.updateActivity(String(activity._id), otherId, {
+        title: 'Wrong owner',
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    const updated = await service.updateActivity(
+      String(activity._id),
+      ownerId,
+      { title: 'Gallery', endTime: '12:30' },
+    );
+    expect(updated.title).toBe('Gallery');
+    await expect(
+      service.updateActivity(String(activity._id), ownerId, {
+        endTime: '08:00',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.addActivity(id, new Types.ObjectId().toString(), ownerId, {
+        title: 'Missing day',
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    await service.deleteActivity(String(activity._id), ownerId);
+    expect(await service.activityModel.countDocuments()).toBe(0);
+  });
   it('SCRUM-89: creates an owned private itinerary through HTTP', async () => {
     await request(server())
       .post('/api/itineraries')
