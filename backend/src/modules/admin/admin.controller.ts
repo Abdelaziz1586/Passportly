@@ -3,13 +3,28 @@ import {
   Delete,
   Get,
   NotImplementedException,
+  Param,
   Patch,
   Post,
+  Req,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiCookieAuth,
+  ApiForbiddenResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+} from '@nestjs/swagger';
+import type { Request } from 'express';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
+import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { AdminService } from './admin.service';
+import { DeleteContentResponseDto } from './dto/delete-content-response.dto';
 
 @ApiTags('Administration')
 @ApiCookieAuth()
@@ -111,10 +126,26 @@ export class AdminController {
 
   @Delete('content/:type/:id')
   @ApiOperation({ summary: 'GEN-10: Delete inappropriate content directly' })
-  deleteContent() {
-    throw new NotImplementedException(
-      'DELETE /api/admin/content/:type/:id not implemented yet',
-    );
+  @ApiParam({
+    name: 'type',
+    enum: ['blog_post', 'comment', 'itinerary', 'review'],
+    description: 'Target content type',
+  })
+  @ApiParam({ name: 'id', type: String, description: 'Target content ID' })
+  @ApiOkResponse({
+    description: 'Content deleted, owner notified, and audit logged',
+    type: DeleteContentResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid content type or content ID' })
+  @ApiForbiddenResponse({ description: 'Admin role required' })
+  @ApiNotFoundResponse({ description: 'Target content not found' })
+  deleteContent(
+    @Param('type') type: string,
+    @Param('id') id: string,
+    @CurrentUser() admin: AuthenticatedUser,
+    @Req() req: Request,
+  ): Promise<DeleteContentResponseDto> {
+    return this.adminService.deleteContent(type, id, admin, req.ip);
   }
 
   @Get('audit-logs')
