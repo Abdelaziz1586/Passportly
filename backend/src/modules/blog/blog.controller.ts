@@ -1,16 +1,32 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
   NotImplementedException,
+  Param,
   Patch,
   Post,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiCookieAuth,
+  ApiForbiddenResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
+import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { BlogService } from './blog.service';
+import { BlogPostItemDto } from './dto/blog-post-response.dto';
+import { UpdatePostDto } from './dto/update-post.dto';
 
 @ApiTags('Blog & Community')
 @Controller()
@@ -57,10 +73,23 @@ export class BlogController {
   @Roles(Role.REGISTERED_USER)
   @Patch('posts/:id')
   @ApiOperation({ summary: 'BLG-04, BLG-08: Update own blog post or tags' })
-  updatePost() {
-    throw new NotImplementedException(
-      'PATCH /api/posts/:id not implemented yet',
-    );
+  @ApiParam({ name: 'id', description: 'Blog post MongoDB ObjectId' })
+  @ApiOkResponse({
+    description: 'Blog post updated successfully',
+    type: BlogPostItemDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid post ID or update payload' })
+  @ApiUnauthorizedResponse({ description: 'Authentication required' })
+  @ApiForbiddenResponse({
+    description: 'Only the post author can update this blog post',
+  })
+  @ApiNotFoundResponse({ description: 'Blog post not found' })
+  updatePost(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdatePostDto,
+  ): Promise<BlogPostItemDto> {
+    return this.blogService.updatePost(id, user.userId, dto);
   }
 
   @ApiCookieAuth()

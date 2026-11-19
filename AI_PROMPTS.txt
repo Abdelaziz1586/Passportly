@@ -82,3 +82,17 @@ Details: Verify credentials, enforce failed-login lockout & AccountStatus.ACTIVE
 How the output was used:
 Implemented LoginDto, LoginResponseDto, AuthService.login (email normalization, bcrypt password check, 5-attempt / 15-minute failed-login lockout, AccountStatus.ACTIVE enforcement, UserSession creation with jti and JWT-aligned expiresAt, httpOnly cookie configuration), and AuthController.login wiring with @Public() and Swagger annotations. Added unit tests in auth.service.spec.ts and auth.controller.spec.ts and verified with npm run lint, npm run build, and npm test.
 ================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Abdullah Emam
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: BLG-04, BLG-08 (SCRUM-121, PATCH /api/posts/:id)
+
+Prompt:
+Implement SCRUM-121 [BLG-04, BLG-08] PATCH /api/posts/:id - Update own blog post or tags enforcing author ownership, syncing Tag usageCounts, and setting publishedAt on first publish.
+
+How the output was used:
+Added UpdatePostDto, BlogService.updatePost with author ownership verification, diff-based Tag usageCount synchronization, and first-publish publishedAt handling, BlogController.updatePost with Swagger/role decorators, and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
