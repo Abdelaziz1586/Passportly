@@ -5,12 +5,25 @@ import {
   NotImplementedException,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiCookieAuth,
+  ApiForbiddenResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
+import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { BlogService } from './blog.service';
+import { PaginatedBlogPostsResponseDto } from './dto/blog-post-response.dto';
+import { ListMyPostsQueryDto } from './dto/list-my-posts-query.dto';
 
 @ApiTags('Blog & Community')
 @Controller()
@@ -40,10 +53,18 @@ export class BlogController {
   @ApiOperation({
     summary: 'BLG-03: List current user blog posts (including drafts)',
   })
-  listMyPosts() {
-    throw new NotImplementedException(
-      'GET /api/posts/mine not implemented yet',
-    );
+  @ApiOkResponse({
+    description: 'Paginated blog posts authored by current user',
+    type: PaginatedBlogPostsResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid query parameters' })
+  @ApiUnauthorizedResponse({ description: 'Authentication required' })
+  @ApiForbiddenResponse({ description: 'Insufficient role permissions' })
+  listMyPosts(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ListMyPostsQueryDto,
+  ): Promise<PaginatedBlogPostsResponseDto> {
+    return this.blogService.listMyPosts(user.userId, query);
   }
 
   @Public()
