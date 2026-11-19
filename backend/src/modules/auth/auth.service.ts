@@ -20,6 +20,8 @@ import { User, UserDocument } from '../users/schemas/user.schema';
 import { LoginResponseDto } from './dto/login-response.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ResetPasswordResponseDto } from './dto/reset-password-response.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SafeUserResponseDto } from './dto/safe-user-response.dto';
 import { VerifyEmailQueryDto } from './dto/verify-email-query.dto';
 import { VerifyEmailResponseDto } from './dto/verify-email-response.dto';
@@ -343,6 +345,76 @@ export class AuthService {
       accessToken,
       cookieName,
       cookieOptions,
+    };
+  }
+
+  /**
+   * Validates a single-use passwordResetToken and its expiry, updates the user's
+   * passwordHash, clears lockout/mustChangePassword flags, and revokes all active sessions.
+   */
+  async resetPassword(
+    dto: ResetPasswordDto,
+  ): Promise<ResetPasswordResponseDto> {
+    const resetToken = (dto.passwordResetToken ?? dto.token)?.trim();
+    if (!resetToken) {
+      throw new BadRequestException('passwordResetToken is required');
+    }
+
+    const now = new Date();
+    const user = await this.userModel
+      .findOne({ passwordResetToken: resetToken })
+      .select('+passwordResetExpiresAt status');
+
+    if (
+      !user ||
+      !user.passwordResetExpiresAt ||
+      user.passwordResetExpiresAt <= now
+    ) {
+      throw new BadRequestException('Invalid or expired password reset token');
+    }
+
+    if (user.status !== AccountStatus.ACTIVE) {
+      throw new BadRequestException('Account is not active');
+    }
+
+    const passwordHash = await bcrypt.hash(
+      dto.newPassword,
+      AuthService.BCRYPT_SALT_ROUNDS,
+    );
+
+    const updated = await this.userModel.findOneAndUpdate(
+      {
+        _id: user._id,
+        passwordResetToken: resetToken,
+        passwordResetExpiresAt: { $gt: now },
+      },
+      {
+        $set: {
+          passwordHash,
+          mustChangePassword: false,
+          failedLoginAttempts: 0,
+          lockoutUntil: null,
+        },
+        $unset: {
+          passwordResetToken: 1,
+          passwordResetExpiresAt: 1,
+        },
+      },
+      { returnDocument: 'after' },
+    );
+
+    if (!updated) {
+      throw new BadRequestException('Invalid or expired password reset token');
+    }
+
+    await this.sessionModel.updateMany(
+      { user: user._id, revokedAt: null },
+      { $set: { revokedAt: now } },
+    );
+
+    return {
+      message:
+        'Password reset successfully. Please log in with your new password.',
     };
   }
 

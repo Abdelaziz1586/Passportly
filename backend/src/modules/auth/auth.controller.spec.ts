@@ -1,16 +1,33 @@
 import { BadRequestException, ValidationPipe } from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
+import { ConfigService } from '@nestjs/config';
+import { APP_GUARD, Reflector } from '@nestjs/core';
+import { JwtModule, JwtService } from '@nestjs/jwt';
+import { getModelToken } from '@nestjs/mongoose';
+import { PassportModule } from '@nestjs/passport';
 import { Test, TestingModule } from '@nestjs/testing';
+import cookieParser from 'cookie-parser';
 import type { Request, Response } from 'express';
+import request from 'supertest';
+import type { App } from 'supertest/types';
 import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
 import { AccountStatus, Role } from '../../common/enums';
+import { AllExceptionsFilter } from '../../common/filters/http-exception.filter';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { MailService } from '../mail/mail.service';
+import { ReferenceDataService } from '../reference-data/reference-data.service';
+import { ModeratorAssignment } from '../users/schemas/moderator-assignment.schema';
+import { User } from '../users/schemas/user.schema';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyEmailQueryDto } from './dto/verify-email-query.dto';
+import { UserSession } from './schemas/user-session.schema';
+import { JwtStrategy } from './strategies/jwt.strategy';
 
-describe('AuthController (ACC-01 register, ACC-02 verify-email, ACC-04/05 login)', () => {
+describe('AuthController (ACC-01 register, ACC-02 verify-email, ACC-04/05 login, ACC-07 reset-password)', () => {
   let controller: AuthController;
   const validationPipe = new ValidationPipe({
     whitelist: true,
@@ -25,6 +42,7 @@ describe('AuthController (ACC-01 register, ACC-02 verify-email, ACC-04/05 login)
     register: jest.fn(),
     verifyEmail: jest.fn(),
     login: jest.fn(),
+    resetPassword: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -246,6 +264,276 @@ describe('AuthController (ACC-01 register, ACC-02 verify-email, ACC-04/05 login)
           { type: 'body', metatype: LoginDto },
         ),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('resetPassword', () => {
+    it('marks resetPassword endpoint as @Public()', () => {
+      const reflector = new Reflector();
+      const handler = Object.getOwnPropertyDescriptor(
+        AuthController.prototype,
+        'resetPassword',
+      )?.value as (...args: never[]) => unknown;
+      const isPublic = reflector.get<boolean>(IS_PUBLIC_KEY, handler);
+      expect(isPublic).toBe(true);
+    });
+
+    it('delegates valid ResetPasswordDto to AuthService.resetPassword', async () => {
+      const expected = {
+        message:
+          'Password reset successfully. Please log in with your new password.',
+      };
+      mockAuthService.resetPassword.mockResolvedValue(expected);
+
+      const dto = (await validationPipe.transform(
+        {
+          passwordResetToken: '  reset-token-123  ',
+          newPassword: 'NewStrongPassword123!',
+        },
+        { type: 'body', metatype: ResetPasswordDto },
+      )) as ResetPasswordDto;
+
+      const result = await controller.resetPassword(dto);
+      expect(dto.passwordResetToken).toBe('reset-token-123');
+      expect(mockAuthService.resetPassword).toHaveBeenCalledWith(dto);
+      expect(result).toEqual(expected);
+    });
+
+    it('rejects weak newPassword and non-whitelisted fields on ResetPasswordDto', async () => {
+      await expect(
+        validationPipe.transform(
+          { passwordResetToken: 'tok', newPassword: 'weak' },
+          { type: 'body', metatype: ResetPasswordDto },
+        ),
+      ).rejects.toThrow(BadRequestException);
+
+      await expect(
+        validationPipe.transform(
+          {
+            passwordResetToken: 'tok',
+            newPassword: 'NewStrongPassword123!',
+            role: 'ADMIN',
+          },
+          { type: 'body', metatype: ResetPasswordDto },
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('HTTP integration (ACC-07 reset-password)', () => {
+    it('resets password once, invalidates existing JWT sessions, and rejects token reuse or expired tokens', async () => {
+      const userId = '507f1f77bcf86cd799439011';
+      const jti = 'active-session-jti';
+      const userState: {
+        _id: string;
+        email: string;
+        role: Role;
+        status: AccountStatus;
+        passwordHash: string;
+        passwordResetToken?: string;
+        passwordResetExpiresAt?: Date;
+        mustChangePassword: boolean;
+        failedLoginAttempts: number;
+        lockoutUntil: Date | null;
+      } = {
+        _id: userId,
+        email: 'traveler@example.com',
+        role: Role.REGISTERED_USER,
+        status: AccountStatus.ACTIVE,
+        passwordHash: 'old-hash',
+        passwordResetToken: 'single-use-reset-token',
+        passwordResetExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
+        mustChangePassword: true,
+        failedLoginAttempts: 3,
+        lockoutUntil: new Date(Date.now() + 60_000),
+      };
+      let sessionRevokedAt: Date | null = null;
+
+      const fakeUserModel = {
+        findById: jest.fn(() => ({
+          lean: jest.fn().mockResolvedValue(userState),
+        })),
+        findOne: jest.fn((filter: { passwordResetToken?: string }) => ({
+          select: jest.fn().mockImplementation(() => {
+            if (filter.passwordResetToken === userState.passwordResetToken) {
+              return Promise.resolve(userState);
+            }
+            return Promise.resolve(null);
+          }),
+        })),
+        findOneAndUpdate: jest.fn(
+          (
+            filter: {
+              _id: string;
+              passwordResetToken: string;
+              passwordResetExpiresAt: { $gt: Date };
+            },
+            update: {
+              $set: {
+                passwordHash: string;
+                mustChangePassword: boolean;
+                failedLoginAttempts: number;
+                lockoutUntil: null;
+              };
+            },
+          ) => {
+            if (
+              filter._id === userState._id &&
+              filter.passwordResetToken === userState.passwordResetToken &&
+              userState.passwordResetExpiresAt &&
+              userState.passwordResetExpiresAt >
+                filter.passwordResetExpiresAt.$gt
+            ) {
+              userState.passwordHash = update.$set.passwordHash;
+              userState.mustChangePassword = update.$set.mustChangePassword;
+              userState.failedLoginAttempts = update.$set.failedLoginAttempts;
+              userState.lockoutUntil = update.$set.lockoutUntil;
+              delete userState.passwordResetToken;
+              delete userState.passwordResetExpiresAt;
+              return Promise.resolve(userState);
+            }
+            return Promise.resolve(null);
+          },
+        ),
+      };
+
+      const fakeSessionModel = {
+        findOne: jest.fn((filter: { jti?: string; user?: string }) => ({
+          lean: jest.fn().mockImplementation(() => {
+            if (filter.jti === jti && filter.user === userId) {
+              return Promise.resolve({
+                _id: 'session-1',
+                user: userId,
+                jti,
+                expiresAt: new Date(Date.now() + 3600_000),
+                revokedAt: sessionRevokedAt,
+              });
+            }
+            return Promise.resolve(null);
+          }),
+        })),
+        updateMany: jest.fn(
+          (
+            filter: { user?: string; revokedAt?: null },
+            update: { $set?: { revokedAt?: Date } },
+          ) => {
+            if (filter.user === userId && sessionRevokedAt === null) {
+              sessionRevokedAt = update.$set?.revokedAt ?? new Date();
+              return Promise.resolve({ modifiedCount: 1 });
+            }
+            return Promise.resolve({ modifiedCount: 0 });
+          },
+        ),
+      };
+
+      const configValues: Record<string, unknown> = {
+        'jwt.secret': 'test-jwt-secret',
+        'jwt.expiresIn': '1d',
+        'jwt.cookieName': 'access_token',
+        'jwt.cookieSecure': false,
+      };
+      const fakeConfigService = {
+        get: jest.fn((key: string, defaultValue?: unknown) =>
+          key in configValues ? configValues[key] : defaultValue,
+        ),
+      };
+
+      const moduleRef = await Test.createTestingModule({
+        imports: [
+          PassportModule.register({ defaultStrategy: 'jwt' }),
+          JwtModule.register({
+            secret: 'test-jwt-secret',
+            signOptions: { expiresIn: '1d' },
+          }),
+        ],
+        controllers: [AuthController],
+        providers: [
+          AuthService,
+          JwtStrategy,
+          { provide: ConfigService, useValue: fakeConfigService },
+          { provide: getModelToken(User.name), useValue: fakeUserModel },
+          {
+            provide: getModelToken(UserSession.name),
+            useValue: fakeSessionModel,
+          },
+          {
+            provide: getModelToken(ModeratorAssignment.name),
+            useValue: { findOne: jest.fn() },
+          },
+          {
+            provide: ReferenceDataService,
+            useValue: { isCurrencySupported: jest.fn() },
+          },
+          {
+            provide: MailService,
+            useValue: { sendVerificationEmail: jest.fn() },
+          },
+          { provide: APP_GUARD, useClass: JwtAuthGuard },
+          { provide: APP_GUARD, useClass: RolesGuard },
+        ],
+      }).compile();
+
+      const app = moduleRef.createNestApplication();
+      app.setGlobalPrefix('api');
+      app.use(cookieParser());
+      app.useGlobalPipes(
+        new ValidationPipe({
+          whitelist: true,
+          forbidNonWhitelisted: true,
+          transform: true,
+          transformOptions: { enableImplicitConversion: true },
+        }),
+      );
+      app.useGlobalFilters(new AllExceptionsFilter());
+      await app.init();
+
+      try {
+        const jwtService = moduleRef.get(JwtService);
+        const oldCookie = await jwtService.signAsync({
+          sub: userId,
+          email: userState.email,
+          role: userState.role,
+          jti,
+        });
+
+        await request(app.getHttpServer() as App)
+          .get('/api/auth/me')
+          .set('Cookie', [`access_token=${oldCookie}`])
+          .expect(200);
+
+        const resetRes = await request(app.getHttpServer() as App)
+          .post('/api/auth/reset-password')
+          .send({
+            passwordResetToken: 'single-use-reset-token',
+            newPassword: 'NewStrongPassword123!',
+          })
+          .expect(200);
+
+        expect(resetRes.body).toEqual({
+          message:
+            'Password reset successfully. Please log in with your new password.',
+        });
+        expect(userState.mustChangePassword).toBe(false);
+        expect(userState.passwordResetToken).toBeUndefined();
+        expect(sessionRevokedAt).toBeInstanceOf(Date);
+
+        // Old session cookie must now be rejected
+        await request(app.getHttpServer() as App)
+          .get('/api/auth/me')
+          .set('Cookie', [`access_token=${oldCookie}`])
+          .expect(401);
+
+        // Reusing same token fails
+        await request(app.getHttpServer() as App)
+          .post('/api/auth/reset-password')
+          .send({
+            passwordResetToken: 'single-use-reset-token',
+            newPassword: 'AnotherStrongPassword123!',
+          })
+          .expect(400);
+      } finally {
+        await app.close();
+      }
     });
   });
 });

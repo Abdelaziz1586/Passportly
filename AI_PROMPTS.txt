@@ -82,3 +82,20 @@ Details: Verify credentials, enforce failed-login lockout & AccountStatus.ACTIVE
 How the output was used:
 Implemented LoginDto, LoginResponseDto, AuthService.login (email normalization, bcrypt password check, 5-attempt / 15-minute failed-login lockout, AccountStatus.ACTIVE enforcement, UserSession creation with jti and JWT-aligned expiresAt, httpOnly cookie configuration), and AuthController.login wiring with @Public() and Swagger annotations. Added unit tests in auth.service.spec.ts and auth.controller.spec.ts and verified with npm run lint, npm run build, and npm test.
 ================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-07 (Optional) (POST /api/auth/reset-password, SCRUM-12)
+
+Prompt:
+Requirement: ACC-07 (Optional)
+Endpoint: POST /api/auth/reset-password
+Controller: backend/src/modules/auth/auth.controller.ts
+Allowed Roles: Public
+Details: Validate passwordResetToken and expiry, enforce password rules, update passwordHash, and revoke existing sessions.
+
+How the output was used:
+Implemented ResetPasswordDto, ResetPasswordResponseDto, AuthService.resetPassword (validates passwordResetToken/token alias and expiry on ACTIVE accounts, enforces password complexity, hashes with bcryptjs, clears token/expiry/lockout/mustChangePassword atomically, and revokes active UserSessions), AuthController.resetPassword (@Public(), 200 OK, Swagger docs), and unit + HTTP integration tests in auth.service.spec.ts and auth.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
