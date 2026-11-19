@@ -82,3 +82,25 @@ Details: Verify credentials, enforce failed-login lockout & AccountStatus.ACTIVE
 How the output was used:
 Implemented LoginDto, LoginResponseDto, AuthService.login (email normalization, bcrypt password check, 5-attempt / 15-minute failed-login lockout, AccountStatus.ACTIVE enforcement, UserSession creation with jti and JWT-aligned expiresAt, httpOnly cookie configuration), and AuthController.login wiring with @Public() and Swagger annotations. Added unit tests in auth.service.spec.ts and auth.controller.spec.ts and verified with npm run lint, npm run build, and npm test.
 ================================================
+
+================================================
+Date: 2026-11-18
+Student: Abdulrahman Ahmed
+Branch: feature/SCRUM-70-FLT-22-flight-seat-hold
+Tool: Claude (claude.ai chat, Claude Sonnet 5.5) for the implementation; Claude Code (terminal) for review and live testing
+Related Requirement: FLT-22
+Prompt:
+Implement POST /api/flight-bookings/hold for the NestJS/MongoDB backend: atomically reserve seats only if enough remain, create a booking, release the seats when the hold expires, and stay safe under concurrent requests. I then asked Claude Code to review it, test it live against a throw-away MongoDB database, and fix any bug it found.
+How the output was used:
+The generated service, DTO, controller wiring and unit tests were integrated into the flights module. Live testing found a response bug (a session object leaked into the response), which was fixed. After comparing with the official requirements sheet, the hold duration (10 minutes), the booking status and the passenger rules were corrected on the SCRUM-71 branch.
+================================================
+Date: 2026-11-19
+Student: Abdulrahman Ahmed
+Branch: feature/SCRUM-71-FLT-19-create-flight-booking
+Tool: Claude Code (terminal, Claude Sonnet 5.5) and Claude (claude.ai chat) for checking against the requirements sheet
+Related Requirement: FLT-19, FLT-21, FLT-08, GEN-11 (corrections to FLT-22)
+Prompt:
+Implement POST /api/flight-bookings: passenger details (name, date of birth, passport/ID), optional extra baggage per passenger, price totals, a policy snapshot, and a booking summary before payment. Then compare the implementation with the official requirements sheet and fix every assumed rule: 10-minute hold, passenger type validated against date of birth, infants pay 10% and take no seat, the airline maximum of extra bags, and the booking status lifecycle.
+How the output was used:
+The generated code and tests were integrated, then run (lint, build, unit tests, live and concurrency tests on a throw-away database). Rules that had been assumed were replaced with the ones from the official requirements sheet.
+================================================
