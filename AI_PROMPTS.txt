@@ -82,3 +82,20 @@ Details: Verify credentials, enforce failed-login lockout & AccountStatus.ACTIVE
 How the output was used:
 Implemented LoginDto, LoginResponseDto, AuthService.login (email normalization, bcrypt password check, 5-attempt / 15-minute failed-login lockout, AccountStatus.ACTIVE enforcement, UserSession creation with jti and JWT-aligned expiresAt, httpOnly cookie configuration), and AuthController.login wiring with @Public() and Swagger annotations. Added unit tests in auth.service.spec.ts and auth.controller.spec.ts and verified with npm run lint, npm run build, and npm test.
 ================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-12 (DELETE /api/users/me, SCRUM-17)
+
+Prompt:
+Requirement: ACC-12
+Endpoint: DELETE /api/users/me
+Controller: backend/src/modules/users/users.controller.ts
+Allowed Roles: Authenticated (REGISTERED_USER)
+Details: Set User.status = DEACTIVATED, record deactivatedAt, revoke active UserSessions, and clear httpOnly auth cookie.
+
+How the output was used:
+Implemented DeactivateAccountResponseDto, UsersModule UserSession schema registration, UsersService.deactivateMyAccount (verifies REGISTERED_USER role and ACTIVE status, updates status to DEACTIVATED with deactivatedAt, revokes all active UserSessions, returns cookie-clearing config), UsersController.deactivateMyAccount (@Roles(Role.REGISTERED_USER) and cookie clearing), and unit + HTTP integration tests in users.service.spec.ts and users.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
