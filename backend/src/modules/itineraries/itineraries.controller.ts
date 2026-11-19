@@ -104,10 +104,11 @@ export class ItinerariesController {
   @Roles(Role.REGISTERED_USER)
   @Delete('itineraries/:id')
   @ApiOperation({ summary: 'ITN-01: Delete itinerary' })
-  deleteItinerary() {
-    throw new NotImplementedException(
-      'DELETE /api/itineraries/:id not implemented yet',
-    );
+  deleteItinerary(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.deleteItinerary(id, user.userId);
   }
 
   @ApiCookieAuth()

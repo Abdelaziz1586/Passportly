@@ -153,6 +153,27 @@ export class ItinerariesService {
     return this.saveItinerary(itinerary);
   }
 
+  async deleteItinerary(id: string, userId: string) {
+    const itinerary = await this.findOwnedItinerary(id, userId);
+    const itineraryId = itinerary._id;
+    await this.itineraryModel.db.transaction(async (session) => {
+      await this.activityModel
+        .deleteMany({ itinerary: itineraryId })
+        .session(session)
+        .exec();
+      await this.budgetEntryModel
+        .deleteMany({ itinerary: itineraryId })
+        .session(session)
+        .exec();
+      await this.transportCostModel
+        .deleteMany({ itinerary: itineraryId })
+        .session(session)
+        .exec();
+      await itinerary.deleteOne({ session });
+    });
+    return { deleted: true, itineraryId: String(itineraryId) };
+  }
+
   private async getItineraryDetails(
     itinerary: ItineraryDocument,
   ): Promise<Record<string, unknown>> {
