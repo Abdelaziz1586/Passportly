@@ -2,15 +2,17 @@ import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { CabinClass, PassengerType } from '../../common/enums';
 import {
-  MAX_EXTRA_BAGS_PER_PASSENGER,
   PassengerDetailsDto,
   PassengerGender,
 } from './dto/create-flight-booking.dto';
 import { Airline } from './schemas/airline.schema';
 import { CabinInventory } from './schemas/cabin-inventory.schema';
 
-/** Lowest plausible birth year, a sanity bound only (no age/type rules are defined). */
+/** Lowest plausible birth year, a sanity bound only. */
 const MIN_BIRTH_YEAR = 1900;
+/** Age on the outbound departure date: Adult 12+, Child 2-11, Infant under 2. */
+export const ADULT_MIN_AGE = 12;
+export const CHILD_MIN_AGE = 2;
 
 export interface PassengerCounts {
   adults: number;
@@ -28,6 +30,8 @@ export interface NormalizedPassenger {
   passportExpiry: Date;
   nationality: string;
   extraBaggageCount: number;
+  /** Weight of each extra bag in kg, when the client supplied it (validation only, not stored). */
+  extraBaggageWeightKg: number | null;
 }
 
 /** Plain, JSON-safe copy of the policies in force when the booking was created. */
@@ -62,6 +66,12 @@ export type FlightPolicySnapshot = {
   capturedAt: Date;
   legs: LegPolicySnapshot[];
 };
+
+export interface PolicyLegSource {
+  flightId: string;
+  airline: Airline & { _id: Types.ObjectId };
+  cabin: CabinInventory;
+}
 
 export interface LegBaggageTerms {
   extraBagFee: number;
@@ -105,6 +115,23 @@ function parseDateOnly(value: string, label: string): Date {
   return date;
 }
 
+/** Whole years between dateOfBirth and `on` (both UTC calendar dates). */
+export function ageOn(dateOfBirth: Date, on: Date): number {
+  let age = on.getUTCFullYear() - dateOfBirth.getUTCFullYear();
+  const beforeBirthday =
+    on.getUTCMonth() < dateOfBirth.getUTCMonth() ||
+    (on.getUTCMonth() === dateOfBirth.getUTCMonth() &&
+      on.getUTCDate() < dateOfBirth.getUTCDate());
+  if (beforeBirthday) age--;
+  return age;
+}
+
+function passengerTypeForAge(age: number): PassengerType {
+  if (age >= ADULT_MIN_AGE) return PassengerType.ADULT;
+  if (age >= CHILD_MIN_AGE) return PassengerType.CHILD;
+  return PassengerType.INFANT;
+}
+
 function countByType(passengers: PassengerDetailsDto[]): PassengerCounts {
   const counts: PassengerCounts = { adults: 0, children: 0, infants: 0 };
   for (const { type } of passengers) {
@@ -123,6 +150,7 @@ function countByType(passengers: PassengerDetailsDto[]): PassengerCounts {
 export function normalizePassengers(
   inputs: PassengerDetailsDto[],
   held: PassengerCounts,
+  outboundDeparture: Date,
   lastArrival: Date,
   now: Date,
 ): NormalizedPassenger[] {
@@ -138,6 +166,7 @@ export function normalizePassengers(
   }
 
   const lastArrivalDay = startOfUtcDay(lastArrival);
+  const outboundDepartureDay = startOfUtcDay(outboundDeparture);
   const seenPassports = new Set<string>();
 
   return inputs.map((input, index) => {
@@ -150,6 +179,13 @@ export function normalizePassengers(
     }
     if (dateOfBirth.getUTCFullYear() < MIN_BIRTH_YEAR) {
       throw new BadRequestException(`${who} dateOfBirth is not plausible`);
+    }
+    // The type must match the age on the outbound departure date.
+    const age = ageOn(dateOfBirth, outboundDepartureDay);
+    if (passengerTypeForAge(age) !== input.type) {
+      throw new BadRequestException(
+        `${who} is ${age} year(s) old on the outbound departure date and cannot travel as ${input.type} (Adult ${ADULT_MIN_AGE}+, Child ${CHILD_MIN_AGE}-${ADULT_MIN_AGE - 1}, Infant under ${CHILD_MIN_AGE})`,
+      );
     }
 
     const passportExpiry = parseDateOnly(
@@ -171,13 +207,20 @@ export function normalizePassengers(
     seenPassports.add(passportNumber);
 
     const extraBaggageCount = input.extraBaggageCount ?? 0;
+    if (!Number.isInteger(extraBaggageCount) || extraBaggageCount < 0) {
+      throw new BadRequestException(
+        `${who} extraBaggageCount must be a whole number of 0 or more`,
+      );
+    }
+    const extraBaggageWeightKg = input.extraBaggageWeightKg ?? null;
     if (
-      !Number.isInteger(extraBaggageCount) ||
-      extraBaggageCount < 0 ||
-      extraBaggageCount > MAX_EXTRA_BAGS_PER_PASSENGER
+      extraBaggageWeightKg !== null &&
+      (!Number.isFinite(extraBaggageWeightKg) ||
+        extraBaggageWeightKg <= 0 ||
+        extraBaggageCount === 0)
     ) {
       throw new BadRequestException(
-        `${who} extraBaggageCount must be a whole number from 0 to ${MAX_EXTRA_BAGS_PER_PASSENGER}`,
+        `${who} extraBaggageWeightKg must be above 0 and needs extraBaggageCount above 0`,
       );
     }
     if (input.type === PassengerType.INFANT && extraBaggageCount > 0) {
@@ -196,7 +239,35 @@ export function normalizePassengers(
       passportExpiry,
       nationality: input.nationality.trim().toUpperCase(),
       extraBaggageCount,
+      extraBaggageWeightKg,
     };
+  });
+}
+
+/** Maximum weight of one checked bag on this leg: cabin override, else airline policy. */
+export function maxBagWeightKg({ airline, cabin }: PolicyLegSource): number {
+  return (
+    cabin.checkedBagMaxWeightKgOverride ??
+    airline.baggagePolicy.checkedBagMaxWeightKg
+  );
+}
+
+/**
+ * Every extra bag travels on every leg, so its weight must fit the strictest
+ * leg's per-bag maximum.
+ */
+export function assertExtraBagWeights(
+  passengers: NormalizedPassenger[],
+  sources: PolicyLegSource[],
+): void {
+  const limit = Math.min(...sources.map(maxBagWeightKg));
+  passengers.forEach((passenger, index) => {
+    const weight = passenger.extraBaggageWeightKg;
+    if (weight !== null && weight > limit) {
+      throw new BadRequestException(
+        `Passenger ${index + 1} extra bag weighs ${weight} kg but the cabin allows at most ${limit} kg per bag`,
+      );
+    }
   });
 }
 
@@ -236,12 +307,6 @@ export function calculateBaggageFees(
   };
 }
 
-export interface PolicyLegSource {
-  flightId: string;
-  airline: Airline & { _id: Types.ObjectId };
-  cabin: CabinInventory;
-}
-
 /** Copies every policy value into plain objects (no Mongoose documents). */
 export function buildPolicySnapshot(
   sources: PolicyLegSource[],
@@ -263,9 +328,7 @@ export function buildPolicySnapshot(
           carryOnMaxDimensions: baggage.carryOnMaxDimensions ?? null,
           checkedBagsIncluded:
             cabin.checkedBagsIncludedOverride ?? baggage.checkedBagsIncluded,
-          checkedBagMaxWeightKg:
-            cabin.checkedBagMaxWeightKgOverride ??
-            baggage.checkedBagMaxWeightKg,
+          checkedBagMaxWeightKg: maxBagWeightKg({ flightId, airline, cabin }),
           extraBagFee: baggage.extraBagFee,
           overweightFeePerKg: baggage.overweightFeePerKg,
           currency: baggage.currency,

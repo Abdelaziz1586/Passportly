@@ -29,6 +29,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { CreateFlightBookingDto } from './dto/create-flight-booking.dto';
 import { HoldSeatsDto } from './dto/hold-seats.dto';
 import {
+  assertExtraBagWeights,
   buildPolicySnapshot,
   calculateBaggageFees,
   FlightPolicySnapshot,
@@ -46,10 +47,10 @@ import {
 } from './schemas/flight-booking.schema';
 import { Flight } from './schemas/flight.schema';
 
-/** Hold length used when FLIGHT_HOLD_MINUTES is not set (see the requirements sheet). */
-export const DEFAULT_HOLD_MINUTES = 15;
-/** Most seats one booking may reserve (adults + children). */
-export const MAX_SEATS_PER_BOOKING = 9;
+/** Hold length in minutes (requirements sheet: 10), fixed from hold creation and never extended. */
+export const DEFAULT_HOLD_MINUTES = 10;
+/** Infants take no seat and pay this share of the cabin fare on every leg. */
+export const INFANT_FARE_RATE = 0.1;
 
 const BOOKING_REFERENCE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const BOOKING_REFERENCE_LENGTH = 8;
@@ -162,7 +163,7 @@ export class FlightBookingsService {
     dto: HoldSeatsDto,
   ): Promise<FlightHoldResponse> {
     const seatsRequired = dto.adults + dto.children;
-    this.assertValidRequest(dto, seatsRequired);
+    this.assertValidRequest(dto);
     const holdMinutes = this.getHoldMinutes();
 
     for (let attempt = 1; attempt <= MAX_REFERENCE_ATTEMPTS; attempt++) {
@@ -219,11 +220,13 @@ export class FlightBookingsService {
     const passengers = normalizePassengers(
       dto.passengers,
       booking.passengerCounts,
+      booking.legs[0].departureTime,
       lastLeg.arrivalTime,
       now,
     );
 
     const legSources = await this.loadPolicySources(booking, now);
+    assertExtraBagWeights(passengers, legSources);
     const fees = calculateBaggageFees(
       passengers,
       legSources.map(({ airline }) => airline.baggagePolicy),
@@ -463,7 +466,7 @@ export class FlightBookingsService {
     return true;
   }
 
-  private assertValidRequest(dto: HoldSeatsDto, seatsRequired: number): void {
+  private assertValidRequest(dto: HoldSeatsDto): void {
     const expectedLegs = dto.tripType === TripType.ROUND_TRIP ? 2 : 1;
     if (dto.legs.length !== expectedLegs) {
       throw new BadRequestException(
@@ -473,11 +476,6 @@ export class FlightBookingsService {
     if (dto.infants > dto.adults) {
       throw new BadRequestException(
         'Each infant must travel with an adult (infants cannot exceed adults)',
-      );
-    }
-    if (seatsRequired > MAX_SEATS_PER_BOOKING) {
-      throw new BadRequestException(
-        `A booking can hold at most ${MAX_SEATS_PER_BOOKING} seats`,
       );
     }
     const flightIds = new Set(dto.legs.map((leg) => leg.flightId));
@@ -639,7 +637,8 @@ export class FlightBookingsService {
   private calculateLegFare(cabin: CabinInventory, dto: HoldSeatsDto): number {
     const adultFare = cabin.basePrice;
     const childFare = cabin.childPrice ?? cabin.basePrice;
-    const infantFare = cabin.infantPrice ?? 0;
+    // Infants pay 10% of the cabin fare per leg (they take no seat).
+    const infantFare = this.round2(cabin.basePrice * INFANT_FARE_RATE);
     return (
       dto.adults * adultFare +
       dto.children * childFare +

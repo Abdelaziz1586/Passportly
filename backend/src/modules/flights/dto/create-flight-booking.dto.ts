@@ -9,7 +9,9 @@ import {
   IsISO8601,
   IsMongoId,
   IsNotEmpty,
+  IsNumber,
   IsOptional,
+  IsPositive,
   IsString,
   Matches,
   Max,
@@ -18,11 +20,16 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { PassengerType } from '../../../common/enums';
+import { MAX_PASSENGERS_PER_TYPE } from './hold-seats.dto';
 
-/** Most extra checked bags one passenger may buy (per leg). The brief sets no limit. */
-export const MAX_EXTRA_BAGS_PER_PASSENGER = 5;
-/** 9 seats (adults + children) plus up to 9 lap infants, mirroring the hold rules. */
-export const MAX_PASSENGERS_PER_BOOKING = 18;
+/** Sanity bound only (adults + children + infants); the hold's counts decide the real number. */
+export const MAX_PASSENGERS_PER_BOOKING = MAX_PASSENGERS_PER_TYPE * 3;
+/**
+ * Technical sanity bound on extraBaggageCount so absurd numbers cannot overflow
+ * the price maths. It is NOT a business rule: the baggage policy has no
+ * "maximum extra bags" field.
+ */
+export const EXTRA_BAGS_SANITY_BOUND = 100;
 
 export enum PassengerGender {
   MALE = 'MALE',
@@ -60,7 +67,8 @@ export class PassengerDetailsDto {
 
   @ApiProperty({
     example: '1990-05-17',
-    description: 'YYYY-MM-DD, not in the future',
+    description:
+      'YYYY-MM-DD, not in the future. Must fit the passenger type on the outbound departure date: Adult 12+, Child 2-11, Infant under 2.',
   })
   @Matches(DATE_ONLY_PATTERN, {
     message: 'dateOfBirth must be formatted YYYY-MM-DD',
@@ -101,16 +109,26 @@ export class PassengerDetailsDto {
 
   @ApiPropertyOptional({
     minimum: 0,
-    maximum: MAX_EXTRA_BAGS_PER_PASSENGER,
+    maximum: EXTRA_BAGS_SANITY_BOUND,
     default: 0,
     description:
-      'Extra checked bags beyond the airline allowance, charged on every leg. Infants cannot add bags.',
+      'Extra checked bags beyond the airline allowance, charged on every leg (fee = price per extra bag x bags). Infants cannot add bags.',
   })
   @IsOptional()
   @IsInt()
   @Min(0)
-  @Max(MAX_EXTRA_BAGS_PER_PASSENGER)
+  @Max(EXTRA_BAGS_SANITY_BOUND)
   extraBaggageCount: number = 0;
+
+  @ApiPropertyOptional({
+    example: 20,
+    description:
+      'Weight in kg of each extra bag. When given it must not exceed the cabin maximum weight per bag on any leg, and extraBaggageCount must be above 0.',
+  })
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @IsPositive()
+  extraBaggageWeightKg?: number;
 }
 
 export class CreateFlightBookingDto {

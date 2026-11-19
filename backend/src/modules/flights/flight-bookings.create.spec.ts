@@ -212,6 +212,54 @@ describe('FlightBookingsService.createBooking', () => {
     return { filter, update };
   }
 
+  /** Birth date that makes someone `years` old on the outbound departure date (+offsetDays moves the birthday later). */
+  function dobFor(years: number, offsetDays = 0): string {
+    const departure = store!.legs[0].departureTime;
+    return new Date(
+      Date.UTC(
+        departure.getUTCFullYear() - years,
+        departure.getUTCMonth(),
+        departure.getUTCDate() + offsetDays,
+      ),
+    )
+      .toISOString()
+      .slice(0, 10);
+  }
+
+  function seedCounts(adults: number, children: number, infants: number) {
+    seedOneWay({
+      passengerCounts: {
+        adults,
+        children,
+        infants,
+        totalSeatsRequired: adults + children,
+      },
+    });
+  }
+
+  /** Turns the stored booking into a round trip with a second airline on the way back. */
+  function addReturnLeg() {
+    const returnAirline = makeAirline({ name: 'Delta Jet' });
+    const returnFlight = makeFlight(returnAirline._id, 120);
+    airlines.push(returnAirline);
+    flights.push(returnFlight);
+    cabins.push(makeCabin(returnFlight._id));
+    seedOneWay({
+      tripType: TripType.ROUND_TRIP,
+      baseFareTotal: 400,
+      totalPrice: 400,
+    });
+    store!.legs.push({
+      flight: returnFlight._id,
+      cabin: cabins[1]._id,
+      cabinClass: CabinClass.ECONOMY,
+      departureTime: returnFlight.departureTime,
+      arrivalTime: new Date(returnFlight.departureTime.getTime() + 4 * HOUR),
+      unitPrice: 100,
+    });
+    return returnAirline;
+  }
+
   beforeEach(async () => {
     jest.clearAllMocks();
     const airline = makeAirline();
@@ -378,13 +426,14 @@ describe('FlightBookingsService.createBooking', () => {
       expect(bookingModel.findOneAndUpdate).not.toHaveBeenCalled();
     });
 
-    it('rejects bad dates, duplicate passports, infant bags and too many bags', async () => {
+    it('rejects bad dates, duplicate passports and invalid bag counts', async () => {
       const second = { passportNumber: 'B7654321' };
       const cases: Partial<PassengerDetailsDto>[] = [
         { dateOfBirth: '2999-01-01' }, // future
         { dateOfBirth: '1990-02-30' }, // not a date
         { passportExpiry: '2000-01-01' }, // expired
-        { extraBaggageCount: 6 }, // over the limit
+        { extraBaggageCount: -1 }, // negative
+        { extraBaggageCount: 1.5 }, // not a whole number
       ];
       for (const bad of cases) {
         await expect(
@@ -411,6 +460,7 @@ describe('FlightBookingsService.createBooking', () => {
           adult(),
           adult({
             type: PassengerType.INFANT,
+            dateOfBirth: dobFor(1),
             passportNumber: 'C1111111',
             extraBaggageCount: 1,
           }),
@@ -450,6 +500,174 @@ describe('FlightBookingsService.createBooking', () => {
       const ok = await submit(twoAdults());
       expect(JSON.stringify(ok)).not.toContain('A1234567');
       expect(ok.passengers[0].passportNumber).toBe('****4567');
+    });
+  });
+
+  describe('passenger type vs age on the outbound departure date', () => {
+    const { ADULT, CHILD, INFANT } = PassengerType;
+    // [label, type, years old, birthday offset in days, accepted]
+    const cases: [string, PassengerType, number, number, boolean][] = [
+      ['adult aged 12 (birthday on the departure date)', ADULT, 12, 0, true],
+      ['adult aged 30', ADULT, 30, 0, true],
+      ['adult aged 11', ADULT, 11, 0, false],
+      ['adult turning 12 the day after departure', ADULT, 12, 1, false],
+      ['child aged 11', CHILD, 11, 0, true],
+      ['child aged 2 (birthday on the departure date)', CHILD, 2, 0, true],
+      ['child aged 12', CHILD, 12, 0, false],
+      ['child aged 1', CHILD, 1, 0, false],
+      ['child turning 2 the day after departure', CHILD, 2, 1, false],
+      ['infant aged 1', INFANT, 1, 0, true],
+      ['infant turning 2 the day after departure', INFANT, 2, 1, true],
+      ['infant aged 2', INFANT, 2, 0, false],
+      ['infant aged 8', INFANT, 8, 0, false],
+    ];
+
+    it.each(cases)('%s', async (_label, type, years, offset, accepted) => {
+      if (type === ADULT) seedCounts(2, 0, 0);
+      else if (type === CHILD) seedCounts(1, 1, 0);
+      else seedCounts(1, 0, 1);
+      const subject = adult({
+        type,
+        dateOfBirth: dobFor(years, offset),
+        passportNumber: 'S1111111',
+      });
+      const other = adult({ passportNumber: 'O2222222' });
+      const list = type === ADULT ? [subject, other] : [other, subject];
+
+      if (accepted) {
+        await expect(submit(list)).resolves.toMatchObject({
+          status: BookingStatus.PENDING_PAYMENT,
+        });
+      } else {
+        await expect(submit(list)).rejects.toBeInstanceOf(BadRequestException);
+        expect(bookingModel.findOneAndUpdate).not.toHaveBeenCalled();
+      }
+    });
+
+    it('names the passenger and the rule, never the passport number', async () => {
+      seedCounts(1, 1, 0);
+      const error = await submit([
+        adult(),
+        adult({
+          type: CHILD,
+          dateOfBirth: dobFor(14),
+          passportNumber: 'S1111111',
+        }),
+      ]).catch((e: Error) => e);
+
+      expect((error as Error).message).toContain('Passenger 2');
+      expect((error as Error).message).toContain('CHILD');
+      expect((error as Error).message).not.toContain('S1111111');
+    });
+
+    it('uses the outbound departure date, not the return date, on a round trip', async () => {
+      addReturnLeg();
+      seedCounts(1, 1, 0);
+      store!.tripType = TripType.ROUND_TRIP;
+      store!.legs = [
+        store!.legs[0],
+        {
+          ...store!.legs[0],
+          departureTime: new Date(Date.now() + 120 * HOUR),
+          arrivalTime: new Date(Date.now() + 124 * HOUR),
+        },
+      ];
+
+      // 11 on the outbound date, turns 12 two days later (before the return flight)
+      await expect(
+        submit([
+          adult(),
+          adult({
+            type: PassengerType.CHILD,
+            dateOfBirth: dobFor(12, 2),
+            passportNumber: 'S1111111',
+          }),
+        ]),
+      ).resolves.toBeDefined();
+    });
+
+    it('requires the passenger counts to equal the hold', async () => {
+      seedCounts(1, 1, 0); // hold: 1 adult + 1 child
+      await expect(
+        submit([adult(), adult({ passportNumber: 'B7654321' })]), // 2 adults
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('extra bags: no invented limits, weight checked against the cabin', () => {
+    const bags = (count: number, weight?: number) => [
+      adult({ extraBaggageCount: count, extraBaggageWeightKg: weight }),
+      adult({ passportNumber: 'B7654321' }),
+    ];
+
+    it('charges price per extra bag x bags with no maximum bag count', async () => {
+      const result = await submit(bags(20));
+
+      expect(result.passengers[0].extraBaggageFee).toBe(800); // 20 x 40
+      expect(result.totalPrice).toBe(1000);
+    });
+
+    it('accepts an extra bag at exactly the cabin maximum weight', async () => {
+      const result = await submit(bags(1, 23));
+      expect(result.extraBaggageTotal).toBe(40);
+    });
+
+    it('rejects an extra bag heavier than the cabin maximum', async () => {
+      await expect(submit(bags(1, 23.5))).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(bookingModel.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it('uses the cabin override of the maximum weight', async () => {
+      cabins[0] = makeCabin(flights[0]._id, {
+        checkedBagMaxWeightKgOverride: 32,
+      });
+      seedOneWay();
+
+      await expect(submit(bags(1, 30))).resolves.toBeDefined();
+      seedOneWay();
+      await expect(submit(bags(1, 33))).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('checks every leg: the strictest maximum on a round trip wins', async () => {
+      const returnAirline = addReturnLeg();
+      returnAirline.baggagePolicy.checkedBagMaxWeightKg = 20;
+
+      await expect(submit(bags(1, 22))).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      await expect(submit(bags(1, 20))).resolves.toBeDefined();
+    });
+
+    it('rejects a bag weight without extra bags', async () => {
+      await expect(submit(bags(0, 10))).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('does not require a weight', async () => {
+      await expect(submit(bags(2))).resolves.toMatchObject({
+        extraBaggageTotal: 80,
+      });
+    });
+  });
+
+  describe('no passenger cap', () => {
+    it('accepts more than 9 passengers when they match the hold', async () => {
+      seedCounts(12, 0, 0);
+      store!.baseFareTotal = 1200;
+      store!.totalPrice = 1200;
+      const passengers = Array.from({ length: 12 }, (_, i) =>
+        adult({ passportNumber: `P${1000000 + i}` }),
+      );
+
+      const result = await submit(passengers);
+
+      expect(result.passengers).toHaveLength(12);
+      expect(result.totalPrice).toBe(1200);
     });
   });
 

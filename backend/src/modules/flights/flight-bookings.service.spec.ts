@@ -47,7 +47,7 @@ function makeCabin(flightId: Types.ObjectId, overrides = {}) {
     cabinClass: CabinClass.ECONOMY,
     basePrice: 100,
     childPrice: 60,
-    infantPrice: 10,
+    infantPrice: 5, // ignored: infants pay 10% of the cabin fare
     currency: 'USD',
     isActive: true,
     ...overrides,
@@ -89,6 +89,7 @@ describe('FlightBookingsService', () => {
     findOneAndUpdate: jest.fn(),
     find: jest.fn(),
   };
+  const config = { get: jest.fn() };
   const session = {};
   const connection = {
     transaction: jest.fn((fn: (s: unknown) => Promise<unknown>) => fn(session)),
@@ -116,6 +117,7 @@ describe('FlightBookingsService', () => {
     flights.set(flight._id.toString(), flight);
     cabins.set(flight._id.toString(), makeCabin(flight._id));
 
+    config.get.mockReturnValue(undefined);
     cabinModel.findOneAndUpdate.mockResolvedValue({ _id: 'cabin' });
     bookingModel.create.mockImplementation(([doc]: Record<string, unknown>[]) =>
       Promise.resolve([{ _id: new Types.ObjectId(), ...doc }]),
@@ -129,10 +131,7 @@ describe('FlightBookingsService', () => {
         { provide: getModelToken(CabinInventory.name), useValue: cabinModel },
         { provide: getModelToken(FlightBooking.name), useValue: bookingModel },
         { provide: getConnectionToken(), useValue: connection },
-        {
-          provide: ConfigService,
-          useValue: { get: jest.fn().mockReturnValue(undefined) },
-        },
+        { provide: ConfigService, useValue: config },
         { provide: NotificationsService, useValue: notifications },
       ],
     }).compile();
@@ -159,11 +158,11 @@ describe('FlightBookingsService', () => {
 
       expect(result.status).toBe(BookingStatus.HELD);
       expect(result.passengerCounts.totalSeatsRequired).toBe(2);
-      expect(result.baseFareTotal).toBe(170); // 100 + 60 + 10
+      expect(result.baseFareTotal).toBe(170); // 100 + 60 + 10% of 100
       expect(result.bookingReference).toMatch(/^[A-Z2-9]{8}$/);
       const heldFor = result.holdExpiresAt.getTime() - before;
-      expect(heldFor).toBeGreaterThanOrEqual(15 * 60_000 - 1000);
-      expect(heldFor).toBeLessThan(15 * 60_000 + 5000);
+      expect(heldFor).toBeGreaterThanOrEqual(10 * 60_000 - 1000);
+      expect(heldFor).toBeLessThan(10 * 60_000 + 5000);
     });
 
     it('rejects with Conflict when seats ran out (no overselling)', async () => {
@@ -185,13 +184,74 @@ describe('FlightBookingsService', () => {
       expect(connection.transaction).not.toHaveBeenCalled();
     });
 
-    it('rejects more seats than one booking may hold', async () => {
+    it('has no passenger cap: 20 seats are held when the cabin has them', async () => {
+      const result = await service.holdSeats(
+        new Types.ObjectId().toString(),
+        holdDto({ adults: 12, children: 8, infants: 3 }),
+      );
+
+      const [filter, update] = cabinModel.findOneAndUpdate.mock.calls[0] as [
+        { availableSeats: { $gte: number } },
+        { $inc: Record<string, number> },
+      ];
+      expect(filter.availableSeats).toEqual({ $gte: 20 });
+      expect(update.$inc).toEqual({ availableSeats: -20, heldSeats: 20 });
+      expect(result.passengerCounts.totalSeatsRequired).toBe(20);
+    });
+
+    it('leaves the limit to seat availability (409 when the cabin is too small)', async () => {
+      cabinModel.findOneAndUpdate.mockResolvedValue(null);
       await expect(
         service.holdSeats(
           new Types.ObjectId().toString(),
-          holdDto({ adults: 9, children: 1 }),
+          holdDto({ adults: 30 }),
         ),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('holds for 10 minutes by default and honours FLIGHT_HOLD_MINUTES', async () => {
+      const heldFor = async () => {
+        const before = Date.now();
+        const hold = await service.holdSeats(
+          new Types.ObjectId().toString(),
+          holdDto(),
+        );
+        return hold.holdExpiresAt.getTime() - before;
+      };
+      expect(await heldFor()).toBeLessThan(10 * 60_000 + 5000);
+      config.get.mockReturnValue('20');
+      expect(await heldFor()).toBeGreaterThanOrEqual(20 * 60_000 - 1000);
+      config.get.mockReturnValue('nonsense');
+      expect(await heldFor()).toBeLessThan(10 * 60_000 + 5000);
+    });
+
+    describe('infants', () => {
+      it('take no seat and pay 10% of the cabin fare', async () => {
+        const result = await service.holdSeats(
+          new Types.ObjectId().toString(),
+          holdDto({ adults: 2, children: 0, infants: 2 }),
+        );
+
+        const [, update] = cabinModel.findOneAndUpdate.mock.calls[0] as [
+          unknown,
+          { $inc: Record<string, number> },
+        ];
+        expect(update.$inc).toEqual({ availableSeats: -2, heldSeats: 2 });
+        expect(result.passengerCounts.totalSeatsRequired).toBe(2);
+        expect(result.baseFareTotal).toBe(220); // 2 x 100 + 2 x 10
+      });
+
+      it('round the 10% to cents and ignore any stored infantPrice', async () => {
+        const [id] = [...flights.keys()];
+        cabins.set(id, makeCabin(flights.get(id)!._id, { basePrice: 333.33 }));
+
+        const result = await service.holdSeats(
+          new Types.ObjectId().toString(),
+          holdDto({ adults: 1, children: 0, infants: 1 }),
+        );
+
+        expect(result.baseFareTotal).toBe(366.66); // 333.33 + 33.33
+      });
     });
 
     it('rejects a round trip that does not have two legs', async () => {
@@ -297,6 +357,21 @@ describe('FlightBookingsService', () => {
         expect(cabinModel.findOneAndUpdate).toHaveBeenCalledTimes(2);
         expect(result.legs).toHaveLength(2);
         expect(result.baseFareTotal).toBe(400); // 2 adults x 100 x 2 legs
+      });
+
+      it('charges an infant 10% of the cabin fare on every leg', async () => {
+        const inbound = addReturnFlight();
+
+        const result = await service.holdSeats(
+          new Types.ObjectId().toString(),
+          {
+            ...roundTrip(inbound._id.toString()),
+            infants: 1,
+          },
+        );
+
+        expect(result.baseFareTotal).toBe(420); // 2 x 200 + 2 x 10
+        expect(result.passengerCounts.totalSeatsRequired).toBe(2);
       });
 
       it('rejects a return flight that is not the reverse route', async () => {
