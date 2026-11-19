@@ -37,6 +37,7 @@ import {
   UpdateBudgetEntryDto,
   UpdateItineraryDayDto,
   UpdateItineraryDto,
+  UpdateTransportCostDto,
 } from './dto/itinerary-endpoints.dto';
 import { ItinerariesService } from './itineraries.service';
 
@@ -302,10 +303,12 @@ export class ItinerariesController {
   @Roles(Role.REGISTERED_USER)
   @Patch('transport-costs/:id')
   @ApiOperation({ summary: 'ITN-16: Update intercity transport cost' })
-  updateTransportCost() {
-    throw new NotImplementedException(
-      'PATCH /api/transport-costs/:id not implemented yet',
-    );
+  updateTransportCost(
+    @Param('id') id: string,
+    @Body() dto: UpdateTransportCostDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.updateTransportCost(id, user.userId, dto);
   }
 
   @ApiCookieAuth()
