@@ -32,6 +32,7 @@ parent lands. Each pull request shows only its own ticket delta.
 | SCRUM-112 | ITN-21 | Clone a public itinerary into a private copy |
 | SCRUM-113 | ITN-25 | Search available hotels from itinerary context |
 | SCRUM-114 | ITN-26 | Search flights from itinerary context |
+| SCRUM-115 | ITN-27 | Attach an owned confirmed booking |
 
 Each ticket is checked with `npm run lint`, `npm run build` and `npm test`.
 Database tests use an isolated local MongoDB replica set and never load application environment files.

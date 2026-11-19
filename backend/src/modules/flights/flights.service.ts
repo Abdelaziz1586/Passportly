@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { FlightStatus } from '../../common/enums';
+import { BookingStatus, FlightStatus } from '../../common/enums';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
 import { Airline, AirlineDocument } from './schemas/airline.schema';
 import {
@@ -25,6 +25,19 @@ export class FlightsService {
     readonly flightBookingModel: Model<FlightBookingDocument>,
     readonly referenceDataService: ReferenceDataService,
   ) {}
+
+  async findConfirmedBookingForUser(
+    bookingId: string,
+    userId: string,
+  ): Promise<FlightBookingDocument | null> {
+    return this.flightBookingModel
+      .findOne({
+        _id: new Types.ObjectId(bookingId),
+        user: new Types.ObjectId(userId),
+        status: BookingStatus.CONFIRMED,
+      })
+      .exec();
+  }
 
   async searchForCityRoutes(
     routes: Array<{

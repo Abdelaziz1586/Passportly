@@ -28,6 +28,7 @@ import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { CreateItineraryDto } from './dto/create-itinerary.dto';
 import {
+  AttachBookingDto,
   BudgetSummaryQueryDto,
   CreateActivityDto,
   CreateBudgetEntryDto,
@@ -388,10 +389,12 @@ export class ItinerariesController {
   @ApiOperation({
     summary: 'ITN-27 (Optional): Attach confirmed booking to itinerary',
   })
-  attachBooking() {
-    throw new NotImplementedException(
-      'POST /api/itineraries/:id/bookings not implemented yet',
-    );
+  attachBooking(
+    @Param('id') id: string,
+    @Body() dto: AttachBookingDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.attachBooking(id, user.userId, dto);
   }
 
   @ApiCookieAuth()
