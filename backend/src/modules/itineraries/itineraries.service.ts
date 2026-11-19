@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
@@ -15,7 +16,13 @@ import {
   Types,
   isValidObjectId,
 } from 'mongoose';
-import { ItineraryVisibility, Role, TransportMode } from '../../common/enums';
+import { firstValueFrom } from 'rxjs';
+import {
+  BudgetCategory,
+  ItineraryVisibility,
+  Role,
+  TransportMode,
+} from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
 import { AttractionDocument } from '../reference-data/schemas/attraction.schema';
@@ -23,6 +30,7 @@ import { CityDocument } from '../reference-data/schemas/city.schema';
 import { UploadsService } from '../uploads/uploads.service';
 import { CreateItineraryDto } from './dto/create-itinerary.dto';
 import {
+  BudgetSummaryQueryDto,
   CreateActivityDto,
   CreateBudgetEntryDto,
   CreateItineraryDayDto,
@@ -49,6 +57,21 @@ import {
   TransportCost,
   TransportCostDocument,
 } from './schemas/transport-cost.schema';
+
+interface FxRatesApiResponse {
+  success?: boolean;
+  base?: string;
+  rates?: Record<string, number>;
+}
+
+export interface BudgetSummaryLine {
+  type: 'BUDGET_ENTRY' | 'TRANSPORT_COST';
+  category: BudgetCategory | 'TRANSPORT';
+  title: string;
+  originalAmount: number;
+  originalCurrency: string;
+  convertedAmount: number;
+}
 
 @Injectable()
 export class ItinerariesService {
@@ -542,6 +565,88 @@ export class ItinerariesService {
     return { deleted: true, transportCostId: id };
   }
 
+  async getBudgetSummary(
+    id: string,
+    query: BudgetSummaryQueryDto,
+    user?: AuthenticatedUser,
+  ) {
+    const itinerary = await this.findVisibleOrOwnedItinerary(id, user);
+    const targetCurrency = (query.currency ?? itinerary.displayCurrency)
+      .trim()
+      .toUpperCase();
+    await this.assertSupportedCurrency(targetCurrency);
+    const [budgetEntries, transportCosts] = await Promise.all([
+      this.budgetEntryModel.find({ itinerary: itinerary._id }).exec(),
+      this.transportCostModel.find({ itinerary: itinerary._id }).exec(),
+    ]);
+
+    const sourceCurrencies = Array.from(
+      new Set([
+        ...budgetEntries.map((entry) => entry.currency),
+        ...transportCosts.map((cost) => cost.currency),
+      ]),
+    );
+    await Promise.all(
+      sourceCurrencies.map((currency) =>
+        this.assertSupportedCurrency(currency),
+      ),
+    );
+    const rates = new Map<string, number>();
+    await Promise.all(
+      sourceCurrencies.map(async (currency) => {
+        rates.set(
+          currency,
+          await this.getExchangeRate(currency, targetCurrency),
+        );
+      }),
+    );
+
+    const lines: BudgetSummaryLine[] = [
+      ...budgetEntries.map((entry) => ({
+        type: 'BUDGET_ENTRY' as const,
+        category: entry.category,
+        title: entry.title,
+        originalAmount: entry.amount,
+        originalCurrency: entry.currency,
+        convertedAmount: this.roundCurrency(
+          entry.amount * (rates.get(entry.currency) ?? 1),
+        ),
+      })),
+      ...transportCosts.map((cost) => ({
+        type: 'TRANSPORT_COST' as const,
+        category: 'TRANSPORT' as const,
+        title:
+          cost.notes ||
+          [cost.fromCityName, cost.toCityName].filter(Boolean).join(' → ') ||
+          'Transport',
+        originalAmount: cost.amount,
+        originalCurrency: cost.currency,
+        convertedAmount: this.roundCurrency(
+          cost.amount * (rates.get(cost.currency) ?? 1),
+        ),
+      })),
+    ];
+    const totalsByCategory = new Map<string, number>();
+    for (const line of lines) {
+      totalsByCategory.set(
+        line.category,
+        this.roundCurrency(
+          (totalsByCategory.get(line.category) ?? 0) + line.convertedAmount,
+        ),
+      );
+    }
+    const total = this.roundCurrency(
+      lines.reduce((sum, line) => sum + line.convertedAmount, 0),
+    );
+    return {
+      itineraryId: String(itinerary._id),
+      currency: targetCurrency,
+      totalsByCategory: Object.fromEntries(totalsByCategory),
+      total,
+      entries: lines,
+    };
+  }
+
   private async getItineraryDetails(
     itinerary: ItineraryDocument,
   ): Promise<Record<string, unknown>> {
@@ -574,6 +679,79 @@ export class ItinerariesService {
     return { ...plain, days, transportCosts };
   }
 
+  private async getExchangeRate(
+    baseCurrency: string,
+    targetCurrency: string,
+  ): Promise<number> {
+    if (baseCurrency === targetCurrency) return 1;
+    const now = new Date();
+    const cachedRate = await this.exchangeRateModel
+      .findOne({
+        baseCurrency,
+        targetCurrency,
+        expiresAt: { $gt: now },
+      })
+      .exec();
+    if (cachedRate && Number.isFinite(cachedRate.rate) && cachedRate.rate > 0)
+      return cachedRate.rate;
+
+    const apiKey = this.configService.get<string>('fxRates.apiKey', '');
+    const baseUrl = this.configService
+      .get<string>('fxRates.baseUrl', 'https://api.fxratesapi.com')
+      .replace(/\/+$/, '');
+    if (!apiKey || !baseUrl) {
+      throw new ServiceUnavailableException(
+        'Currency conversion is not configured',
+      );
+    }
+
+    let rate: number;
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get<FxRatesApiResponse>(`${baseUrl}/latest`, {
+          timeout: 10_000,
+          params: {
+            api_key: apiKey,
+            base: baseCurrency,
+            currencies: targetCurrency,
+            format: 'json',
+          },
+        }),
+      );
+      const receivedRate = response.data.rates?.[targetCurrency];
+      if (
+        response.data.success === false ||
+        response.data.base !== baseCurrency ||
+        typeof receivedRate !== 'number' ||
+        !Number.isFinite(receivedRate) ||
+        receivedRate <= 0
+      ) {
+        throw new Error('FXRatesAPI returned no usable rate');
+      }
+      rate = receivedRate;
+    } catch {
+      throw new ServiceUnavailableException(
+        'Unable to retrieve exchange rates at this time',
+      );
+    }
+
+    const fetchedAt = new Date();
+    const expiresAt = new Date(fetchedAt.getTime() + 60_000);
+    const savedRate = await this.exchangeRateModel
+      .findOneAndUpdate(
+        { baseCurrency, targetCurrency },
+        { $set: { rate, fetchedAt, expiresAt, source: 'FXRatesAPI' } },
+        { returnDocument: 'after', upsert: true, setDefaultsOnInsert: true },
+      )
+      .exec();
+    if (!savedRate) {
+      throw new ServiceUnavailableException(
+        'Unable to cache exchange rates at this time',
+      );
+    }
+    return savedRate.rate;
+  }
+
   private async findItineraryById(id: string): Promise<ItineraryDocument> {
     const itinerary = await this.itineraryModel
       .findById(this.objectId(id, 'id'))
@@ -589,6 +767,26 @@ export class ItinerariesService {
     const itinerary = await this.findItineraryById(id);
     this.assertOwner(itinerary, userId);
     return itinerary;
+  }
+
+  private async findVisibleOrOwnedItinerary(
+    id: string,
+    user?: AuthenticatedUser,
+  ): Promise<ItineraryDocument> {
+    const itinerary = await this.findItineraryById(id);
+    if (
+      itinerary.visibility === ItineraryVisibility.PUBLIC &&
+      !itinerary.isHidden
+    ) {
+      return itinerary;
+    }
+    if (
+      user &&
+      (user.role === Role.ADMIN || String(itinerary.user) === user.userId)
+    ) {
+      return itinerary;
+    }
+    throw new NotFoundException('Itinerary not found');
   }
 
   private assertOwner(
@@ -774,5 +972,9 @@ export class ItinerariesService {
 
   private escapeRegex(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private roundCurrency(amount: number): number {
+    return Math.round((amount + Number.EPSILON) * 100) / 100;
   }
 }

@@ -1,3 +1,4 @@
+import { HttpService } from '@nestjs/axios';
 import {
   BadRequestException,
   CanActivate,
@@ -5,6 +6,7 @@ import {
   ForbiddenException,
   INestApplication,
   NotFoundException,
+  ServiceUnavailableException,
   UnauthorizedException,
   ValidationPipe,
 } from '@nestjs/common';
@@ -13,6 +15,7 @@ import { Reflector } from '@nestjs/core';
 import { MongooseModule, getConnectionToken } from '@nestjs/mongoose';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Test } from '@nestjs/testing';
+import { AxiosHeaders } from 'axios';
 import type { Request } from 'express';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { Connection, Types } from 'mongoose';
@@ -21,7 +24,9 @@ import type { Server } from 'node:http';
 import * as os from 'node:os';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
+import { of, throwError } from 'rxjs';
 import request from 'supertest';
+import { OPTIONAL_AUTH_KEY } from '../../common/decorators/optional-auth.decorator';
 import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
 import {
   BudgetCategory,
@@ -49,6 +54,8 @@ describe('Itinerary endpoints and persistence', () => {
   let service: ItinerariesService;
 
   let reference: ReferenceDataService;
+
+  let http: HttpService;
 
   let directory: string;
 
@@ -95,6 +102,7 @@ describe('Itinerary endpoints and persistence', () => {
     }).compile();
     service = module.get(ItinerariesService);
     reference = module.get(ReferenceDataService);
+    http = module.get(HttpService);
     db = module.get<Connection>(getConnectionToken());
     db.model(User.name, UserSchema);
     await Promise.all(Object.values(db.models).map((model) => model.init()));
@@ -110,7 +118,10 @@ describe('Itinerary endpoints and persistence', () => {
           IS_PUBLIC_KEY,
           [context.getHandler(), context.getClass()],
         );
-        const optionalRoute = false;
+        const optionalRoute = reflector.getAllAndOverride<boolean>(
+          OPTIONAL_AUTH_KEY,
+          [context.getHandler(), context.getClass()],
+        );
         if (!req.user && !publicRoute && !optionalRoute)
           throw new UnauthorizedException();
         return true;
@@ -514,6 +525,96 @@ describe('Itinerary endpoints and persistence', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
     await service.deleteTransportCost(String(transport._id), ownerId);
     expect(await service.transportCostModel.countDocuments()).toBe(0);
+  });
+
+  it('SCRUM-109: converts budgets and transport, reuses cached rates, and preserves private access', async () => {
+    const { itinerary, dayId } = await itineraryWithDay();
+    const id = String(itinerary._id);
+    await service.addBudgetEntry(id, dayId, ownerId, budget);
+    await service.addTransportCost(id, ownerId, { amount: 5, currency: 'EUR' });
+    await service.exchangeRateModel.create({
+      baseCurrency: 'USD',
+      targetCurrency: 'EUR',
+      rate: 0.9,
+      fetchedAt: new Date(),
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const get = jest.spyOn(http, 'get');
+    const result = await service.getBudgetSummary(
+      id,
+      { currency: 'EUR' },
+      user,
+    );
+    expect(result.total).toBe(14);
+    expect(result.totalsByCategory).toMatchObject({
+      [budget.category]: 9,
+      TRANSPORT: 5,
+    });
+    expect(get).not.toHaveBeenCalled();
+    await expect(service.getBudgetSummary(id, {})).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    await expect(
+      service.getBudgetSummary(id, {}, stranger),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('SCRUM-109: returns 503 for unavailable FX configuration', async () => {
+    const { itinerary, dayId } = await itineraryWithDay();
+    await service.addBudgetEntry(String(itinerary._id), dayId, ownerId, budget);
+    await expect(
+      service.getBudgetSummary(
+        String(itinerary._id),
+        { currency: 'EUR' },
+        user,
+      ),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+
+  it('SCRUM-109: caches upstream rates and handles network and malformed responses', async () => {
+    const { itinerary, dayId } = await itineraryWithDay();
+    const id = String(itinerary._id);
+    await service.addBudgetEntry(id, dayId, ownerId, budget);
+    jest
+      .spyOn(service.configService, 'get')
+      .mockImplementation((key: string) =>
+        key === 'fxRates.apiKey'
+          ? 'integration-only-placeholder'
+          : 'https://api.fxratesapi.com',
+      );
+    const get = jest.spyOn(http, 'get').mockReturnValue(
+      of({
+        data: { success: true, base: 'USD', rates: { EUR: 0.8 } },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+      }),
+    );
+    expect(
+      (await service.getBudgetSummary(id, { currency: 'EUR' }, user)).total,
+    ).toBe(8);
+    expect(
+      (await service.getBudgetSummary(id, { currency: 'EUR' }, user)).total,
+    ).toBe(8);
+    expect(get).toHaveBeenCalledTimes(1);
+    await service.exchangeRateModel.deleteMany({});
+    get.mockReturnValueOnce(throwError(() => new Error('network failed')));
+    await expect(
+      service.getBudgetSummary(id, { currency: 'EUR' }, user),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    get.mockReturnValueOnce(
+      of({
+        data: { rates: { EUR: -1 } },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+      }),
+    );
+    await expect(
+      service.getBudgetSummary(id, { currency: 'EUR' }, user),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 
   it('SCRUM-93: cascade-deletes activities, budgets and transport costs', async () => {
