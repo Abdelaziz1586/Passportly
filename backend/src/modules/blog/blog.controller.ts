@@ -3,14 +3,28 @@ import {
   Delete,
   Get,
   NotImplementedException,
+  Param,
   Patch,
   Post,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiCookieAuth,
+  ApiForbiddenResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
+import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { BlogService } from './blog.service';
+import { DeletePostImageResponseDto } from './dto/blog-post-response.dto';
 
 @ApiTags('Blog & Community')
 @Controller()
@@ -137,10 +151,24 @@ export class BlogController {
   @Roles(Role.REGISTERED_USER)
   @Delete('posts/:id/images/:imageId')
   @ApiOperation({ summary: 'BLG-10: Delete image from blog post' })
-  deletePostImage() {
-    throw new NotImplementedException(
-      'DELETE /api/posts/:id/images/:imageId not implemented yet',
-    );
+  @ApiParam({ name: 'id', description: 'Blog post MongoDB ObjectId' })
+  @ApiParam({ name: 'imageId', description: 'MediaItem MongoDB ObjectId' })
+  @ApiOkResponse({
+    description: 'Image removed from blog post successfully',
+    type: DeletePostImageResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid post ID or image ID' })
+  @ApiUnauthorizedResponse({ description: 'Authentication required' })
+  @ApiForbiddenResponse({
+    description: 'Only the post author can delete images from this blog post',
+  })
+  @ApiNotFoundResponse({ description: 'Blog post or image not found' })
+  deletePostImage(
+    @Param('id') id: string,
+    @Param('imageId') imageId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<DeletePostImageResponseDto> {
+    return this.blogService.deletePostImage(id, imageId, user.userId);
   }
 
   @Public()
