@@ -11,12 +11,17 @@ import { InjectModel } from '@nestjs/mongoose';
 import * as bcrypt from 'bcryptjs';
 import { randomBytes, randomUUID } from 'crypto';
 import type { CookieOptions } from 'express';
-import { Model } from 'mongoose';
+import { isValidObjectId, Model } from 'mongoose';
 import { AccountStatus, Role } from '../../common/enums';
-import type { JwtPayload } from '../../common/interfaces/jwt-payload.interface';
+import type {
+  AuthenticatedUser,
+  JwtPayload,
+} from '../../common/interfaces/jwt-payload.interface';
 import { MailService } from '../mail/mail.service';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
 import { User, UserDocument } from '../users/schemas/user.schema';
+import { ChangePasswordResponseDto } from './dto/change-password-response.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -343,6 +348,81 @@ export class AuthService {
       accessToken,
       cookieName,
       cookieOptions,
+    };
+  }
+
+  /**
+   * Verifies the caller's current password, enforces new password strength and
+   * difference, updates passwordHash, clears mustChangePassword, and optionally
+   * revokes all other active sessions.
+   */
+  async changePassword(
+    authUser: AuthenticatedUser,
+    dto: ChangePasswordDto,
+  ): Promise<ChangePasswordResponseDto> {
+    if (!isValidObjectId(authUser.userId)) {
+      throw new UnauthorizedException('Invalid authenticated user');
+    }
+
+    const user = await this.userModel
+      .findById(authUser.userId)
+      .select('+passwordHash');
+
+    if (!user) {
+      throw new UnauthorizedException('Account not found');
+    }
+
+    if (user.status !== AccountStatus.ACTIVE) {
+      throw new ForbiddenException(`Account is ${user.status.toLowerCase()}`);
+    }
+
+    const currentMatches = await bcrypt.compare(
+      dto.currentPassword,
+      user.passwordHash,
+    );
+    if (!currentMatches) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+
+    if (dto.newPassword === dto.currentPassword) {
+      throw new BadRequestException(
+        'New password must be different from current password',
+      );
+    }
+
+    const passwordHash = await bcrypt.hash(
+      dto.newPassword,
+      AuthService.BCRYPT_SALT_ROUNDS,
+    );
+
+    await this.userModel.findByIdAndUpdate(
+      user._id,
+      {
+        $set: {
+          passwordHash,
+          mustChangePassword: false,
+        },
+      },
+      { returnDocument: 'after' },
+    );
+
+    let revokedOtherSessionsCount = 0;
+    if (dto.revokeOtherSessions !== false) {
+      const revokeResult = await this.sessionModel.updateMany(
+        {
+          user: user._id,
+          jti: { $ne: authUser.jti },
+          revokedAt: null,
+        },
+        { $set: { revokedAt: new Date() } },
+      );
+      revokedOtherSessionsCount = revokeResult.modifiedCount ?? 0;
+    }
+
+    return {
+      message: 'Password changed successfully',
+      mustChangePassword: false,
+      revokedOtherSessionsCount,
     };
   }
 
