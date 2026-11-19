@@ -1,4 +1,4 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Role } from '../../common/enums';
@@ -6,12 +6,14 @@ import { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface
 import { Payment } from '../payments/schemas/payment.schema';
 import { loadReadableFlightBookingRaw } from './flight-booking-access';
 import {
+  BookingViewAirport,
   BookingViewLeg,
   BookingViewPayment,
   effectiveStatus,
   FlightBookingDetails,
   toViewPassenger,
 } from './flight-booking-view';
+import { Airport } from '../reference-data/schemas/airport.schema';
 import { Airline } from './schemas/airline.schema';
 import { FlightBooking } from './schemas/flight-booking.schema';
 import { Flight } from './schemas/flight.schema';
@@ -31,6 +33,7 @@ export class FlightBookingViewService {
     private readonly bookingModel: Model<FlightBooking>,
     @InjectModel(Flight.name) private readonly flightModel: Model<Flight>,
     @InjectModel(Airline.name) private readonly airlineModel: Model<Airline>,
+    @InjectModel(Airport.name) private readonly airportModel: Model<Airport>,
     @InjectModel(Payment.name) private readonly paymentModel: Model<Payment>,
   ) {}
 
@@ -58,30 +61,52 @@ export class FlightBookingViewService {
     const airlines = (await this.airlineModel
       .find({ _id: { $in: flights.map((flight) => flight.airline) } })
       .lean()) as unknown as Lean<Airline>[];
+    const airports = (await this.airportModel
+      .find({
+        _id: {
+          $in: flights.flatMap((flight) => [
+            flight.departureAirport,
+            flight.arrivalAirport,
+          ]),
+        },
+      })
+      .lean()) as unknown as Lean<Airport>[];
     const flightById = new Map(flights.map((f) => [f._id.toString(), f]));
     const airlineById = new Map(airlines.map((a) => [a._id.toString(), a]));
+    const airportById = new Map(
+      airports.map((a): [string, BookingViewAirport] => [
+        a._id.toString(),
+        { iataCode: a.iataCode, name: a.name, timezone: a.timezone },
+      ]),
+    );
 
     const legs: BookingViewLeg[] = [];
     booking.legs.forEach((leg, index) => {
       const flight = flightById.get(leg.flight.toString());
       const airline = flight && airlineById.get(flight.airline.toString());
-      if (!flight || !airline) {
-        throw new ConflictException(
-          'A flight of this booking is no longer available',
-        );
-      }
-      if (moderatorAirline && airline._id.toString() !== moderatorAirline) {
+      // An airline moderator only gets the legs their own airline operates.
+      if (moderatorAirline && airline?._id.toString() !== moderatorAirline) {
         return;
       }
       legs.push({
         segment: index + 1,
-        flightId: flight._id.toString(),
-        flightNumber: flight.flightNumber,
-        airline: {
-          id: airline._id.toString(),
-          name: airline.name,
-          iataCode: airline.iataCode,
-        },
+        flightId: leg.flight.toString(),
+        // A flight that vanished still shows its booked leg instead of hiding the booking.
+        flightNumber: flight?.flightNumber ?? null,
+        airline: airline
+          ? {
+              id: airline._id.toString(),
+              name: airline.name,
+              iataCode: airline.iataCode,
+            }
+          : null,
+        flightStatus: flight?.status ?? null,
+        departureAirport: flight
+          ? (airportById.get(flight.departureAirport.toString()) ?? null)
+          : null,
+        arrivalAirport: flight
+          ? (airportById.get(flight.arrivalAirport.toString()) ?? null)
+          : null,
         cabinClass: leg.cabinClass,
         departureTime: leg.departureTime,
         arrivalTime: leg.arrivalTime,

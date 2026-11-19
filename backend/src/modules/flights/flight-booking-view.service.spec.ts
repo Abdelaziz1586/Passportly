@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { Types } from 'mongoose';
 import {
   BookingStatus,
@@ -30,15 +30,33 @@ const airlineId = new Types.ObjectId();
 const otherAirlineId = new Types.ObjectId();
 const paymentId = new Types.ObjectId();
 
+const cairo = {
+  _id: new Types.ObjectId(),
+  iataCode: 'CAI',
+  name: 'Cairo Intl',
+  timezone: 'Africa/Cairo',
+};
+const dubai = {
+  _id: new Types.ObjectId(),
+  iataCode: 'DXB',
+  name: 'Dubai Intl',
+  timezone: 'Asia/Dubai',
+};
 const flight = {
   _id: new Types.ObjectId(),
   airline: airlineId,
   flightNumber: 'NA100',
+  status: 'SCHEDULED',
+  departureAirport: cairo._id,
+  arrivalAirport: dubai._id,
 };
 const otherFlight = {
   _id: new Types.ObjectId(),
   airline: otherAirlineId,
   flightNumber: 'OA200',
+  status: 'SCHEDULED',
+  departureAirport: dubai._id,
+  arrivalAirport: cairo._id,
 };
 const airline = { _id: airlineId, name: 'Nile Air', iataCode: 'NA' };
 const otherAirline = { _id: otherAirlineId, name: 'Other Air', iataCode: 'OA' };
@@ -108,6 +126,7 @@ function build(booking: ReturnType<typeof makeBooking> | null) {
     exists: jest.fn().mockResolvedValue(null),
   };
   const airlineModel = { find: jest.fn(() => query([airline, otherAirline])) };
+  const airportModel = { find: jest.fn(() => query([cairo, dubai])) };
   const paymentModel = {
     findById: jest.fn(() =>
       query({
@@ -125,9 +144,10 @@ function build(booking: ReturnType<typeof makeBooking> | null) {
     bookingModel as never,
     flightModel as never,
     airlineModel as never,
+    airportModel as never,
     paymentModel as never,
   );
-  return { service, bookingModel, flightModel, paymentModel };
+  return { service, bookingModel, flightModel, airlineModel, paymentModel };
 }
 
 const owner: AuthenticatedUser = {
@@ -160,6 +180,17 @@ describe('FlightBookingViewService.getBooking', () => {
         flightId: flight._id.toString(),
         flightNumber: 'NA100',
         airline: { id: airlineId.toString(), name: 'Nile Air', iataCode: 'NA' },
+        flightStatus: 'SCHEDULED',
+        departureAirport: {
+          iataCode: 'CAI',
+          name: 'Cairo Intl',
+          timezone: 'Africa/Cairo',
+        },
+        arrivalAirport: {
+          iataCode: 'DXB',
+          name: 'Dubai Intl',
+          timezone: 'Asia/Dubai',
+        },
         cabinClass: CabinClass.ECONOMY,
         departureTime: new Date('2026-12-01T12:30:00Z'),
         arrivalTime: new Date('2026-12-01T16:30:00Z'),
@@ -244,6 +275,17 @@ describe('FlightBookingViewService.getBooking', () => {
 
     expect(view.legs.map((leg) => leg.flightNumber)).toEqual(['NA100']);
     expect(view.legs[0].unitPrice).toBeNull();
+    // seats of the moderator's own leg come from the leg, not from the passenger's all-legs list
+    expect(view.legs[0].seatNumbers).toEqual(['12A']);
+    expect(view.passengers[0].seatAssignments).toEqual([]);
+    // the airline rule is enforced against the assigned airline and the booking's flights
+    const [existsFilter] = flightModel.exists.mock.calls[0] as unknown as [
+      { _id: { $in: Types.ObjectId[] }; airline: Types.ObjectId },
+    ];
+    expect(existsFilter.airline.equals(airlineId)).toBe(true);
+    expect(existsFilter._id.$in.map(String).sort()).toEqual(
+      [flight._id, otherFlight._id].map(String).sort(),
+    );
     expect(view).toMatchObject({
       baseFareTotal: null,
       extraBaggageTotal: null,
@@ -266,6 +308,26 @@ describe('FlightBookingViewService.getBooking', () => {
     });
     expect(paymentModel.findById).not.toHaveBeenCalled();
   });
+
+  it.each([
+    { assignedProviderId: undefined },
+    { assignedProviderType: 'hotel' as const },
+    { assignedProviderId: 'not-an-id' },
+  ])(
+    'gives a moderator without a valid airline assignment 404 %j',
+    async (override) => {
+      const booking = makeBooking();
+      const { service, flightModel } = build(booking);
+
+      await expect(
+        service.getBooking(
+          { ...moderator, ...override },
+          booking._id.toString(),
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(flightModel.exists).not.toHaveBeenCalled();
+    },
+  );
 
   it('gives a moderator of another airline 404', async () => {
     const booking = makeBooking();
@@ -330,14 +392,47 @@ describe('FlightBookingViewService.getBooking', () => {
     });
   });
 
-  it('is a 409 when a flight of the booking vanished', async () => {
+  it('still shows the booking when a flight record vanished (leg without flight details)', async () => {
     const booking = makeBooking();
     const { service, flightModel } = build(booking);
     flightModel.find.mockReturnValue(query([]));
 
-    await expect(
-      service.getBooking(owner, booking._id.toString()),
-    ).rejects.toBeInstanceOf(ConflictException);
+    const view = await service.getBooking(owner, booking._id.toString());
+
+    expect(view.legs[0]).toMatchObject({
+      flightId: flight._id.toString(),
+      flightNumber: null,
+      airline: null,
+      flightStatus: null,
+      departureAirport: null,
+      arrivalAirport: null,
+      unitPrice: 300,
+    });
+  });
+
+  it("a vanished leg of another airline does not block a moderator's view", async () => {
+    const booking = makeBooking({
+      legs: [makeLeg(flight._id), makeLeg(otherFlight._id)],
+    });
+    const { service, flightModel } = build(booking);
+    flightModel.find.mockReturnValue(query([flight]));
+    flightModel.exists.mockResolvedValue({ _id: flight._id });
+
+    const view = await service.getBooking(moderator, booking._id.toString());
+
+    expect(view.legs.map((leg) => leg.flightNumber)).toEqual(['NA100']);
+  });
+
+  it('shows the status of a cancelled flight on its leg', async () => {
+    const booking = makeBooking();
+    const { service, flightModel } = build(booking);
+    flightModel.find.mockReturnValue(
+      query([{ ...flight, status: 'CANCELLED' }]),
+    );
+
+    const view = await service.getBooking(owner, booking._id.toString());
+
+    expect(view.legs[0].flightStatus).toBe('CANCELLED');
   });
 });
 

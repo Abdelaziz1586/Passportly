@@ -2,6 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import {
   BookingStatus,
   CabinClass,
+  FlightStatus,
   PassengerType,
   PaymentStatus,
   TripType,
@@ -10,11 +11,19 @@ import { FlightBookingPassengerCountsDto } from './flight-booking-list-response.
 
 /** Swagger-only shapes: they document what FlightBookingViewService returns. */
 
+export class BookingDetailsAirportDto {
+  @ApiProperty({ example: 'CAI' }) iataCode: string;
+  @ApiProperty() name: string;
+  @ApiProperty({ example: 'Africa/Cairo', description: 'IANA time zone' })
+  timezone: string;
+}
+
 export class BookingDetailsLegDto {
   @ApiProperty() segment: number;
   @ApiProperty() flightId: string;
-  @ApiProperty() flightNumber: string;
+  @ApiProperty({ nullable: true, type: String }) flightNumber: string | null;
   @ApiProperty({
+    nullable: true,
     type: 'object',
     properties: {
       id: { type: 'string' },
@@ -22,7 +31,13 @@ export class BookingDetailsLegDto {
       iataCode: { type: 'string' },
     },
   })
-  airline: { id: string; name: string; iataCode: string };
+  airline: { id: string; name: string; iataCode: string } | null;
+  @ApiProperty({ enum: FlightStatus, nullable: true })
+  flightStatus: FlightStatus | null;
+  @ApiProperty({ type: BookingDetailsAirportDto, nullable: true })
+  departureAirport: BookingDetailsAirportDto | null;
+  @ApiProperty({ type: BookingDetailsAirportDto, nullable: true })
+  arrivalAirport: BookingDetailsAirportDto | null;
   @ApiProperty({ enum: CabinClass }) cabinClass: CabinClass;
   @ApiProperty({ type: Date, description: 'UTC' }) departureTime: Date;
   @ApiProperty({ type: Date, description: 'UTC' }) arrivalTime: Date;

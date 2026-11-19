@@ -1,17 +1,29 @@
 import {
   BookingStatus,
   CabinClass,
+  FlightStatus,
   PassengerType,
   PaymentStatus,
   TripType,
 } from '../../common/enums';
 import { maskPassport } from './flight-booking-details';
 
+export interface BookingViewAirport {
+  iataCode: string;
+  name: string;
+  /** IANA time zone of the airport. */
+  timezone: string;
+}
+
 export interface BookingViewLeg {
   segment: number;
   flightId: string;
-  flightNumber: string;
-  airline: { id: string; name: string; iataCode: string };
+  /** null if the flight record no longer exists. */
+  flightNumber: string | null;
+  airline: { id: string; name: string; iataCode: string } | null;
+  flightStatus: FlightStatus | null;
+  departureAirport: BookingViewAirport | null;
+  arrivalAirport: BookingViewAirport | null;
   cabinClass: CabinClass;
   departureTime: Date;
   arrivalTime: Date;
@@ -119,6 +131,9 @@ export function toViewPassenger(
     extraBaggageCount: passenger.extraBaggageCount,
     extraBaggageFee: moderatorView ? null : passenger.extraBaggageFee,
     eTicketNumber: passenger.eTicketNumber ?? null,
-    seatAssignments: [...(passenger.seatAssignments ?? [])],
+    // Seats of all legs: a moderator gets the seats of their own legs from `legs[].seatNumbers`.
+    seatAssignments: moderatorView
+      ? []
+      : [...(passenger.seatAssignments ?? [])],
   };
 }

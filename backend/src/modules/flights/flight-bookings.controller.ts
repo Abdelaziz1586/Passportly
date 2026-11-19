@@ -139,7 +139,7 @@ export class FlightBookingsController {
   @ApiOperation({
     summary: 'FLT-25: Get flight booking details',
     description:
-      "Full details of one booking: every leg (flight, airline, cabin, times in UTC, seats), the passengers (passport masked, e-ticket numbers), prices, the policies captured at booking, status and timestamps, and a payment summary (status, amount, paidAt; never card data). Readable by the booking's owner, an admin, or the airline moderator of an airline operating a flight of it; for anyone else the booking looks like it does not exist. An airline moderator only gets the legs of their own airline and no prices, payment or personal details. A hold that ran out is reported as EXPIRED.",
+      "Full details of one booking: every leg (flight, airline, cabin, times in UTC, seats), the passengers (passport masked, e-ticket numbers), prices, the policies captured at booking, status and timestamps, and a payment summary (status, amount, paidAt; never card data). Readable by the booking's owner, an admin, or the airline moderator of an airline operating a flight of it; for anyone else the booking looks like it does not exist. An airline moderator only gets a manifest of the legs of their own airline (names, masked passport, e-ticket numbers, seats) and no prices, payment, policies or date of birth, nationality or fees. A hold that ran out is reported as EXPIRED.",
   })
   @ApiOkResponse({
     description: 'The booking',
