@@ -23,6 +23,10 @@ export class AirlineBaggagePolicy {
   @Prop({ type: Number, default: 50, min: 0 })
   extraBagFee: number;
 
+  /** FLT-08: most extra checked bags one passenger may add. Not set = no airline limit. */
+  @Prop({ type: Number, min: 0 })
+  maxExtraBagsPerPassenger?: number;
+
   @Prop({ type: Number, default: 15, min: 0 })
   overweightFeePerKg: number;
 

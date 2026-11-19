@@ -29,6 +29,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { CreateFlightBookingDto } from './dto/create-flight-booking.dto';
 import { HoldSeatsDto } from './dto/hold-seats.dto';
 import {
+  assertExtraBagCounts,
   assertExtraBagWeights,
   buildPolicySnapshot,
   calculateBaggageFees,
@@ -227,6 +228,7 @@ export class FlightBookingsService {
     );
 
     const legSources = await this.loadPolicySources(booking, now);
+    assertExtraBagCounts(passengers, legSources);
     assertExtraBagWeights(passengers, legSources);
     const fees = calculateBaggageFees(
       passengers,

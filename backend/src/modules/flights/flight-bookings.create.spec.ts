@@ -84,6 +84,7 @@ function makeAirline(overrides: Record<string, unknown> = {}) {
       checkedBagsIncluded: 1,
       checkedBagMaxWeightKg: 23,
       extraBagFee: 40,
+      maxExtraBagsPerPassenger: undefined as number | undefined,
       overweightFeePerKg: 15,
       currency: 'USD',
       notes: undefined,
@@ -654,6 +655,79 @@ describe('FlightBookingsService.createBooking', () => {
       await expect(submit(bags(2))).resolves.toMatchObject({
         extraBaggageTotal: 80,
       });
+    });
+  });
+
+  describe('FLT-08: airline maximum extra bags per passenger', () => {
+    const bags = (first: number, second = 0) => [
+      adult({ extraBaggageCount: first }),
+      adult({ passportNumber: 'B7654321', extraBaggageCount: second }),
+    ];
+
+    it('rejects a passenger above the airline maximum with 400', async () => {
+      airlines[0].baggagePolicy.maxExtraBagsPerPassenger = 2;
+
+      await expect(submit(bags(3))).rejects.toBeInstanceOf(BadRequestException);
+      await expect(submit(bags(0, 3))).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(bookingModel.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it('accepts exactly the maximum', async () => {
+      airlines[0].baggagePolicy.maxExtraBagsPerPassenger = 2;
+
+      const result = await submit(bags(2, 2));
+
+      expect(result.extraBaggageTotal).toBe(160); // 4 x 40
+    });
+
+    it('a maximum of 0 allows no extra bags at all', async () => {
+      airlines[0].baggagePolicy.maxExtraBagsPerPassenger = 0;
+
+      await expect(submit(bags(1))).rejects.toBeInstanceOf(BadRequestException);
+      await expect(submit(bags(0))).resolves.toBeDefined();
+    });
+
+    it('does not enforce anything when the field is not defined', async () => {
+      expect(
+        airlines[0].baggagePolicy.maxExtraBagsPerPassenger,
+      ).toBeUndefined();
+
+      const result = await submit(bags(20));
+
+      expect(result.passengers[0].extraBaggageFee).toBe(800);
+    });
+
+    it('treats a null value in the database like an unset field', async () => {
+      (
+        airlines[0].baggagePolicy as { maxExtraBagsPerPassenger: number | null }
+      ).maxExtraBagsPerPassenger = null;
+
+      await expect(submit(bags(20))).resolves.toBeDefined();
+    });
+
+    it('checks every leg against that leg’s own airline', async () => {
+      const returnAirline = addReturnLeg();
+      airlines[0].baggagePolicy.maxExtraBagsPerPassenger = 5; // outbound allows 5
+      returnAirline.baggagePolicy.maxExtraBagsPerPassenger = 1; // return allows 1
+
+      const error = await submit(bags(2)).catch((e: Error) => e);
+
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as Error).message).toContain('Delta Jet');
+      await expect(submit(bags(1))).resolves.toBeDefined();
+    });
+
+    it('lets an airline without a maximum through while the other enforces one', async () => {
+      const returnAirline = addReturnLeg();
+      airlines[0].baggagePolicy.maxExtraBagsPerPassenger = 3; // outbound allows 3
+      expect(
+        returnAirline.baggagePolicy.maxExtraBagsPerPassenger,
+      ).toBeUndefined();
+
+      await expect(submit(bags(4))).rejects.toBeInstanceOf(BadRequestException);
+      await expect(submit(bags(3))).resolves.toBeDefined();
     });
   });
 

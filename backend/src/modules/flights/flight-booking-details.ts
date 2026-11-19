@@ -253,6 +253,28 @@ export function maxBagWeightKg({ airline, cabin }: PolicyLegSource): number {
 }
 
 /**
+ * FLT-08: when an airline sets maxExtraBagsPerPassenger, no passenger may ask
+ * for more extra bags than that on that airline's leg. Airlines that leave it
+ * unset are not limited.
+ */
+export function assertExtraBagCounts(
+  passengers: NormalizedPassenger[],
+  sources: PolicyLegSource[],
+): void {
+  for (const { airline } of sources) {
+    const max = airline.baggagePolicy.maxExtraBagsPerPassenger;
+    if (typeof max !== 'number') continue;
+    passengers.forEach((passenger, index) => {
+      if (passenger.extraBaggageCount > max) {
+        throw new BadRequestException(
+          `Passenger ${index + 1} asks for ${passenger.extraBaggageCount} extra bags but ${airline.name} allows at most ${max} per passenger`,
+        );
+      }
+    });
+  }
+}
+
+/**
  * Every extra bag travels on every leg, so its weight must fit the strictest
  * leg's per-bag maximum.
  */
