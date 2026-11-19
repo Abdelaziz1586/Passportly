@@ -2,24 +2,33 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   NotImplementedException,
   Patch,
   Post,
   Query,
+  Req,
+  Res,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiConflictResponse,
   ApiCookieAuth,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
+  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import type { Request, Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { AuthService } from './auth.service';
+import { LoginResponseDto } from './dto/login-response.dto';
+import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { SafeUserResponseDto } from './dto/safe-user-response.dto';
 import { VerifyEmailQueryDto } from './dto/verify-email-query.dto';
@@ -65,13 +74,32 @@ export class AuthController {
 
   @Public()
   @Post('login')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'ACC-04, ACC-05: Login and issue httpOnly JWT cookie',
   })
-  login() {
-    throw new NotImplementedException(
-      'POST /api/auth/login not implemented yet',
-    );
+  @ApiOkResponse({
+    description: 'Login successful; httpOnly JWT cookie set',
+    type: LoginResponseDto,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Invalid email or password',
+  })
+  @ApiForbiddenResponse({
+    description:
+      'Account is suspended, deactivated, or temporarily locked due to failed attempts',
+  })
+  async login(
+    @Body() dto: LoginDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<LoginResponseDto> {
+    const result = await this.authService.login(dto, {
+      userAgent: req.get('user-agent'),
+      ipAddress: req.ip,
+    });
+    res.cookie(result.cookieName, result.accessToken, result.cookieOptions);
+    return result.response;
   }
 
   @ApiCookieAuth()

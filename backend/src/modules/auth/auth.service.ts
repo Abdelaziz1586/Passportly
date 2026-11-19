@@ -1,18 +1,24 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/mongoose';
 import * as bcrypt from 'bcryptjs';
-import { randomBytes } from 'crypto';
+import { randomBytes, randomUUID } from 'crypto';
+import type { CookieOptions } from 'express';
 import { Model } from 'mongoose';
 import { AccountStatus, Role } from '../../common/enums';
+import type { JwtPayload } from '../../common/interfaces/jwt-payload.interface';
 import { MailService } from '../mail/mail.service';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
 import { User, UserDocument } from '../users/schemas/user.schema';
+import { LoginResponseDto } from './dto/login-response.dto';
+import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { SafeUserResponseDto } from './dto/safe-user-response.dto';
 import { VerifyEmailQueryDto } from './dto/verify-email-query.dto';
@@ -27,6 +33,18 @@ type TimestampedUserDocument = UserDocument & {
   updatedAt?: Date;
 };
 
+export interface LoginContext {
+  userAgent?: string;
+  ipAddress?: string;
+}
+
+export interface LoginResult {
+  response: LoginResponseDto;
+  accessToken: string;
+  cookieName: string;
+  cookieOptions: CookieOptions;
+}
+
 function isMongoDuplicateKeyError(error: unknown): boolean {
   return (
     typeof error === 'object' &&
@@ -36,9 +54,41 @@ function isMongoDuplicateKeyError(error: unknown): boolean {
   );
 }
 
+function parseExpiresInToMs(expiresIn: string): number {
+  const trimmed = expiresIn.trim();
+  const match = /^(\d+)(ms|s|m|h|d)?$/i.exec(trimmed);
+  if (!match) {
+    return 24 * 60 * 60 * 1000;
+  }
+  const amount = Number(match[1]);
+  const unit = (match[2] ?? 's').toLowerCase();
+  const multipliers: Record<string, number> = {
+    ms: 1,
+    s: 1000,
+    m: 60 * 1000,
+    h: 60 * 60 * 1000,
+    d: 24 * 60 * 60 * 1000,
+  };
+  return amount * (multipliers[unit] ?? 1000);
+}
+
+function extractJwtExpSeconds(decoded: unknown): number | undefined {
+  if (
+    typeof decoded === 'object' &&
+    decoded !== null &&
+    'exp' in decoded &&
+    typeof (decoded as { exp?: unknown }).exp === 'number'
+  ) {
+    return (decoded as { exp: number }).exp;
+  }
+  return undefined;
+}
+
 @Injectable()
 export class AuthService {
   private static readonly BCRYPT_SALT_ROUNDS = 12;
+  private static readonly MAX_FAILED_LOGIN_ATTEMPTS = 5;
+  private static readonly LOCKOUT_DURATION_MS = 15 * 60 * 1000;
 
   constructor(
     @InjectModel(User.name) readonly userModel: Model<UserDocument>,
@@ -164,6 +214,135 @@ export class AuthService {
       message: 'Email address verified successfully',
       isEmailVerified: true,
       email: updated.email,
+    };
+  }
+
+  /**
+   * Authenticates a user, enforces failed-login lockout and AccountStatus.ACTIVE,
+   * creates a tracked UserSession, signs a JWT, and returns cookie configuration.
+   */
+  async login(dto: LoginDto, context: LoginContext = {}): Promise<LoginResult> {
+    const email = dto.email.trim().toLowerCase();
+    const now = new Date();
+
+    const user = await this.userModel
+      .findOne({ email })
+      .select('+passwordHash');
+
+    if (!user) {
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
+    if (user.lockoutUntil && user.lockoutUntil > now) {
+      throw new ForbiddenException(
+        'Account is temporarily locked due to multiple failed login attempts. Please try again later.',
+      );
+    }
+
+    const passwordMatches = await bcrypt.compare(
+      dto.password,
+      user.passwordHash,
+    );
+
+    if (!passwordMatches) {
+      const lockoutExpired =
+        Boolean(user.lockoutUntil) && (user.lockoutUntil as Date) <= now;
+      const baseAttempts = lockoutExpired ? 0 : (user.failedLoginAttempts ?? 0);
+      const nextAttempts = baseAttempts + 1;
+      const shouldLock = nextAttempts >= AuthService.MAX_FAILED_LOGIN_ATTEMPTS;
+      const lockoutUntil = shouldLock
+        ? new Date(now.getTime() + AuthService.LOCKOUT_DURATION_MS)
+        : null;
+
+      await this.userModel.findByIdAndUpdate(user._id, {
+        $set: {
+          failedLoginAttempts: nextAttempts,
+          lockoutUntil,
+        },
+      });
+
+      if (shouldLock) {
+        throw new ForbiddenException(
+          'Account is temporarily locked due to multiple failed login attempts. Please try again later.',
+        );
+      }
+
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
+    if (user.status !== AccountStatus.ACTIVE) {
+      throw new ForbiddenException(`Account is ${user.status.toLowerCase()}`);
+    }
+
+    const updatedUser =
+      (await this.userModel.findByIdAndUpdate(
+        user._id,
+        {
+          $set: {
+            failedLoginAttempts: 0,
+            lockoutUntil: null,
+            lastLoginAt: now,
+          },
+        },
+        { returnDocument: 'after' },
+      )) ?? user;
+
+    const jti = randomUUID();
+    const payload: JwtPayload = {
+      sub: String(updatedUser._id),
+      email: updatedUser.email,
+      role: updatedUser.role,
+      jti,
+    };
+
+    const accessToken = await this.jwtService.signAsync(payload);
+    const expSeconds = extractJwtExpSeconds(
+      this.jwtService.decode(accessToken),
+    );
+    const expiresInConfig = this.configService.get<string>(
+      'jwt.expiresIn',
+      '1d',
+    );
+    const expiresAt = expSeconds
+      ? new Date(expSeconds * 1000)
+      : new Date(now.getTime() + parseExpiresInToMs(expiresInConfig));
+
+    await this.sessionModel.create({
+      user: updatedUser._id,
+      jti,
+      expiresAt,
+      ...(context.userAgent ? { userAgent: context.userAgent } : {}),
+      ...(context.ipAddress ? { ipAddress: context.ipAddress } : {}),
+    });
+
+    const cookieName = this.configService.get<string>(
+      'jwt.cookieName',
+      'access_token',
+    );
+    const cookieSecure = this.configService.get<boolean>(
+      'jwt.cookieSecure',
+      false,
+    );
+    const maxAge = Math.max(0, expiresAt.getTime() - Date.now());
+
+    const cookieOptions: CookieOptions = {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: cookieSecure,
+      path: '/',
+      maxAge,
+      expires: expiresAt,
+    };
+
+    return {
+      response: {
+        message: 'Login successful',
+        user: this.toSafeUser(updatedUser),
+        mustChangePassword: Boolean(updatedUser.mustChangePassword),
+      },
+      accessToken,
+      cookieName,
+      cookieOptions,
     };
   }
 
