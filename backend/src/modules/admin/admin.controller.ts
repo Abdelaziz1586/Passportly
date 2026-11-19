@@ -5,11 +5,23 @@ import {
   NotImplementedException,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiCookieAuth,
+  ApiForbiddenResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import { AdminService } from './admin.service';
+import {
+  ListAuditLogsQueryDto,
+  PaginatedAuditLogsResponseDto,
+} from './dto/list-audit-logs-query.dto';
 
 @ApiTags('Administration')
 @ApiCookieAuth()
@@ -119,9 +131,15 @@ export class AdminController {
 
   @Get('audit-logs')
   @ApiOperation({ summary: 'GEN-07: Query administrative audit logs' })
-  listAuditLogs() {
-    throw new NotImplementedException(
-      'GET /api/admin/audit-logs not implemented yet',
-    );
+  @ApiOkResponse({
+    description: 'Paginated administrative audit logs',
+    type: PaginatedAuditLogsResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid filter or date range query' })
+  @ApiForbiddenResponse({ description: 'Admin role required' })
+  listAuditLogs(
+    @Query() query: ListAuditLogsQueryDto,
+  ): Promise<PaginatedAuditLogsResponseDto> {
+    return this.adminService.listAuditLogs(query);
   }
 }
