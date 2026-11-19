@@ -82,3 +82,17 @@ Details: Verify credentials, enforce failed-login lockout & AccountStatus.ACTIVE
 How the output was used:
 Implemented LoginDto, LoginResponseDto, AuthService.login (email normalization, bcrypt password check, 5-attempt / 15-minute failed-login lockout, AccountStatus.ACTIVE enforcement, UserSession creation with jti and JWT-aligned expiresAt, httpOnly cookie configuration), and AuthController.login wiring with @Public() and Swagger annotations. Added unit tests in auth.service.spec.ts and auth.controller.spec.ts and verified with npm run lint, npm run build, and npm test.
 ================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Abdullah Emam
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: BLG-13 (SCRUM-132, PATCH /api/posts/:id/itinerary)
+
+Prompt:
+Implement SCRUM-132 [BLG-13] PATCH /api/posts/:id/itinerary - Attach public itinerary to blog post enforcing post ownership and verifying itinerary exists and is accessible/public.
+
+How the output was used:
+Added AttachItineraryDto supporting ObjectId or null detach, imported ItinerariesModule in BlogModule, implemented BlogService.attachItinerary verifying post authorship and public non-hidden itinerary access, wired BlogController.attachItinerary with Swagger/role decorators, and added unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
