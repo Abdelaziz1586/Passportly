@@ -617,6 +617,30 @@ describe('Itinerary endpoints and persistence', () => {
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 
+  it('SCRUM-110/111: hides private/moderated itineraries and exposes safe author attribution', async () => {
+    const visible = await create();
+    const hidden = await create();
+    await create();
+    await service.updateItinerary(String(visible._id), ownerId, {
+      visibility: ItineraryVisibility.PUBLIC,
+    });
+    await service.itineraryModel.updateOne(
+      { _id: hidden._id },
+      { visibility: ItineraryVisibility.PUBLIC, isHidden: true },
+    );
+    const result = await service.searchPublicItineraries({});
+    expect(result.items).toHaveLength(1);
+    const details = await service.getPublicItinerary(String(visible._id));
+    expect(JSON.stringify(details)).not.toContain('passwordHash');
+    expect(JSON.stringify(details)).toContain('Owner');
+    await expect(
+      service.getPublicItinerary(String(hidden._id)),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(
+      service.searchPublicItineraries({ minDays: 4, maxDays: 2 }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
   it('SCRUM-93: cascade-deletes activities, budgets and transport costs', async () => {
     const { itinerary, dayId } = await itineraryWithDay();
     const id = String(itinerary._id);

@@ -59,10 +59,8 @@ export class ItinerariesController {
   @Public()
   @Get('itineraries/public/:id')
   @ApiOperation({ summary: 'ITN-21: View public itinerary details' })
-  getPublicItinerary() {
-    throw new NotImplementedException(
-      'GET /api/itineraries/public/:id not implemented yet',
-    );
+  getPublicItinerary(@Param('id') id: string) {
+    return this.itinerariesService.getPublicItinerary(id);
   }
 
   @ApiCookieAuth()
