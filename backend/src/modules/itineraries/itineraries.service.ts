@@ -23,6 +23,7 @@ import { CreateItineraryDto } from './dto/create-itinerary.dto';
 import {
   CreateItineraryDayDto,
   ListItinerariesQueryDto,
+  ReorderItineraryDaysDto,
   UpdateItineraryDayDto,
   UpdateItineraryDto,
 } from './dto/itinerary-endpoints.dto';
@@ -251,6 +252,40 @@ export class ItinerariesService {
       await this.saveItinerary(itinerary, session);
     });
     return { deleted: true, dayId };
+  }
+
+  async reorderDays(
+    id: string,
+    userId: string,
+    dto: ReorderItineraryDaysDto,
+  ): Promise<ItineraryDocument> {
+    const itinerary = await this.findOwnedItinerary(id, userId);
+    const dayIds = dto.dayIds.map((dayId) =>
+      String(this.objectId(dayId, 'dayIds')),
+    );
+    if (dayIds.length !== itinerary.days.length) {
+      throw new BadRequestException(
+        'dayIds must include every itinerary day exactly once',
+      );
+    }
+    if (new Set(dayIds).size !== dayIds.length) {
+      throw new BadRequestException('dayIds must not contain duplicates');
+    }
+    const daysById = new Map(
+      itinerary.days.map((day) => [String(day._id), day]),
+    );
+    const orderedDays = dayIds.map((dayId) => {
+      const day = daysById.get(dayId);
+      if (!day) {
+        throw new BadRequestException(
+          'dayIds must include every itinerary day exactly once',
+        );
+      }
+      return day;
+    });
+    itinerary.days = orderedDays;
+    this.recalculateDayDates(itinerary);
+    return this.saveItinerary(itinerary);
   }
 
   private async getItineraryDetails(

@@ -14,6 +14,7 @@ parent lands. Each pull request shows only its own ticket delta.
 | SCRUM-94 | ITN-05 | Append an itinerary day |
 | SCRUM-95 | ITN-05 | Update itinerary day metadata |
 | SCRUM-96 | ITN-07 | Delete a day and recalculate numbering and dates |
+| SCRUM-97 | ITN-08 | Reorder itinerary days and dates |
 
 Each ticket is checked with `npm run lint`, `npm run build` and `npm test`.
 Database tests use an isolated local MongoDB replica set and never load application environment files.
