@@ -151,7 +151,7 @@ export class AuthService {
         $set: { isEmailVerified: true },
         $unset: { emailVerificationToken: 1 },
       },
-      { new: true },
+      { returnDocument: 'after' },
     );
 
     if (!updated) {

@@ -239,7 +239,7 @@ describe('AuthService (ACC-01 register, ACC-02 verify-email)', () => {
           $set: { isEmailVerified: true },
           $unset: { emailVerificationToken: 1 },
         },
-        { new: true },
+        { returnDocument: 'after' },
       );
       expect(result).toEqual({
         message: 'Email address verified successfully',
