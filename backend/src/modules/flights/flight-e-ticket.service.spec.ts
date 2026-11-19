@@ -327,6 +327,44 @@ describe('FlightETicketService.getETicket', () => {
     ).rejects.toThrow(/cancelled/);
   });
 
+  it("does not let an airline moderator learn about another airline's cancelled leg", async () => {
+    const otherFlight = {
+      ...flight,
+      _id: new Types.ObjectId(),
+      airline: otherAirlineId,
+      flightNumber: 'OA200',
+      status: 'CANCELLED',
+    };
+    const base = makeBooking().legs[0];
+    const booking = makeBooking({
+      tripType: TripType.ROUND_TRIP,
+      legs: [base, { ...base, flight: otherFlight._id }],
+    });
+    const { service, flightModel } = build(booking);
+    flightModel.find.mockReturnValue(query([flight, otherFlight]));
+    flightModel.exists.mockResolvedValue({ _id: flight._id });
+    const moderator: AuthenticatedUser = {
+      userId: new Types.ObjectId().toString(),
+      email: 'm@example.com',
+      role: Role.AIRLINE_MODERATOR,
+      jti: 'j',
+      assignedProviderType: 'airline',
+      assignedProviderId: airlineId.toString(),
+    };
+
+    // their own leg is fine: the foreign cancelled leg is invisible to them
+    const ticket = await service.getETicket(moderator, booking._id.toString());
+    expect(ticket.legs.map((leg) => leg.flightNumber)).toEqual(['NA100']);
+
+    // the traveller is told, without any flight number
+    await expect(
+      service.getETicket(owner, booking._id.toString()),
+    ).rejects.toThrow('A flight of this booking was cancelled');
+    await expect(
+      service.getETicket(owner, booking._id.toString()),
+    ).rejects.not.toThrow(/OA200/);
+  });
+
   it('shows an airline moderator only the legs of their airline and no price', async () => {
     const otherFlight = {
       ...flight,

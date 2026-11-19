@@ -64,14 +64,6 @@ export class FlightETicketService {
         },
       })
       .lean()) as unknown as Lean<Airport>[];
-    const cancelled = flights.find(
-      (flight) => flight.status === FlightStatus.CANCELLED,
-    );
-    if (cancelled) {
-      throw new ConflictException(
-        `Flight ${cancelled.flightNumber} was cancelled: there is no e-ticket for it`,
-      );
-    }
     const flightById = new Map(flights.map((f) => [f._id.toString(), f]));
     const airlineById = new Map(airlines.map((a) => [a._id.toString(), a]));
     const airportById = new Map(
@@ -98,6 +90,17 @@ export class FlightETicketService {
         const operator = flightById.get(leg.flight.toString())?.airline;
         return operator?.toString() === moderatorAirline;
       });
+
+    // Only the legs the caller may see are checked, so an airline moderator never
+    // learns anything (not even a flight number) about another airline's leg.
+    const cancelled = visibleLegs
+      .map(({ leg }) => flightById.get(leg.flight.toString()))
+      .find((flight) => flight?.status === FlightStatus.CANCELLED);
+    if (cancelled) {
+      throw new ConflictException(
+        'A flight of this booking was cancelled: there is no e-ticket for it',
+      );
+    }
 
     const legs: ETicketLeg[] = visibleLegs.map(({ leg, index }) => {
       const flight = flightById.get(leg.flight.toString());
