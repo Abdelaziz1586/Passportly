@@ -1,15 +1,20 @@
 import {
+  NotImplementedException,
+  Body,
   Controller,
   Get,
-  NotImplementedException,
+  Param,
   Patch,
   Post,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiCookieAuth, ApiTags } from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
+import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { FlightsService } from './flights.service';
+import { FlightCancel } from './cancel-flight.dto';
 
 @ApiTags('Flights')
 @Controller('flights')
@@ -57,11 +62,12 @@ export class FlightsController {
   @ApiCookieAuth()
   @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
   @Post(':id/cancel')
-  @ApiOperation({ summary: 'FLT-06: Cancel a flight' })
-  cancelFlight() {
-    throw new NotImplementedException(
-      'POST /api/flights/:id/cancel not implemented yet',
-    );
+  cancelFlight(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: FlightCancel,
+  ) {
+    return this.flightsService.cancelFlight(id, user, input);
   }
 
   @ApiCookieAuth()
