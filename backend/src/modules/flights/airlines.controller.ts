@@ -1,28 +1,64 @@
+import { maxLogoBytes, UploadsService } from '../uploads/uploads.service';
 import {
+  NotImplementedException,
+  Body,
   Controller,
   Get,
-  NotImplementedException,
   Patch,
   Post,
   Put,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  ApiOperation,
+  ApiBody,
+  ApiConsumes,
+  ApiCookieAuth,
+  ApiTags,
+} from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
+import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { FlightsService } from './flights.service';
+import { AirlineCreate } from './create-airline.dto';
 
 @ApiTags('Airlines')
 @Controller('airlines')
 export class AirlinesController {
-  constructor(private readonly flightsService: FlightsService) {}
+  constructor(
+    private readonly flightsService: FlightsService,
+    private readonly uploads: UploadsService,
+  ) {}
 
   @ApiCookieAuth()
-  @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
+  @ApiConsumes('application/json', 'multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        iataCode: { type: 'string', example: 'MS' },
+        logo: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @Roles(Role.ADMIN)
+  @UseInterceptors(
+    FileInterceptor('logo', { limits: { fileSize: maxLogoBytes, files: 1 } }),
+  )
   @Post()
-  @ApiOperation({ summary: 'FLT-01: Create an airline profile' })
-  createAirline() {
-    throw new NotImplementedException('POST /api/airlines not implemented yet');
+  createAirline(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: AirlineCreate,
+    @UploadedFile() logo?: Express.Multer.File,
+  ) {
+    return this.uploads.withAirlineLogo(logo, (url) =>
+      this.flightsService.createAirline(user, input, url),
+    );
   }
 
   @Public()
