@@ -57,7 +57,8 @@ export interface ETicket {
   issuedAt: Date | null;
   passengers: ETicketPassenger[];
   legs: ETicketLeg[];
-  totalPrice: number;
+  /** Not shown to an airline moderator: the price covers legs of other airlines too. */
+  totalPrice: number | null;
   currency: string;
 }
 
@@ -147,7 +148,7 @@ export function eTicketToPdfLines(ticket: ETicket): PdfLine[] {
       text: `Status: ${ticket.status}    Trip: ${ticket.tripType === TripType.ROUND_TRIP ? 'Round trip' : 'One way'}`,
     },
     {
-      text: `Total paid: ${ticket.totalPrice.toFixed(2)} ${ticket.currency}${ticket.issuedAt ? `    Issued: ${ticket.issuedAt.toISOString().slice(0, 16).replace('T', ' ')} UTC` : ''}`,
+      text: `${ticket.totalPrice === null ? '' : `Total paid: ${ticket.totalPrice.toFixed(2)} ${ticket.currency}`}${ticket.issuedAt ? `    Issued: ${ticket.issuedAt.toISOString().slice(0, 16).replace('T', ' ')} UTC` : ''}`,
     },
     { text: ' ' },
     { text: 'Flights', size: 14, bold: true },

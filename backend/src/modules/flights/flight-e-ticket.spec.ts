@@ -176,6 +176,11 @@ describe('eTicketToPdfLines', () => {
     );
     expect(text).toContain('Seats: 12A');
     expect(text).toContain('Layla Hassan (ADULT)');
+    expect(
+      eTicketToPdfLines({ ...ticket, totalPrice: null })
+        .map((line) => line.text)
+        .join('\n'),
+    ).not.toContain('Total paid');
     expect(text).toContain('E-ticket number: ETKABCD234501');
     expect(text).toContain('Passport: *****5678');
   });

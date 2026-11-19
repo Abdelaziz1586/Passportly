@@ -68,6 +68,12 @@ export class ETicketResponseDto {
   @ApiProperty({ type: [ETicketPassengerDto] })
   passengers: ETicketPassengerDto[];
   @ApiProperty({ type: [ETicketLegDto] }) legs: ETicketLegDto[];
-  @ApiProperty() totalPrice: number;
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    description:
+      'null for an airline moderator: the price also covers legs of other airlines',
+  })
+  totalPrice: number | null;
   @ApiProperty({ example: 'USD' }) currency: string;
 }

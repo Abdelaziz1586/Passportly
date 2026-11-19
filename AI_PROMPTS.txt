@@ -146,5 +146,5 @@ Related Requirement: FLT-23 (GET /api/flight-bookings/:id/e-ticket), GEN-06
 Prompt:
 Implement GET /api/flight-bookings/:id/e-ticket for a CONFIRMED booking: the booking reference (PNR), each passenger's e-ticket number, every flight with departure and arrival in UTC and in the airport's own IANA time zone, masked passport numbers, and a downloadable PDF with ?format=pdf. Readable by the owner, admins and the moderator of the operating airline only; everyone else gets 404. Then write unit tests and run live checks (real hold, Stripe test payment and signed webhook, then the ticket) plus the Swagger page in a browser.
 How the output was used:
-The generated service, shared booking access helper, dependency-free PDF builder, DTOs, controller wiring and tests were integrated and checked with lint, build, unit tests, 27 live checks, a PDFKit open of the generated file and a Swagger "Try it out" run for both formats.
+The generated service, shared booking access helper, dependency-free PDF builder, DTOs, controller wiring and tests were integrated and checked with lint, build, unit tests, 30 live checks, a PDFKit open of the generated file and a Swagger "Try it out" run for both formats.
 ================================================

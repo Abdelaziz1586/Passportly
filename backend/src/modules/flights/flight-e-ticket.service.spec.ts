@@ -42,6 +42,7 @@ const dubai = {
 };
 const flight = {
   _id: new Types.ObjectId(),
+  status: 'SCHEDULED',
   airline: airlineId,
   flightNumber: 'NA100',
   departureAirport: cairo._id,
@@ -100,7 +101,7 @@ function build(booking: ReturnType<typeof makeBooking> | null) {
     airlineModel as never,
     airportModel as never,
   );
-  return { service, bookingModel, flightModel };
+  return { service, bookingModel, flightModel, airlineModel };
 }
 
 const owner: AuthenticatedUser = {
@@ -161,6 +162,8 @@ describe('FlightETicketService.getETicket', () => {
     BookingStatus.EXPIRED,
     BookingStatus.CANCELLED,
     BookingStatus.HELD,
+    // deliberate: the ticket is for a CONFIRMED booking (Jira SCRUM-76), not a finished trip
+    BookingStatus.COMPLETED,
   ])('refuses a %s booking with 409', async (status) => {
     const booking = makeBooking({ status });
     const { service } = build(booking);
@@ -298,6 +301,69 @@ describe('FlightETicketService.getETicket', () => {
       ['14C'],
     ]);
     expect(ticket.tripType).toBe(TripType.ROUND_TRIP);
+  });
+
+  it('takes the duration from the booked times, not from the current flight record', async () => {
+    const booking = makeBooking();
+    const { service, flightModel } = build(booking);
+    flightModel.find.mockReturnValue(
+      query([{ ...flight, durationMinutes: 999 }]),
+    );
+
+    const ticket = await service.getETicket(owner, booking._id.toString());
+
+    expect(ticket.legs[0].durationMinutes).toBe(240);
+  });
+
+  it('refuses a ticket for a cancelled flight', async () => {
+    const booking = makeBooking();
+    const { service, flightModel } = build(booking);
+    flightModel.find.mockReturnValue(
+      query([{ ...flight, status: 'CANCELLED' }]),
+    );
+
+    await expect(
+      service.getETicket(owner, booking._id.toString()),
+    ).rejects.toThrow(/cancelled/);
+  });
+
+  it('shows an airline moderator only the legs of their airline and no price', async () => {
+    const otherFlight = {
+      ...flight,
+      _id: new Types.ObjectId(),
+      airline: otherAirlineId,
+      flightNumber: 'OA200',
+    };
+    const base = makeBooking().legs[0];
+    const booking = makeBooking({
+      tripType: TripType.ROUND_TRIP,
+      legs: [base, { ...base, flight: otherFlight._id }],
+    });
+    const { service, flightModel, airlineModel } = build(booking);
+    flightModel.find.mockReturnValue(query([flight, otherFlight]));
+    airlineModel.find.mockReturnValue(
+      query([
+        airline,
+        { _id: otherAirlineId, name: 'Other Air', iataCode: 'OA' },
+      ]),
+    );
+    flightModel.exists.mockResolvedValue({ _id: flight._id });
+    const moderator: AuthenticatedUser = {
+      userId: new Types.ObjectId().toString(),
+      email: 'm@example.com',
+      role: Role.AIRLINE_MODERATOR,
+      jti: 'j',
+      assignedProviderType: 'airline',
+      assignedProviderId: airlineId.toString(),
+    };
+
+    const ticket = await service.getETicket(moderator, booking._id.toString());
+    const full = await service.getETicket(owner, booking._id.toString());
+
+    expect(ticket.legs.map((leg) => leg.flightNumber)).toEqual(['NA100']);
+    expect(ticket.totalPrice).toBeNull();
+    expect(full.legs).toHaveLength(2);
+    expect(full.totalPrice).toBe(300);
   });
 
   it('is a 409 when a flight of the booking vanished', async () => {

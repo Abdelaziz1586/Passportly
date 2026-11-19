@@ -1,10 +1,10 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { BookingStatus } from '../../common/enums';
+import { BookingStatus, FlightStatus, Role } from '../../common/enums';
 import { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { Airport } from '../reference-data/schemas/airport.schema';
-import { loadReadableFlightBooking } from './flight-booking-access';
+import { loadReadableFlightBookingRaw } from './flight-booking-access';
 import {
   ETicket,
   ETicketAirport,
@@ -36,7 +36,7 @@ export class FlightETicketService {
   ) {}
 
   async getETicket(user: AuthenticatedUser, id: string): Promise<ETicket> {
-    const booking = await loadReadableFlightBooking(
+    const booking = await loadReadableFlightBookingRaw(
       user,
       id,
       this.bookingModel,
@@ -64,6 +64,14 @@ export class FlightETicketService {
         },
       })
       .lean()) as unknown as Lean<Airport>[];
+    const cancelled = flights.find(
+      (flight) => flight.status === FlightStatus.CANCELLED,
+    );
+    if (cancelled) {
+      throw new ConflictException(
+        `Flight ${cancelled.flightNumber} was cancelled: there is no e-ticket for it`,
+      );
+    }
     const flightById = new Map(flights.map((f) => [f._id.toString(), f]));
     const airlineById = new Map(airlines.map((a) => [a._id.toString(), a]));
     const airportById = new Map(
@@ -78,7 +86,20 @@ export class FlightETicketService {
       ]),
     );
 
-    const legs: ETicketLeg[] = booking.legs.map((leg, index) => {
+    // An airline moderator only sees the legs their own airline operates, and no price.
+    const moderatorAirline =
+      user.role === Role.AIRLINE_MODERATOR
+        ? user.assignedProviderId
+        : undefined;
+    const visibleLegs = booking.legs
+      .map((leg, index) => ({ leg, index }))
+      .filter(({ leg }) => {
+        if (!moderatorAirline) return true;
+        const operator = flightById.get(leg.flight.toString())?.airline;
+        return operator?.toString() === moderatorAirline;
+      });
+
+    const legs: ETicketLeg[] = visibleLegs.map(({ leg, index }) => {
       const flight = flightById.get(leg.flight.toString());
       const airline = flight && airlineById.get(flight.airline.toString());
       const from =
@@ -99,8 +120,10 @@ export class FlightETicketService {
           iataCode: airline.iataCode,
         },
         cabinClass: leg.cabinClass,
-        durationMinutes: flight.durationMinutes,
-        // The booking keeps the times agreed at booking; the airports give the zones.
+        // The booking keeps the times agreed at booking (also for the duration); the airports give the zones.
+        durationMinutes: Math.round(
+          (leg.arrivalTime.getTime() - leg.departureTime.getTime()) / 60_000,
+        ),
         departure: toEndpoint(from, leg.departureTime),
         arrival: toEndpoint(to, leg.arrivalTime),
         seatNumbers: [...(leg.seatNumbers ?? [])],
@@ -117,7 +140,7 @@ export class FlightETicketService {
         toETicketPassenger(passenger),
       ),
       legs,
-      totalPrice: booking.totalPrice,
+      totalPrice: moderatorAirline ? null : booking.totalPrice,
       currency: booking.currency,
     };
   }

@@ -5,7 +5,11 @@ import { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface
 import { FlightBooking } from './schemas/flight-booking.schema';
 import { Flight } from './schemas/flight.schema';
 
-/** A booking as read for access checks and read-only views. */
+/**
+ * A booking exactly as stored. It still holds the full passport numbers, dates
+ * of birth, the policy snapshot and the payment link: never return it from an
+ * endpoint, always map it to a response first (maskPassport, FlightBookingResponse).
+ */
 export type LeanFlightBooking = FlightBooking & {
   _id: Types.ObjectId;
   createdAt: Date;
@@ -13,13 +17,13 @@ export type LeanFlightBooking = FlightBooking & {
 };
 
 /**
- * Who may read a flight booking:
+ * Who may read a flight booking (the RAW document, see LeanFlightBooking):
  * - the traveller who owns it (owner comes from the JWT user id),
  * - an admin,
  * - the airline moderator whose single assigned airline operates a flight of the booking.
  * Everyone else gets 404, exactly like a booking that does not exist.
  */
-export async function loadReadableFlightBooking(
+export async function loadReadableFlightBookingRaw(
   user: AuthenticatedUser,
   id: string,
   bookingModel: Model<FlightBooking>,
