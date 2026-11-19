@@ -8,7 +8,12 @@ import { ClientSession, Connection, Model, Types } from 'mongoose';
 import { BookingStatus } from '../../common/enums';
 import { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { UploadsService } from '../uploads/uploads.service';
-import { CreateRoomDto, StayQueryDto, UpdateRoomDto } from './dto/hotel.dto';
+import {
+  AvailabilityFieldsDto,
+  CreateRoomDto,
+  StayQueryDto,
+  UpdateRoomDto,
+} from './dto/hotel.dto';
 import { HotelAccessService } from './hotel-access.service';
 import {
   dateRange,
@@ -18,6 +23,7 @@ import {
   paged,
   pagination,
   todayUtc,
+  utcDate,
 } from './hotel-utils';
 import {
   HotelBooking,
@@ -249,6 +255,122 @@ export class HotelInventoryService {
       await this.rooms.deleteOne({ _id: room._id }, { session });
       return { roomId, deleted: true, deactivated: false };
     });
+  }
+
+  async setAvailability(
+    hotelId: string,
+    roomId: string,
+    dto: AvailabilityFieldsDto,
+    user: AuthenticatedUser,
+    initialize: boolean,
+  ) {
+    await this.access.managedHotel(hotelId, user);
+    objectId(roomId, 'roomId');
+    const dates = dateRange(dto.startDate, dto.endDate);
+    const changes = Object.fromEntries(
+      Object.entries(dto).filter(
+        ([key, value]) =>
+          key !== 'startDate' && key !== 'endDate' && value !== undefined,
+      ),
+    );
+    if (!initialize && !Object.keys(changes).length)
+      throw new BadRequestException('Provide an availability field to update');
+    try {
+      return await this.connection.transaction(async (session) => {
+        const room = await this.access.room(hotelId, roomId, session);
+        if (!room.isActive)
+          throw new ConflictException(
+            'Reactivate the room before changing availability',
+          );
+        const totalUnits = dto.totalUnits ?? room.totalUnits;
+        if (totalUnits > room.totalUnits)
+          throw new BadRequestException(
+            'Nightly units cannot exceed the room totalUnits',
+          );
+        const filter = {
+          room: room._id,
+          date: { $gte: dates[0], $lt: utcDate(dto.endDate) },
+        };
+        const existing = await this.availability
+          .find(filter)
+          .session(session)
+          .lean();
+        if (initialize && existing.length)
+          throw new ConflictException(
+            'Availability ranges may not overlap; use PATCH to edit existing dates',
+          );
+        if (!initialize && existing.length !== dates.length)
+          throw new ConflictException(
+            'Initialize every requested night before updating it',
+          );
+        if (dto.isBlocked === true || dto.totalUnits === 0)
+          await this.assertNoReservations(
+            roomId,
+            dates[0],
+            utcDate(dto.endDate),
+            session,
+          );
+        for (const night of existing) {
+          if (
+            dto.totalUnits !== undefined &&
+            dto.totalUnits < night.bookedUnits + night.heldUnits
+          )
+            throw new ConflictException(
+              'Nightly units cannot be reduced below booked plus held units',
+            );
+        }
+        if (initialize) {
+          // Unique (room,date) index protects simultaneous initialization of overlapping ranges.
+          await this.availability.bulkWrite(
+            dates.map((date) => ({
+              updateOne: {
+                filter: { room: room._id, date },
+                update: {
+                  $setOnInsert: {
+                    hotel: room.hotel,
+                    room: room._id,
+                    date,
+                    totalUnits,
+                    bookedUnits: 0,
+                    heldUnits: 0,
+                    priceOverride: dto.priceOverride ?? null,
+                    isBlocked: dto.isBlocked ?? false,
+                    ...(dto.isBlocked && dto.blockReason
+                      ? { blockReason: dto.blockReason }
+                      : {}),
+                  },
+                },
+                upsert: true,
+              },
+            })),
+            { session },
+          );
+        } else {
+          await this.availability.updateMany(
+            filter,
+            {
+              $set: {
+                ...changes,
+                ...(dto.isBlocked === false ? { blockReason: '' } : {}),
+              },
+            },
+            { session, runValidators: true },
+          );
+        }
+        return {
+          roomId,
+          startDate: dto.startDate,
+          endDate: dto.endDate,
+          nights: dates.length,
+        };
+      });
+    } catch (error) {
+      if (isDuplicateKey(error))
+        throw new ConflictException(
+          'Availability overlaps another initialized range',
+        );
+      throw error;
+    }
   }
 
   /** Missing calendar rows are unavailable; overrides are summed once per stay night. */
