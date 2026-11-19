@@ -82,3 +82,14 @@ Details: Verify credentials, enforce failed-login lockout & AccountStatus.ACTIVE
 How the output was used:
 Implemented LoginDto, LoginResponseDto, AuthService.login (email normalization, bcrypt password check, 5-attempt / 15-minute failed-login lockout, AccountStatus.ACTIVE enforcement, UserSession creation with jti and JWT-aligned expiresAt, httpOnly cookie configuration), and AuthController.login wiring with @Public() and Swagger annotations. Added unit tests in auth.service.spec.ts and auth.controller.spec.ts and verified with npm run lint, npm run build, and npm test.
 ================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Fady
+Tool: Codex
+Related Requirement: SCRUM-50
+Prompt:
+Implement the approved Passportly flight plan and separate each ticket into its own pull request.
+How the output was used:
+Implemented and verified the ticket on an independent branch from develop.
+================================================
