@@ -2,7 +2,9 @@ import {
   BadRequestException,
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   INestApplication,
+  NotFoundException,
   UnauthorizedException,
   ValidationPipe,
 } from '@nestjs/common';
@@ -199,6 +201,25 @@ describe('Itinerary endpoints and persistence', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
     await reference.countryModel.deleteMany({});
     await expect(create()).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('SCRUM-91: enforces ownership, permits admin reads, and rejects invalid or missing IDs', async () => {
+    const itinerary = await create();
+    await expect(
+      service.getItinerary(String(itinerary._id), stranger),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(
+      service.getItinerary(String(itinerary._id), {
+        ...stranger,
+        role: Role.ADMIN,
+      }),
+    ).resolves.toHaveProperty('title', 'Test trip');
+    await expect(
+      service.getItinerary('invalid-id', user),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.getItinerary(new Types.ObjectId().toString(), user),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
   it('SCRUM-89: creates an owned private itinerary through HTTP', async () => {
     await request(server())

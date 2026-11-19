@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   NotImplementedException,
+  Param,
   Patch,
   Post,
   Query,
@@ -75,10 +76,11 @@ export class ItinerariesController {
   @ApiOperation({
     summary: 'ITN-03: Get itinerary details (with ownership check)',
   })
-  getItinerary() {
-    throw new NotImplementedException(
-      'GET /api/itineraries/:id not implemented yet',
-    );
+  getItinerary(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.getItinerary(id, user);
   }
 
   @ApiCookieAuth()
