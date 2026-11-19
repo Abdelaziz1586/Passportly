@@ -70,10 +70,7 @@ export class HotelsController {
       'HTL-11, HTL-12: Search hotels by destination, dates, and guest count',
   })
   searchHotels(@Query() query: SearchHotelsDto) {
-    void [query];
-    throw new NotImplementedException(
-      'Implemented by the subsequent SCRUM-53 PR in this stack',
-    );
+    return this.hotelsService.searchHotels(query);
   }
 
   @Public()
