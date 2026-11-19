@@ -82,3 +82,17 @@ Details: Verify credentials, enforce failed-login lockout & AccountStatus.ACTIVE
 How the output was used:
 Implemented LoginDto, LoginResponseDto, AuthService.login (email normalization, bcrypt password check, 5-attempt / 15-minute failed-login lockout, AccountStatus.ACTIVE enforcement, UserSession creation with jti and JWT-aligned expiresAt, httpOnly cookie configuration), and AuthController.login wiring with @Public() and Swagger annotations. Added unit tests in auth.service.spec.ts and auth.controller.spec.ts and verified with npm run lint, npm run build, and npm test.
 ================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Abdullah Emam
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: BLG-10, GEN-08 (SCRUM-128, POST /api/posts/:id/images)
+
+Prompt:
+Implement SCRUM-128 [BLG-10, GEN-08] POST /api/posts/:id/images - Upload validated image to blog post via UploadsService.saveImage() and append MediaItem to BlogPost.images.
+
+How the output was used:
+Implemented UploadsService.saveImage() with MIME/magic-byte/size validation and safe UUID disk storage, UploadPostImageResponseDto, BlogService.uploadPostImage with author ownership enforcement and orphan cleanup, BlogController.uploadPostImage multipart/form-data Swagger/FileInterceptor wiring, and unit tests in uploads.service.spec.ts, blog.controller.spec.ts, and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================

@@ -3,14 +3,35 @@ import {
   Delete,
   Get,
   NotImplementedException,
+  Param,
   Patch,
   Post,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  ApiBadRequestResponse,
+  ApiBody,
+  ApiConsumes,
+  ApiCookieAuth,
+  ApiCreatedResponse,
+  ApiForbiddenResponse,
+  ApiNotFoundResponse,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
+import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { BlogService } from './blog.service';
+import { UploadPostImageResponseDto } from './dto/blog-post-response.dto';
+
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 @ApiTags('Blog & Community')
 @Controller()
@@ -125,12 +146,42 @@ export class BlogController {
 
   @ApiCookieAuth()
   @Roles(Role.REGISTERED_USER)
+  @UseInterceptors(
+    FileInterceptor('image', {
+      limits: { files: 1, fileSize: MAX_UPLOAD_BYTES },
+    }),
+  )
   @Post('posts/:id/images')
   @ApiOperation({ summary: 'BLG-10, GEN-08: Upload image to blog post' })
-  uploadPostImage() {
-    throw new NotImplementedException(
-      'POST /api/posts/:id/images not implemented yet',
-    );
+  @ApiParam({ name: 'id', description: 'Blog post MongoDB ObjectId' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['image'],
+      properties: {
+        image: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @ApiCreatedResponse({
+    description: 'Image validated, stored, and attached to blog post',
+    type: UploadPostImageResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid post ID or invalid/oversized image file',
+  })
+  @ApiUnauthorizedResponse({ description: 'Authentication required' })
+  @ApiForbiddenResponse({
+    description: 'Only the post author can upload images to this blog post',
+  })
+  @ApiNotFoundResponse({ description: 'Blog post not found' })
+  uploadPostImage(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @UploadedFile() file?: Express.Multer.File,
+  ): Promise<UploadPostImageResponseDto> {
+    return this.blogService.uploadPostImage(id, user.userId, file);
   }
 
   @ApiCookieAuth()
