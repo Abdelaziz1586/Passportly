@@ -170,10 +170,7 @@ export class HotelsController {
   @Get(':id/availability')
   @ApiOperation({ summary: 'HTL-08: Get hotel availability calendar/summary' })
   getHotelAvailability(@Param('id') id: string, @Query() query: DateRangeDto) {
-    void [id, query];
-    throw new NotImplementedException(
-      'Implemented by the subsequent SCRUM-62 PR in this stack',
-    );
+    return this.inventory.calendar(id, query);
   }
 
   @ApiCookieAuth()
@@ -188,10 +185,7 @@ export class HotelsController {
     @Query() query: DateRangeDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    void [id, query, user];
-    throw new NotImplementedException(
-      'Implemented by the subsequent SCRUM-62 PR in this stack',
-    );
+    return this.inventory.calendar(id, query, user);
   }
 
   @ApiCookieAuth()

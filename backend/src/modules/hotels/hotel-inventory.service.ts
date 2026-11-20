@@ -11,6 +11,7 @@ import { UploadsService } from '../uploads/uploads.service';
 import {
   AvailabilityFieldsDto,
   CreateRoomDto,
+  DateRangeDto,
   StayQueryDto,
   UpdateRoomDto,
 } from './dto/hotel.dto';
@@ -449,6 +450,109 @@ export class HotelInventoryService {
       guestCount: query.guestCount ?? 1,
       currency: hotel.baseCurrency,
       ...paged(data.slice(skip, skip + limit), data.length, page, limit),
+    };
+  }
+
+  async calendar(
+    hotelId: string,
+    query: DateRangeDto,
+    user?: AuthenticatedUser,
+  ) {
+    if (user) await this.access.managedHotel(hotelId, user);
+    else await this.access.hotel(hotelId, true);
+    const dates = dateRange(query.startDate, query.endDate);
+    const rooms = await this.rooms
+      .find({ hotel: objectId(hotelId), ...(user ? {} : { isActive: true }) })
+      .sort({ name: 1, _id: 1 })
+      .lean();
+    const rows = await this.availability
+      .find({ hotel: objectId(hotelId), date: { $in: dates } })
+      .lean();
+    const byKey = new Map(
+      rows.map((row) => [
+        `${row.room.toString()}:${row.date.toISOString()}`,
+        row,
+      ]),
+    );
+    const reservations = user
+      ? await this.bookings
+          .find({
+            hotel: objectId(hotelId),
+            checkInDate: { $lt: utcDate(query.endDate) },
+            checkOutDate: { $gt: dates[0] },
+            status: {
+              $in: [
+                BookingStatus.CONFIRMED,
+                BookingStatus.COMPLETED,
+                BookingStatus.HELD,
+                BookingStatus.PENDING_PAYMENT,
+              ],
+            },
+          })
+          .select(
+            'bookingReference rooms.room checkInDate checkOutDate status holdExpiresAt',
+          )
+          .lean()
+      : [];
+    return {
+      hotelId,
+      startDate: query.startDate,
+      endDate: query.endDate,
+      rooms: rooms.map((room) => ({
+        roomId: room._id,
+        name: room.name,
+        isActive: room.isActive,
+        dates: dates.map((date) => {
+          const row = byKey.get(`${room._id.toString()}:${date.toISOString()}`);
+          const remaining =
+            row && room.isActive && !row.isBlocked
+              ? Math.max(0, row.totalUnits - row.bookedUnits - row.heldUnits)
+              : 0;
+          const status =
+            !room.isActive || row?.isBlocked
+              ? 'Blocked'
+              : !row
+                ? 'Unavailable'
+                : remaining > 0
+                  ? 'Available'
+                  : row.bookedUnits + row.heldUnits > 0
+                    ? 'Booked'
+                    : 'Unavailable';
+          return {
+            date: date.toISOString().slice(0, 10),
+            status,
+            availableUnits: remaining,
+            pricePerNight: row?.priceOverride ?? room.basePricePerNight,
+            currency: room.currency,
+            ...(user
+              ? {
+                  bookedUnits: row?.bookedUnits ?? 0,
+                  heldUnits: row?.heldUnits ?? 0,
+                  blockReason: row?.blockReason,
+                  reservations: reservations
+                    .filter(
+                      (booking) =>
+                        booking.checkInDate <= date &&
+                        booking.checkOutDate > date &&
+                        booking.rooms.some((item) =>
+                          item.room.equals(room._id),
+                        ) &&
+                        (![
+                          BookingStatus.HELD,
+                          BookingStatus.PENDING_PAYMENT,
+                        ].includes(booking.status) ||
+                          !booking.holdExpiresAt ||
+                          booking.holdExpiresAt > new Date()),
+                    )
+                    .map((booking) => ({
+                      bookingReference: booking.bookingReference,
+                      status: booking.status,
+                    })),
+                }
+              : {}),
+          };
+        }),
+      })),
     };
   }
 }
