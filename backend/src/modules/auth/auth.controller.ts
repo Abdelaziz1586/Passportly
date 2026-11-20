@@ -27,6 +27,8 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { AuthService } from './auth.service';
+import { ForgotPasswordResponseDto } from './dto/forgot-password-response.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
 import { LoginDto } from './dto/login.dto';
 import { LogoutResponseDto } from './dto/logout-response.dto';
@@ -125,11 +127,20 @@ export class AuthController {
 
   @Public()
   @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'ACC-07 (Optional): Request password reset' })
-  forgotPassword() {
-    throw new NotImplementedException(
-      'POST /api/auth/forgot-password not implemented yet',
-    );
+  @ApiOkResponse({
+    description:
+      'Password reset request accepted (generic message returned without leaking account existence)',
+    type: ForgotPasswordResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid email format',
+  })
+  forgotPassword(
+    @Body() dto: ForgotPasswordDto,
+  ): Promise<ForgotPasswordResponseDto> {
+    return this.authService.forgotPassword(dto);
   }
 
   @Public()

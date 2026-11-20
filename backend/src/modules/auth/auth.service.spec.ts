@@ -54,11 +54,13 @@ describe('AuthService (ACC-01 register, ACC-02 verify-email, ACC-04/05 login)', 
 
   const mockMailService = {
     sendVerificationEmail: jest.fn(),
+    sendPasswordResetEmail: jest.fn(),
   };
 
   beforeEach(async () => {
     jest.clearAllMocks();
     mockMailService.sendVerificationEmail.mockResolvedValue(true);
+    mockMailService.sendPasswordResetEmail.mockResolvedValue(true);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -542,6 +544,103 @@ describe('AuthService (ACC-01 register, ACC-02 verify-email, ACC-04/05 login)', 
         }),
       ).rejects.toThrow(ForbiddenException);
       expect(mockSessionModel.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('forgotPassword', () => {
+    it('generates short-lived passwordResetToken and passwordResetExpiresAt for active user and sends reset email', async () => {
+      const selectMock = jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        email: 'traveler@example.com',
+        firstName: 'Abdelaziz',
+        status: AccountStatus.ACTIVE,
+      });
+      mockUserModel.findOne.mockReturnValue({ select: selectMock });
+      mockUserModel.findByIdAndUpdate.mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+      });
+
+      const before = Date.now();
+      const result = await service.forgotPassword({
+        email: '  Traveler@Example.COM ',
+      });
+      const after = Date.now();
+
+      expect(mockUserModel.findOne).toHaveBeenCalledWith({
+        email: 'traveler@example.com',
+      });
+      expect(selectMock).toHaveBeenCalledWith('email firstName status');
+      expect(mockUserModel.findByIdAndUpdate).toHaveBeenCalledTimes(1);
+
+      const updateCalls = mockUserModel.findByIdAndUpdate.mock.calls as [
+        [
+          string,
+          {
+            $set: {
+              passwordResetToken: string;
+              passwordResetExpiresAt: Date;
+            };
+          },
+        ],
+      ];
+      const token = updateCalls[0][1].$set.passwordResetToken;
+      const expiresAt = updateCalls[0][1].$set.passwordResetExpiresAt;
+
+      expect(typeof token).toBe('string');
+      expect(token).toHaveLength(64);
+      expect(expiresAt).toBeInstanceOf(Date);
+      expect(expiresAt.getTime()).toBeGreaterThanOrEqual(
+        before + 14 * 60 * 1000,
+      );
+      expect(expiresAt.getTime()).toBeLessThanOrEqual(after + 16 * 60 * 1000);
+
+      expect(mockMailService.sendPasswordResetEmail).toHaveBeenCalledWith({
+        to: 'traveler@example.com',
+        firstName: 'Abdelaziz',
+        token,
+        expiresInMinutes: 15,
+      });
+      expect(result).toEqual({
+        message:
+          'If an active account exists with that email, a password reset link has been sent.',
+      });
+    });
+
+    it('returns identical generic response without updating or sending email when account does not exist', async () => {
+      const selectMock = jest.fn().mockResolvedValue(null);
+      mockUserModel.findOne.mockReturnValue({ select: selectMock });
+
+      const result = await service.forgotPassword({
+        email: 'unknown@example.com',
+      });
+
+      expect(mockUserModel.findByIdAndUpdate).not.toHaveBeenCalled();
+      expect(mockMailService.sendPasswordResetEmail).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        message:
+          'If an active account exists with that email, a password reset link has been sent.',
+      });
+    });
+
+    it('returns identical generic response without generating token for suspended or deactivated accounts', async () => {
+      const selectMock = jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        email: 'suspended@example.com',
+        firstName: 'Suspended',
+        status: AccountStatus.SUSPENDED,
+      });
+      mockUserModel.findOne.mockReturnValue({ select: selectMock });
+
+      const result = await service.forgotPassword({
+        email: 'suspended@example.com',
+      });
+
+      expect(mockUserModel.findByIdAndUpdate).not.toHaveBeenCalled();
+      expect(mockMailService.sendPasswordResetEmail).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        message:
+          'If an active account exists with that email, a password reset link has been sent.',
+      });
     });
   });
 
