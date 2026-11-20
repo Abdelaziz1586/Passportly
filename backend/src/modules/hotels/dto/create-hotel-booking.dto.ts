@@ -8,12 +8,12 @@ import {
   IsInt,
   IsMongoId,
   IsNotEmpty,
-  IsOptional,
   IsString,
   Matches,
   Max,
   MaxLength,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 
@@ -53,7 +53,7 @@ export class HotelRoomSelectionDto {
     type: [Number],
     example: [4, 9],
   })
-  @IsOptional()
+  @ValidateIf((_object, value) => value !== undefined)
   @IsArray()
   @ArrayMaxSize(MAX_GUESTS_PER_ROOM_FIELD)
   @IsInt({ each: true })
@@ -115,13 +115,13 @@ export class CreateHotelBookingDto {
   primaryGuestEmail: string;
 
   @ApiPropertyOptional({ example: '+20 100 000 0000', maxLength: 30 })
-  @IsOptional()
+  @ValidateIf((_object, value) => value !== undefined)
   @IsString()
   @MaxLength(30)
   primaryGuestPhone?: string;
 
   @ApiPropertyOptional({ maxLength: 500, example: 'Late arrival' })
-  @IsOptional()
+  @ValidateIf((_object, value) => value !== undefined)
   @IsString()
   @MaxLength(500)
   specialRequests?: string;

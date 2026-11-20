@@ -327,9 +327,7 @@ export class FlightBookingsService {
 
     await this.expireLapsedHoldsFor(owner, now);
 
-    const filter: { user: Types.ObjectId; status?: { $in: BookingStatus[] } } =
-      { user: owner };
-    if (query.status?.length) filter.status = { $in: query.status };
+    const filter = this.buildListFilter(owner, query.status, now);
 
     const [bookings, total] = await Promise.all([
       this.bookingModel
@@ -345,6 +343,43 @@ export class FlightBookingsService {
       data: bookings.map((booking) => this.toListItem(booking, now)),
       meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
     };
+  }
+
+  private buildListFilter(
+    user: Types.ObjectId,
+    statuses: BookingStatus[] | undefined,
+    now: Date,
+  ): Record<string, unknown> {
+    if (!statuses?.length) return { user };
+    const touchesHold = statuses.some(
+      (s) => s === BookingStatus.PENDING_PAYMENT || s === BookingStatus.EXPIRED,
+    );
+    if (!touchesHold) {
+      return { user, status: { $in: statuses } };
+    }
+    const clauses: Record<string, unknown>[] = [];
+    const plain = statuses.filter(
+      (s) => s !== BookingStatus.PENDING_PAYMENT && s !== BookingStatus.EXPIRED,
+    );
+    if (plain.length) {
+      clauses.push({ status: { $in: plain } });
+    }
+    if (statuses.includes(BookingStatus.PENDING_PAYMENT)) {
+      clauses.push({
+        status: BookingStatus.PENDING_PAYMENT,
+        holdExpiresAt: { $gt: now },
+      });
+    }
+    if (statuses.includes(BookingStatus.EXPIRED)) {
+      clauses.push({ status: BookingStatus.EXPIRED });
+      clauses.push({
+        status: { $in: ACTIVE_HOLD_STATUSES },
+        holdExpiresAt: { $lte: now },
+      });
+    }
+    return clauses.length === 1
+      ? { user, ...clauses[0] }
+      : { user, $or: clauses };
   }
 
   private async expireLapsedHoldsFor(owner: Types.ObjectId, now: Date) {
