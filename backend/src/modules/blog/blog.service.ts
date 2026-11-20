@@ -664,5 +664,4 @@ export class BlogService {
       postId: String(deleted.post),
     };
   }
-
 }
