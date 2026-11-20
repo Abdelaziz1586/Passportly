@@ -10,6 +10,7 @@ import {
   IsInt,
   IsMongoId,
   IsNotEmpty,
+  IsNumber,
   IsOptional,
   IsString,
   Length,
@@ -17,7 +18,7 @@ import {
   Min,
 } from 'class-validator';
 
-import { ItineraryVisibility } from '../../../common/enums';
+import { BudgetCategory, ItineraryVisibility } from '../../../common/enums';
 
 import { PaginationQueryDto } from '../../../common/dto/pagination-query.dto';
 
@@ -250,4 +251,35 @@ export class UpdateActivityDto {
   @IsInt()
   @Min(0)
   orderIndex?: number;
+}
+
+export class CreateBudgetEntryDto {
+  @ApiProperty({ enum: BudgetCategory })
+  @IsEnum(BudgetCategory)
+  category: BudgetCategory;
+
+  @ApiProperty()
+  @Transform(trimString)
+  @IsString()
+  @IsNotEmpty()
+  title: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trimString)
+  @IsString()
+  notes?: string;
+
+  @ApiProperty({ minimum: 0, example: 45.5 })
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  amount: number;
+
+  @ApiProperty({ example: 'USD', minLength: 3, maxLength: 3 })
+  @Transform(normalizeCurrency)
+  @IsString()
+  @Length(3, 3)
+  @Matches(/^[A-Z]{3}$/)
+  currency: string;
 }

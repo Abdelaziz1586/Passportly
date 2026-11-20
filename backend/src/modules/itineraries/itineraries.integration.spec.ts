@@ -23,7 +23,7 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import request from 'supertest';
 import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
-import { ItineraryVisibility, Role } from '../../common/enums';
+import { BudgetCategory, ItineraryVisibility, Role } from '../../common/enums';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
@@ -173,6 +173,13 @@ describe('Itinerary endpoints and persistence', () => {
     const itinerary = await create();
     const day = await addDay(String(itinerary._id));
     return { itinerary, dayId: String(day._id) };
+  };
+
+  const budget = {
+    category: BudgetCategory.FOOD,
+    title: 'Lunch',
+    amount: 10,
+    currency: 'USD',
   };
 
   it('SCRUM-89/90: creates a private itinerary, normalizes currency, and lists only the owner records', async () => {
@@ -418,6 +425,44 @@ describe('Itinerary endpoints and persistence', () => {
     await expect(
       readFile(path.join(directory, image.filename)),
     ).rejects.toHaveProperty('code', 'ENOENT');
+  });
+
+  it('HTTP validation: rejects extra properties, invalid IDs, negative amounts, and accepts valid PATCH times', async () => {
+    await request(server())
+      .post('/api/itineraries')
+      .send({ title: 'Trip', startDate: '2027-06-15' })
+      .expect(401);
+    await request(server())
+      .post('/api/itineraries')
+      .set('x-test-user', ownerId)
+      .send({ title: 'Trip', startDate: '2027-06-15', user: otherId })
+      .expect(400);
+    await request(server())
+      .post('/api/itineraries')
+      .set('x-test-user', ownerId)
+      .send({ title: '  ', startDate: '2027-06-15' })
+      .expect(400);
+    await request(server())
+      .get('/api/itineraries/bad-id')
+      .set('x-test-user', ownerId)
+      .expect(400);
+    const { itinerary, dayId } = await itineraryWithDay();
+    await request(server())
+      .post(`/api/itineraries/${String(itinerary._id)}/days/${dayId}/budgets`)
+      .set('x-test-user', ownerId)
+      .send({ ...budget, amount: -1 })
+      .expect(400);
+    const activity = await service.addActivity(
+      String(itinerary._id),
+      dayId,
+      ownerId,
+      { title: 'Museum', startTime: '09:00' },
+    );
+    await request(server())
+      .patch(`/api/activities/${String(activity._id)}`)
+      .set('x-test-user', ownerId)
+      .send({ endTime: '12:30' })
+      .expect(200);
   });
   it('SCRUM-89: creates an owned private itinerary through HTTP', async () => {
     await request(server())

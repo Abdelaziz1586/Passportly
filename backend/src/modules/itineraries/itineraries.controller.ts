@@ -28,6 +28,7 @@ import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.inte
 import { CreateItineraryDto } from './dto/create-itinerary.dto';
 import {
   CreateActivityDto,
+  CreateBudgetEntryDto,
   CreateItineraryDayDto,
   ListItinerariesQueryDto,
   ReorderItineraryDaysDto,
@@ -251,10 +252,13 @@ export class ItinerariesController {
   @Roles(Role.REGISTERED_USER)
   @Post('itineraries/:id/days/:dayId/budgets')
   @ApiOperation({ summary: 'ITN-14: Add budget entry to day' })
-  addBudgetEntry() {
-    throw new NotImplementedException(
-      'POST /api/itineraries/:id/days/:dayId/budgets not implemented yet',
-    );
+  addBudgetEntry(
+    @Param('id') id: string,
+    @Param('dayId') dayId: string,
+    @Body() dto: CreateBudgetEntryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.addBudgetEntry(id, dayId, user.userId, dto);
   }
 
   @ApiCookieAuth()
