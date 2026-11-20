@@ -29,6 +29,7 @@ import {
   PaginatedBlogPostsResponseDto,
 } from './dto/blog-post-response.dto';
 import { CreatePostDto } from './dto/create-post.dto';
+import { ListMyPostsQueryDto } from './dto/list-my-posts-query.dto';
 import { ListPostsQueryDto } from './dto/list-posts-query.dto';
 
 @ApiTags('Blog & Community')
@@ -78,10 +79,18 @@ export class BlogController {
   @ApiOperation({
     summary: 'BLG-03: List current user blog posts (including drafts)',
   })
-  listMyPosts() {
-    throw new NotImplementedException(
-      'GET /api/posts/mine not implemented yet',
-    );
+  @ApiOkResponse({
+    description: 'Paginated blog posts authored by current user',
+    type: PaginatedBlogPostsResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid query parameters' })
+  @ApiUnauthorizedResponse({ description: 'Authentication required' })
+  @ApiForbiddenResponse({ description: 'Insufficient role permissions' })
+  listMyPosts(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ListMyPostsQueryDto,
+  ): Promise<PaginatedBlogPostsResponseDto> {
+    return this.blogService.listMyPosts(user.userId, query);
   }
 
   @Public()

@@ -1493,4 +1493,12 @@ Implement SCRUM-118 [BLG-02, BLG-09] GET /api/posts - List and search published 
 
 How the output was used:
 Added ListPostsQueryDto, PaginatedBlogPostsResponseDto, escapeRegex helper, UsersModule import in BlogModule for author population, BlogService.listPosts enforcing status == PUBLISHED and isHidden == false with $and-combined filters, BlogController.listPosts with @Public() and Swagger annotations, and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
+
+Related Requirement: BLG-03 (SCRUM-119, GET /api/posts/mine)
+
+Prompt:
+Implement SCRUM-119 [BLG-03] GET /api/posts/mine - List current user blog posts (drafts + published) with optional status filter, pagination, and sorting.
+
+How the output was used:
+Added ListMyPostsQueryDto, BlogService.listMyPosts scoped to CurrentUser.userId with optional DRAFT/PUBLISHED filter, BlogController.listMyPosts wired with @Roles(Role.REGISTERED_USER) above :id routes, and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
 ================================================
