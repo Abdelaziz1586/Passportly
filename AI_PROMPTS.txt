@@ -226,3 +226,15 @@ Implement PATCH /api/flight-bookings/:id/seat: the owner selects or changes the 
 How the output was used:
 The generated seat-map helper, claim schema, service, controller, DTOs and tests were integrated, a fresh reviewer found a window where a late payment could confirm a booking whose seat had been given away (fixed), and the result was checked with lint, build, unit tests, 59 live checks and a Swagger "Try it out" run.
 ================================================
+================================================
+================================================
+Date: 2026-11-20
+Student: Abdulrahman Ahmed
+Branch: feature/SCRUM-75-FLT-27-change-flight (stacked on feature/SCRUM-77-FLT-28-seat-selection)
+Tool: Claude Code (terminal, Claude Sonnet 5.5)
+Related Requirement: FLT-27 (PATCH /api/flight-bookings/:id/change-flight, optional bonus), FLT-26, FLT-22, PAY-01, PAY-03, GEN-11
+Prompt:
+Implement PATCH /api/flight-bookings/:id/change-flight: the owner changes one or both legs of a Confirmed flight booking to other flights of the same route and cabin before the first flight departs; the booking stays Confirmed (no new status). The fare difference is computed on the server with the booking rules (infants 10%, extra bags). Equal: swap at once. Lower: swap at once and refund the difference through the Stripe Refunds API. Higher: create a PaymentIntent for the difference; the booking keeps its old flights and seats until the signed webhook confirms the payment, then the legs and seats are swapped atomically; if the new flight has no seats left by then, refund the difference in full and notify the user. Extend the refund engine so one payment can have several refunds (total capped at the amount paid) without changing any existing behaviour, and let a later cancellation refund by policy on what is still refundable. Also a preview endpoint. Then write unit tests and run live checks against Stripe test mode (higher, lower and equal fares, no seats at webhook time, seat race, cancel after a change, round trips, concurrent changes, cancel racing a paid change) plus the Swagger page in a browser.
+How the output was used:
+The generated refund-engine extension, change service, payment hooks, DTOs, controller and tests were integrated; a fresh reviewer found races between concurrent changes and cancellations (fixed with state guards), a missing airline recheck at the swap, and a leftover old unique index (dropped at start), and the result was checked with lint, build, unit tests, 89 live checks and a Swagger "Try it out" run.
+================================================
