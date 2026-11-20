@@ -45,11 +45,13 @@ import {
   DeletePostImageResponseDto,
   PaginatedBlogPostsResponseDto,
   PostLikeResponseDto,
+  TagPostsResponseDto,
   UploadPostImageResponseDto,
 } from './dto/blog-post-response.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { CreatePostDto } from './dto/create-post.dto';
 import { ListMyPostsQueryDto } from './dto/list-my-posts-query.dto';
+import { ListPostsByTagQueryDto } from './dto/list-posts-by-tag-query.dto';
 import { ListPostsQueryDto } from './dto/list-posts-query.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
@@ -367,10 +369,17 @@ export class BlogController {
   @Public()
   @Get('tags/:tag/posts')
   @ApiOperation({ summary: 'BLG-08: List published blog posts by tag' })
-  getPostsByTag() {
-    throw new NotImplementedException(
-      'GET /api/tags/:tag/posts not implemented yet',
-    );
+  @ApiParam({ name: 'tag', description: 'Tag name or normalized slug' })
+  @ApiOkResponse({
+    description: 'Paginated published blog posts matching the tag',
+    type: TagPostsResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid tag or query parameters' })
+  getPostsByTag(
+    @Param('tag') tag: string,
+    @Query() query: ListPostsByTagQueryDto,
+  ): Promise<TagPostsResponseDto> {
+    return this.blogService.getPostsByTag(tag, query);
   }
 
   @Public()

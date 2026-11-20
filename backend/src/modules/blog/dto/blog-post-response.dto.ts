@@ -192,3 +192,22 @@ export class DeletePostImageResponseDto {
   @ApiProperty({ type: [BlogMediaItemDto] })
   images: BlogMediaItemDto[];
 }
+
+export class BlogTagSummaryDto {
+  @ApiPropertyOptional({ example: '673c1f2a9c4b2d001f8a5555' })
+  id?: string;
+
+  @ApiProperty({ example: 'travel tips' })
+  name: string;
+
+  @ApiProperty({ example: 'travel-tips' })
+  slug: string;
+
+  @ApiPropertyOptional({ example: 4 })
+  usageCount?: number;
+}
+
+export class TagPostsResponseDto extends PaginatedBlogPostsResponseDto {
+  @ApiProperty({ type: BlogTagSummaryDto })
+  tag: BlogTagSummaryDto;
+}

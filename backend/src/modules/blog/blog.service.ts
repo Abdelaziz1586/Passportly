@@ -34,11 +34,13 @@ import {
   DeletePostImageResponseDto,
   PaginatedBlogPostsResponseDto,
   PostLikeResponseDto,
+  TagPostsResponseDto,
   UploadPostImageResponseDto,
 } from './dto/blog-post-response.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { CreatePostDto } from './dto/create-post.dto';
 import { ListMyPostsQueryDto } from './dto/list-my-posts-query.dto';
+import { ListPostsByTagQueryDto } from './dto/list-posts-by-tag-query.dto';
 import { ListPostsQueryDto } from './dto/list-posts-query.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
@@ -54,6 +56,14 @@ function isMongoDuplicateKeyError(error: unknown): boolean {
     'code' in error &&
     (error as { code?: unknown }).code === 11000
   );
+}
+
+function safeDecodeTag(rawTag: string): string {
+  try {
+    return decodeURIComponent(rawTag);
+  } catch {
+    return rawTag;
+  }
 }
 
 @Injectable()
@@ -888,6 +898,76 @@ export class BlogService {
       postId,
       imageId,
       images: (updated?.images ?? []).map(formatMediaItem),
+    };
+  }
+  /**
+   * Normalizes a tag slug or name and returns paginated published,
+   * non-hidden blog posts matching that tag.
+   */
+  async getPostsByTag(
+    rawTag: string,
+    query: ListPostsByTagQueryDto,
+  ): Promise<TagPostsResponseDto> {
+    const normalizedName = safeDecodeTag(rawTag)
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ');
+    const slug = slugify(normalizedName);
+    if (!normalizedName || !slug) {
+      throw new BadRequestException('Invalid tag parameter');
+    }
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const sortBy = query.sortBy ?? 'publishedAt';
+    const sortDirection = query.sortOrder === 'asc' ? 1 : -1;
+
+    const tagDoc = await this.tagModel
+      .findOne({ $or: [{ slug }, { name: normalizedName }] })
+      .lean();
+
+    const tagCandidates = Array.from(new Set([slug, normalizedName]));
+    const tagOrConditions: Record<string, unknown>[] = [
+      { tags: { $in: tagCandidates } },
+    ];
+    if (tagDoc) {
+      tagOrConditions.push({ tagRefs: tagDoc._id });
+    }
+
+    const filter: Record<string, unknown> = {
+      status: PostStatus.PUBLISHED,
+      isHidden: false,
+      $or: tagOrConditions,
+    };
+
+    const [posts, total] = await Promise.all([
+      this.blogPostModel
+        .find(filter)
+        .populate('author', 'firstName lastName avatarUrl')
+        .sort({ [sortBy]: sortDirection, _id: sortDirection })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean<LeanBlogPostLike[]>(),
+      this.blogPostModel.countDocuments(filter),
+    ]);
+
+    return {
+      tag: tagDoc
+        ? {
+            id: String(tagDoc._id),
+            name: tagDoc.name,
+            slug: tagDoc.slug,
+            usageCount: tagDoc.usageCount,
+          }
+        : {
+            name: normalizedName,
+            slug,
+          },
+      data: posts.map((post) => formatBlogPost(post)),
+      total,
+      page,
+      limit,
+      totalPages: total === 0 ? 0 : Math.ceil(total / limit),
     };
   }
 }

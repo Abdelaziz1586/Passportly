@@ -1581,4 +1581,12 @@ Implement SCRUM-129 [BLG-10] DELETE /api/posts/:id/images/:imageId - Delete imag
 
 How the output was used:
 Added DeletePostImageResponseDto, BlogService.deletePostImage with author ownership verification, atomic $pull on BlogPost.images, and disk cleanup via UploadsService.deleteImage, plus BlogController.deletePostImage and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
+
+Related Requirement: BLG-08 (SCRUM-130, GET /api/tags/:tag/posts)
+
+Prompt:
+Implement SCRUM-130 [BLG-08] GET /api/tags/:tag/posts - List published blog posts filtered by normalized tag slug/name.
+
+How the output was used:
+Added ListPostsByTagQueryDto, BlogTagSummaryDto, TagPostsResponseDto, UsersModule import in BlogModule, BlogService.getPostsByTag normalizing tag names/slugs and filtering published non-hidden posts, BlogController.getPostsByTag with @Public() and Swagger annotations, and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
 ================================================
