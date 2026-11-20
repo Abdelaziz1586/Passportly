@@ -31,9 +31,15 @@ describe('BlogService (SCRUM-127 BLG-06 unlike post)', () => {
         { provide: getModelToken(BlogPost.name), useValue: mockBlogPostModel },
         { provide: getModelToken(Comment.name), useValue: {} },
         { provide: getModelToken(Like.name), useValue: mockLikeModel },
-        { provide: UploadsService, useValue: { deleteImage: jest.fn(), saveImage: jest.fn() } },
+        {
+          provide: UploadsService,
+          useValue: { deleteImage: jest.fn(), saveImage: jest.fn() },
+        },
         { provide: AuditLogsService, useValue: { log: jest.fn() } },
-        { provide: NotificationsService, useValue: { createNotification: jest.fn() } },
+        {
+          provide: NotificationsService,
+          useValue: { createNotification: jest.fn() },
+        },
         { provide: getModelToken(Tag.name), useValue: {} },
       ],
     }).compile();

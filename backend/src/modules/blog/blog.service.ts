@@ -779,5 +779,4 @@ export class BlogService {
       likesCount: updated?.likesCount ?? Math.max(0, post.likesCount - 1),
     };
   }
-
 }
