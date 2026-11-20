@@ -30,10 +30,17 @@ export class UsersController {
 
   @Get('me')
   @ApiOperation({ summary: 'ACC-11: Get current user profile' })
-  getMyProfile(@CurrentUser() user: AuthenticatedUser) {
-    throw new NotImplementedException(
-      `GET /api/users/me not implemented yet (user: ${user.userId})`,
-    );
+  @ApiOkResponse({
+    description:
+      'Sanitized user profile (plus active moderator assignment when applicable)',
+    type: UserProfileResponseDto,
+  })
+  @ApiUnauthorizedResponse({ description: 'Authentication required' })
+  @ApiNotFoundResponse({ description: 'User account not found' })
+  getMyProfile(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<UserProfileResponseDto> {
+    return this.usersService.getMyProfile(user);
   }
 
   @Patch('me')

@@ -7,11 +7,14 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { isValidObjectId, Model, Types } from 'mongoose';
-import { AccountStatus, Role } from '../../common/enums';
+import { AccountStatus, ProviderType, Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
-import { UserProfileResponseDto } from './dto/user-profile-response.dto';
+import {
+  ModeratorAssignmentSummaryDto,
+  UserProfileResponseDto,
+} from './dto/user-profile-response.dto';
 import {
   ModeratorAssignment,
   ModeratorAssignmentDocument,
@@ -33,6 +36,20 @@ type LeanUserProfile = {
   isEmailVerified: boolean;
   mustChangePassword?: boolean;
   lastLoginAt?: Date;
+  suspendedAt?: Date;
+  suspendedReason?: string;
+  deactivatedAt?: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
+};
+
+type LeanModeratorAssignment = {
+  _id: Types.ObjectId | string;
+  providerType: ProviderType;
+  airline?: Types.ObjectId | string | null;
+  hotel?: Types.ObjectId | string | null;
+  assignedBy: Types.ObjectId | string;
+  isActive: boolean;
   createdAt?: Date;
   updatedAt?: Date;
 };
@@ -45,6 +62,36 @@ export class UsersService {
     readonly moderatorAssignmentModel: Model<ModeratorAssignmentDocument>,
     private readonly referenceDataService: ReferenceDataService,
   ) {}
+
+  /**
+   * Fetches the authenticated user's full profile (excluding passwordHash and
+   * sensitive security/token fields) plus active moderator assignment when applicable.
+   */
+  async getMyProfile(
+    currentUser: AuthenticatedUser,
+  ): Promise<UserProfileResponseDto> {
+    if (!isValidObjectId(currentUser.userId)) {
+      throw new UnauthorizedException('Invalid authenticated user');
+    }
+
+    const user = await this.findActiveProfileById(currentUser.userId);
+
+    let moderatorAssignment: ModeratorAssignmentSummaryDto | null | undefined;
+    if (
+      user.role === Role.AIRLINE_MODERATOR ||
+      user.role === Role.HOTEL_MODERATOR
+    ) {
+      const assignment = await this.moderatorAssignmentModel
+        .findOne({ moderator: user._id, isActive: true })
+        .lean<LeanModeratorAssignment | null>();
+
+      moderatorAssignment = assignment
+        ? this.toAssignmentSummary(assignment)
+        : null;
+    }
+
+    return this.toProfileResponse(user, moderatorAssignment);
+  }
 
   /**
    * Updates allowed profile fields for the authenticated user, validating
@@ -65,22 +112,7 @@ export class UsersService {
       );
     }
 
-    const existingUser = await this.userModel
-      .findById(currentUser.userId)
-      .select(
-        '-passwordHash -emailVerificationToken -passwordResetToken -passwordResetExpiresAt',
-      )
-      .lean<LeanUserProfile | null>();
-
-    if (!existingUser) {
-      throw new NotFoundException('User account not found');
-    }
-
-    if (existingUser.status !== AccountStatus.ACTIVE) {
-      throw new ForbiddenException(
-        `Account is ${existingUser.status.toLowerCase()}`,
-      );
-    }
+    const existingUser = await this.findActiveProfileById(currentUser.userId);
 
     const setFields: Record<string, unknown> = {};
     const unsetFields: Record<string, 1> = {};
@@ -159,7 +191,57 @@ export class UsersService {
     return this.toProfileResponse(updated ?? existingUser);
   }
 
-  private toProfileResponse(user: LeanUserProfile): UserProfileResponseDto {
+  private async findActiveProfileById(
+    userId: string,
+  ): Promise<LeanUserProfile> {
+    const user = await this.userModel
+      .findById(userId)
+      .select(
+        '-passwordHash -emailVerificationToken -passwordResetToken -passwordResetExpiresAt',
+      )
+      .lean<LeanUserProfile | null>();
+
+    if (!user) {
+      throw new NotFoundException('User account not found');
+    }
+
+    if (user.status !== AccountStatus.ACTIVE) {
+      throw new ForbiddenException(`Account is ${user.status.toLowerCase()}`);
+    }
+
+    return user;
+  }
+
+  private toAssignmentSummary(
+    assignment: LeanModeratorAssignment,
+  ): ModeratorAssignmentSummaryDto {
+    const airlineId = assignment.airline
+      ? String(assignment.airline)
+      : undefined;
+    const hotelId = assignment.hotel ? String(assignment.hotel) : undefined;
+    const providerId = airlineId ?? hotelId;
+
+    return {
+      id: String(assignment._id),
+      providerType: assignment.providerType,
+      ...(providerId !== undefined ? { providerId } : {}),
+      ...(airlineId !== undefined ? { airlineId } : {}),
+      ...(hotelId !== undefined ? { hotelId } : {}),
+      assignedBy: String(assignment.assignedBy),
+      isActive: assignment.isActive,
+      ...(assignment.createdAt !== undefined
+        ? { createdAt: assignment.createdAt }
+        : {}),
+      ...(assignment.updatedAt !== undefined
+        ? { updatedAt: assignment.updatedAt }
+        : {}),
+    };
+  }
+
+  private toProfileResponse(
+    user: LeanUserProfile,
+    moderatorAssignment?: ModeratorAssignmentSummaryDto | null,
+  ): UserProfileResponseDto {
     return {
       id: String(user._id),
       email: user.email,
@@ -179,6 +261,16 @@ export class UsersService {
       ...(user.lastLoginAt !== undefined
         ? { lastLoginAt: user.lastLoginAt }
         : {}),
+      ...(user.suspendedAt !== undefined
+        ? { suspendedAt: user.suspendedAt }
+        : {}),
+      ...(user.suspendedReason !== undefined
+        ? { suspendedReason: user.suspendedReason }
+        : {}),
+      ...(user.deactivatedAt !== undefined
+        ? { deactivatedAt: user.deactivatedAt }
+        : {}),
+      ...(moderatorAssignment !== undefined ? { moderatorAssignment } : {}),
       ...(user.createdAt !== undefined ? { createdAt: user.createdAt } : {}),
       ...(user.updatedAt !== undefined ? { updatedAt: user.updatedAt } : {}),
     };
