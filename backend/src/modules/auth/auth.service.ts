@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -19,7 +20,12 @@ import type {
 } from '../../common/interfaces/jwt-payload.interface';
 import { MailService } from '../mail/mail.service';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
+import {
+  ModeratorAssignment,
+  ModeratorAssignmentDocument,
+} from '../users/schemas/moderator-assignment.schema';
 import { User, UserDocument } from '../users/schemas/user.schema';
+import { AuthMeResponseDto } from './dto/auth-me-response.dto';
 import { ChangePasswordResponseDto } from './dto/change-password-response.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordResponseDto } from './dto/forgot-password-response.dto';
@@ -117,6 +123,9 @@ export class AuthService {
     readonly configService: ConfigService,
     private readonly referenceDataService: ReferenceDataService,
     private readonly mailService: MailService,
+    @Optional()
+    @InjectModel(ModeratorAssignment.name)
+    private readonly assignmentModel?: Model<ModeratorAssignmentDocument>,
   ) {}
 
   /**
@@ -571,6 +580,64 @@ export class AuthService {
       secure: cookieSecure,
       path: '/',
     };
+  }
+
+  /**
+   * Returns authenticated user details, role, account status, and assigned
+   * provider context for airline/hotel moderators without exposing sensitive fields.
+   */
+  async getMe(authUser: AuthenticatedUser): Promise<AuthMeResponseDto> {
+    if (!isValidObjectId(authUser.userId)) {
+      throw new UnauthorizedException('Invalid authenticated user');
+    }
+
+    const user = await this.userModel.findById(authUser.userId);
+    if (!user) {
+      throw new UnauthorizedException('Account not found');
+    }
+
+    if (user.status !== AccountStatus.ACTIVE) {
+      throw new ForbiddenException(`Account is ${user.status.toLowerCase()}`);
+    }
+
+    const baseResponse: AuthMeResponseDto = {
+      ...this.toSafeUser(user),
+      mustChangePassword: Boolean(user.mustChangePassword),
+      ...(user.lastLoginAt !== undefined
+        ? { lastLoginAt: user.lastLoginAt }
+        : {}),
+    };
+
+    if (
+      user.role === Role.AIRLINE_MODERATOR ||
+      user.role === Role.HOTEL_MODERATOR
+    ) {
+      let assignedProviderId = authUser.assignedProviderId;
+      let assignedProviderType = authUser.assignedProviderType;
+
+      if (!assignedProviderId && this.assignmentModel) {
+        const assignment = await this.assignmentModel
+          .findOne({ moderator: user._id, isActive: true })
+          .lean();
+        if (assignment) {
+          assignedProviderType = assignment.providerType;
+          assignedProviderId = assignment.airline
+            ? String(assignment.airline)
+            : assignment.hotel
+              ? String(assignment.hotel)
+              : undefined;
+        }
+      }
+
+      if (assignedProviderId !== undefined) {
+        baseResponse.assignedProviderId = assignedProviderId;
+      }
+      if (assignedProviderType !== undefined) {
+        baseResponse.assignedProviderType = assignedProviderType;
+      }
+    }
+
+    return baseResponse;
   }
 
   /**

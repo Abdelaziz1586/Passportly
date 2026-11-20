@@ -11,7 +11,7 @@ import type { Request, Response } from 'express';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
-import { AccountStatus, Role } from '../../common/enums';
+import { AccountStatus, ProviderType, Role } from '../../common/enums';
 import { AllExceptionsFilter } from '../../common/filters/http-exception.filter';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -30,7 +30,7 @@ import { VerifyEmailQueryDto } from './dto/verify-email-query.dto';
 import { UserSession } from './schemas/user-session.schema';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
-describe('AuthController (ACC-01 register, ACC-02 verify-email, ACC-04/05 login, ACC-06 logout, ACC-07 forgot-password, ACC-07 reset-password, ACC-08 change-password)', () => {
+describe('AuthController (ACC-01 register, ACC-02 verify-email, ACC-04/05 login, ACC-06 logout, ACC-07 forgot-password, ACC-07 reset-password, ACC-08 change-password, ACC-04/19 me)', () => {
   let controller: AuthController;
   const validationPipe = new ValidationPipe({
     whitelist: true,
@@ -49,6 +49,7 @@ describe('AuthController (ACC-01 register, ACC-02 verify-email, ACC-04/05 login,
     forgotPassword: jest.fn(),
     resetPassword: jest.fn(),
     changePassword: jest.fn(),
+    getMe: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -356,9 +357,11 @@ describe('AuthController (ACC-01 register, ACC-02 verify-email, ACC-04/05 login,
       let sessionRevokedAt: Date | null = null;
 
       const fakeUserModel = {
-        findById: jest.fn(() => ({
-          lean: jest.fn().mockResolvedValue(userState),
-        })),
+        findById: jest.fn(() =>
+          Object.assign(Promise.resolve(userState), {
+            lean: jest.fn().mockResolvedValue(userState),
+          }),
+        ),
         findOne: jest.fn((filter: { passwordResetToken?: string }) => ({
           select: jest.fn().mockImplementation(() => {
             if (filter.passwordResetToken === userState.passwordResetToken) {
@@ -980,7 +983,7 @@ describe('AuthController (ACC-01 register, ACC-02 verify-email, ACC-04/05 login,
     });
   });
 
-  describe('HTTP integration (ACC-08 change-password)', () => {
+  describe('HTTP integration (ACC-08 change-password, ACC-04/19 me)', () => {
     it('updates password, clears mustChangePassword, revokes other sessions while keeping caller session active', async () => {
       const userId = '507f1f77bcf86cd799439011';
       const currentJti = 'current-session-jti';
@@ -1029,10 +1032,12 @@ describe('AuthController (ACC-01 register, ACC-02 verify-email, ACC-04/05 login,
       ]);
 
       const fakeUserModel = {
-        findById: jest.fn(() => ({
-          select: jest.fn().mockResolvedValue(userState),
-          lean: jest.fn().mockResolvedValue(userState),
-        })),
+        findById: jest.fn(() =>
+          Object.assign(Promise.resolve(userState), {
+            select: jest.fn().mockResolvedValue(userState),
+            lean: jest.fn().mockResolvedValue(userState),
+          }),
+        ),
         findByIdAndUpdate: jest.fn(
           (
             _id: string,
@@ -1189,6 +1194,238 @@ describe('AuthController (ACC-01 register, ACC-02 verify-email, ACC-04/05 login,
           .get('/api/auth/me')
           .set('Cookie', [`access_token=${otherCookie}`])
           .expect(401);
+      } finally {
+        await app.close();
+      }
+    });
+  });
+  describe('me', () => {
+    it('requires authentication (not marked @Public())', () => {
+      const reflector = new Reflector();
+      const handler = Object.getOwnPropertyDescriptor(
+        AuthController.prototype,
+        'me',
+      )?.value as (...args: never[]) => unknown;
+      const isPublic = reflector.get<boolean>(IS_PUBLIC_KEY, handler);
+      expect(isPublic).toBeUndefined();
+    });
+
+    it('delegates CurrentUser to AuthService.getMe', async () => {
+      const expected = {
+        id: '507f1f77bcf86cd799439011',
+        email: 'mod@example.com',
+        firstName: 'Airline',
+        lastName: 'Moderator',
+        preferredCurrency: 'USD',
+        role: Role.AIRLINE_MODERATOR,
+        status: AccountStatus.ACTIVE,
+        isEmailVerified: true,
+        mustChangePassword: false,
+        assignedProviderId: '507f1f77bcf86cd799439099',
+        assignedProviderType: ProviderType.AIRLINE,
+      };
+      mockAuthService.getMe.mockResolvedValue(expected);
+
+      const authUser = {
+        userId: '507f1f77bcf86cd799439011',
+        email: 'mod@example.com',
+        role: Role.AIRLINE_MODERATOR,
+        jti: 'jti-123',
+        assignedProviderId: '507f1f77bcf86cd799439099',
+        assignedProviderType: ProviderType.AIRLINE,
+      };
+
+      const result = await controller.me(authUser);
+      expect(mockAuthService.getMe).toHaveBeenCalledWith(authUser);
+      expect(result).toEqual(expected);
+    });
+  });
+
+  describe('HTTP integration (ACC-04, ACC-19 GET /api/auth/me)', () => {
+    it('returns 401 when unauthenticated, returns safe user details for traveler, and includes provider context for moderators', async () => {
+      const travelerId = '507f1f77bcf86cd799439011';
+      const modId = '507f1f77bcf86cd799439022';
+      const airlineId = '507f1f77bcf86cd799439099';
+
+      const users = new Map<string, Record<string, unknown>>([
+        [
+          travelerId,
+          {
+            _id: travelerId,
+            email: 'traveler@example.com',
+            firstName: 'Abdelaziz',
+            lastName: 'Mohamed',
+            preferredCurrency: 'EGP',
+            role: Role.REGISTERED_USER,
+            status: AccountStatus.ACTIVE,
+            isEmailVerified: true,
+            mustChangePassword: false,
+            passwordHash: 'secret-hash',
+            passwordResetToken: 'secret-reset',
+          },
+        ],
+        [
+          modId,
+          {
+            _id: modId,
+            email: 'airline-mod@example.com',
+            firstName: 'Airline',
+            lastName: 'Moderator',
+            preferredCurrency: 'USD',
+            role: Role.AIRLINE_MODERATOR,
+            status: AccountStatus.ACTIVE,
+            isEmailVerified: true,
+            mustChangePassword: true,
+            passwordHash: 'secret-hash',
+          },
+        ],
+      ]);
+
+      const fakeUserModel = {
+        findById: jest.fn((id: string) => {
+          const user = users.get(id) ?? null;
+          return Object.assign(Promise.resolve(user), {
+            lean: jest.fn().mockResolvedValue(user),
+          });
+        }),
+      };
+
+      const fakeSessionModel = {
+        findOne: jest.fn(({ jti, user }: { jti: string; user: string }) => ({
+          lean: jest.fn().mockResolvedValue({
+            _id: `session-${jti}`,
+            user,
+            jti,
+            expiresAt: new Date(Date.now() + 3600_000),
+            revokedAt: null,
+          }),
+        })),
+      };
+
+      const fakeAssignmentModel = {
+        findOne: jest.fn(({ moderator }: { moderator: string }) => ({
+          lean: jest.fn().mockResolvedValue(
+            moderator === modId
+              ? {
+                  _id: 'assign-1',
+                  moderator: modId,
+                  providerType: ProviderType.AIRLINE,
+                  airline: airlineId,
+                  isActive: true,
+                }
+              : null,
+          ),
+        })),
+      };
+
+      const configValues: Record<string, unknown> = {
+        'jwt.secret': 'test-jwt-secret',
+        'jwt.expiresIn': '1d',
+        'jwt.cookieName': 'access_token',
+        'jwt.cookieSecure': false,
+      };
+      const fakeConfigService = {
+        get: jest.fn((key: string, defaultValue?: unknown) =>
+          key in configValues ? configValues[key] : defaultValue,
+        ),
+      };
+
+      const moduleRef = await Test.createTestingModule({
+        imports: [
+          PassportModule.register({ defaultStrategy: 'jwt' }),
+          JwtModule.register({
+            secret: 'test-jwt-secret',
+            signOptions: { expiresIn: '1d' },
+          }),
+        ],
+        controllers: [AuthController],
+        providers: [
+          AuthService,
+          JwtStrategy,
+          { provide: ConfigService, useValue: fakeConfigService },
+          { provide: getModelToken(User.name), useValue: fakeUserModel },
+          {
+            provide: getModelToken(UserSession.name),
+            useValue: fakeSessionModel,
+          },
+          {
+            provide: getModelToken(ModeratorAssignment.name),
+            useValue: fakeAssignmentModel,
+          },
+          {
+            provide: ReferenceDataService,
+            useValue: { isCurrencySupported: jest.fn() },
+          },
+          {
+            provide: MailService,
+            useValue: { sendVerificationEmail: jest.fn() },
+          },
+          { provide: APP_GUARD, useClass: JwtAuthGuard },
+          { provide: APP_GUARD, useClass: RolesGuard },
+        ],
+      }).compile();
+
+      const app = moduleRef.createNestApplication();
+      app.setGlobalPrefix('api');
+      app.use(cookieParser());
+      app.useGlobalFilters(new AllExceptionsFilter());
+      await app.init();
+
+      try {
+        const jwtService = moduleRef.get(JwtService);
+        const travelerToken = await jwtService.signAsync({
+          sub: travelerId,
+          email: 'traveler@example.com',
+          role: Role.REGISTERED_USER,
+          jti: 'jti-traveler',
+        });
+        const modToken = await jwtService.signAsync({
+          sub: modId,
+          email: 'airline-mod@example.com',
+          role: Role.AIRLINE_MODERATOR,
+          jti: 'jti-mod',
+        });
+
+        await request(app.getHttpServer() as App)
+          .get('/api/auth/me')
+          .expect(401);
+
+        const travelerRes = await request(app.getHttpServer() as App)
+          .get('/api/auth/me')
+          .set('Cookie', [`access_token=${travelerToken}`])
+          .expect(200);
+
+        expect(travelerRes.body).toEqual({
+          id: travelerId,
+          email: 'traveler@example.com',
+          firstName: 'Abdelaziz',
+          lastName: 'Mohamed',
+          preferredCurrency: 'EGP',
+          role: Role.REGISTERED_USER,
+          status: AccountStatus.ACTIVE,
+          isEmailVerified: true,
+          mustChangePassword: false,
+        });
+        expect(
+          (travelerRes.body as Record<string, unknown>).passwordHash,
+        ).toBeUndefined();
+        expect(
+          (travelerRes.body as Record<string, unknown>).passwordResetToken,
+        ).toBeUndefined();
+
+        const modRes = await request(app.getHttpServer() as App)
+          .get('/api/auth/me')
+          .set('Authorization', `Bearer ${modToken}`)
+          .expect(200);
+
+        expect(modRes.body).toMatchObject({
+          id: modId,
+          role: Role.AIRLINE_MODERATOR,
+          status: AccountStatus.ACTIVE,
+          mustChangePassword: true,
+          assignedProviderId: airlineId,
+          assignedProviderType: ProviderType.AIRLINE,
+        });
       } finally {
         await app.close();
       }

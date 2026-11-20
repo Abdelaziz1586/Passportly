@@ -12,6 +12,7 @@ import * as bcrypt from 'bcryptjs';
 import { AccountStatus, Role } from '../../common/enums';
 import { MailService } from '../mail/mail.service';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
+import { ModeratorAssignment } from '../users/schemas/moderator-assignment.schema';
 import { User } from '../users/schemas/user.schema';
 import { AuthService } from './auth.service';
 import { UserSession } from './schemas/user-session.schema';
@@ -59,6 +60,10 @@ describe('AuthService (ACC-01 register, ACC-02 verify-email, ACC-04/05 login)', 
     sendPasswordResetEmail: jest.fn(),
   };
 
+  const mockAssignmentModel = {
+    findOne: jest.fn(),
+  };
+
   beforeEach(async () => {
     jest.clearAllMocks();
     mockMailService.sendVerificationEmail.mockResolvedValue(true);
@@ -71,6 +76,10 @@ describe('AuthService (ACC-01 register, ACC-02 verify-email, ACC-04/05 login)', 
         {
           provide: getModelToken(UserSession.name),
           useValue: mockSessionModel,
+        },
+        {
+          provide: getModelToken(ModeratorAssignment.name),
+          useValue: mockAssignmentModel,
         },
         { provide: JwtService, useValue: mockJwtService },
         { provide: ConfigService, useValue: mockConfigService },
@@ -968,6 +977,141 @@ describe('AuthService (ACC-01 register, ACC-02 verify-email, ACC-04/05 login)', 
           path: '/',
         },
       });
+    });
+  });
+  describe('getMe', () => {
+    it('returns safe user details, role, status, and omits sensitive fields for traveler', async () => {
+      const lastLoginAt = new Date('2026-11-19T12:00:00.000Z');
+      mockUserModel.findById.mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        email: 'traveler@example.com',
+        firstName: 'Abdelaziz',
+        lastName: 'Mohamed',
+        preferredCurrency: 'EGP',
+        role: Role.REGISTERED_USER,
+        status: AccountStatus.ACTIVE,
+        isEmailVerified: true,
+        mustChangePassword: false,
+        lastLoginAt,
+        passwordHash: 'secret-hash',
+        emailVerificationToken: 'secret-verify',
+        passwordResetToken: 'secret-reset',
+      });
+
+      const result = await service.getMe({
+        userId: '507f1f77bcf86cd799439011',
+        email: 'traveler@example.com',
+        role: Role.REGISTERED_USER,
+        jti: 'jti-1',
+      });
+
+      expect(result).toEqual({
+        id: '507f1f77bcf86cd799439011',
+        email: 'traveler@example.com',
+        firstName: 'Abdelaziz',
+        lastName: 'Mohamed',
+        preferredCurrency: 'EGP',
+        role: Role.REGISTERED_USER,
+        status: AccountStatus.ACTIVE,
+        isEmailVerified: true,
+        mustChangePassword: false,
+        lastLoginAt,
+      });
+      expect('passwordHash' in result).toBe(false);
+      expect('emailVerificationToken' in result).toBe(false);
+      expect('passwordResetToken' in result).toBe(false);
+      expect(result.assignedProviderId).toBeUndefined();
+    });
+
+    it('includes assignedProviderId and assignedProviderType for moderators', async () => {
+      mockUserModel.findById.mockResolvedValue({
+        _id: '507f1f77bcf86cd799439022',
+        email: 'airline-mod@example.com',
+        firstName: 'Airline',
+        lastName: 'Mod',
+        preferredCurrency: 'USD',
+        role: Role.AIRLINE_MODERATOR,
+        status: AccountStatus.ACTIVE,
+        isEmailVerified: true,
+        mustChangePassword: true,
+      });
+
+      const result = await service.getMe({
+        userId: '507f1f77bcf86cd799439022',
+        email: 'airline-mod@example.com',
+        role: Role.AIRLINE_MODERATOR,
+        jti: 'jti-mod',
+        assignedProviderId: '507f1f77bcf86cd799439099',
+        assignedProviderType: 'airline',
+      });
+
+      expect(result.assignedProviderId).toBe('507f1f77bcf86cd799439099');
+      expect(result.assignedProviderType).toBe('airline');
+      expect(result.mustChangePassword).toBe(true);
+    });
+
+    it('falls back to ModeratorAssignment lookup when moderator context is absent from authUser', async () => {
+      mockUserModel.findById.mockResolvedValue({
+        _id: '507f1f77bcf86cd799439033',
+        email: 'hotel-mod@example.com',
+        firstName: 'Hotel',
+        lastName: 'Mod',
+        preferredCurrency: 'USD',
+        role: Role.HOTEL_MODERATOR,
+        status: AccountStatus.ACTIVE,
+        isEmailVerified: true,
+        mustChangePassword: false,
+      });
+      mockAssignmentModel.findOne.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          providerType: 'hotel',
+          hotel: '507f1f77bcf86cd799439088',
+        }),
+      });
+
+      const result = await service.getMe({
+        userId: '507f1f77bcf86cd799439033',
+        email: 'hotel-mod@example.com',
+        role: Role.HOTEL_MODERATOR,
+        jti: 'jti-hotel-mod',
+      });
+
+      expect(result.assignedProviderId).toBe('507f1f77bcf86cd799439088');
+      expect(result.assignedProviderType).toBe('hotel');
+    });
+
+    it('throws UnauthorizedException or ForbiddenException when user is missing or inactive', async () => {
+      await expect(
+        service.getMe({
+          userId: 'invalid-id',
+          email: 'bad@example.com',
+          role: Role.REGISTERED_USER,
+          jti: 'jti',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+
+      mockUserModel.findById.mockResolvedValue(null);
+      await expect(
+        service.getMe({
+          userId: '507f1f77bcf86cd799439011',
+          email: 'missing@example.com',
+          role: Role.REGISTERED_USER,
+          jti: 'jti',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+
+      mockUserModel.findById.mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        status: AccountStatus.SUSPENDED,
+      });
+      await expect(
+        service.getMe({
+          userId: '507f1f77bcf86cd799439011',
+          email: 'suspended@example.com',
+          role: Role.REGISTERED_USER,
+          jti: 'jti',
+        }),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 });
