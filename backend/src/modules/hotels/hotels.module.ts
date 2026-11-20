@@ -1,3 +1,4 @@
+import { HotelAdminAuditInterceptor } from './hotel-admin-audit.interceptor';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { HotelBookingsController } from './hotel-bookings.controller';
@@ -14,9 +15,18 @@ import {
   RoomAvailabilitySchema,
 } from './schemas/room-availability.schema';
 import { Room, RoomSchema } from './schemas/room.schema';
+import { ReferenceDataModule } from '../reference-data/reference-data.module';
+import { UploadsModule } from '../uploads/uploads.module';
+import { HotelAccessService } from './hotel-access.service';
+import { HotelInventoryService } from './hotel-inventory.service';
+import { HotelReviewsService } from './hotel-reviews.service';
+import { AuditLogsModule } from '../audit-logs/audit-logs.module';
 
 @Module({
   imports: [
+    ReferenceDataModule,
+    UploadsModule,
+    AuditLogsModule,
     MongooseModule.forFeature([
       { name: Hotel.name, schema: HotelSchema },
       { name: Room.name, schema: RoomSchema },
@@ -26,7 +36,18 @@ import { Room, RoomSchema } from './schemas/room.schema';
     ]),
   ],
   controllers: [HotelsController, HotelBookingsController],
-  providers: [HotelsService],
-  exports: [HotelsService, MongooseModule],
+  providers: [
+    HotelAdminAuditInterceptor,
+    HotelsService,
+    HotelAccessService,
+    HotelInventoryService,
+    HotelReviewsService,
+  ],
+  exports: [
+    HotelsService,
+    HotelInventoryService,
+    HotelReviewsService,
+    MongooseModule,
+  ],
 })
 export class HotelsModule {}
