@@ -913,3 +913,17 @@ Prompt:
 How the output was used:
 Final self-review added audit coverage for successful administrative hotel mutations, bounded pagination to prevent invalid oversized MongoDB skips, reused the shared account status enum, strengthened the capacity-race response assertion, and verified Swagger UI and OpenAPI serving over HTTP. Reran lint, build, every unit/integration test and the health e2e test before publishing the final ticket branch.
 ================================================
+
+================================================
+Date: 2026-11-18
+Student: Abdelrahman Ahmed
+Tool: Claude (Claude Code / Claude Sonnet 5.5)
+Related Requirement: FLT-22
+
+Prompt:
+[Attached: Software Project I Winter 2026 Project Description PDF and the repository]
+Implement FLT-22 (POST /api/flight-bookings/hold): use an atomic MongoDB update/transaction on CabinInventory (availableSeats >= seatsRequired) to decrement availableSeats and increment heldSeats, set holdExpiresAt and create a HELD FlightBooking, and add an @Cron expiry job that releases expired holds.
+
+How the output was used:
+Reviewed and used the generated HoldSeatsDto, FlightBookingsService (transactional conditional seat decrement across all legs, HELD booking creation, idempotent hold-expiry cron with BOOKING_HOLD_EXPIRED notifications) and controller wiring, plus a Jest suite covering overselling, round trips and expiry. Verified with npm run lint, npm run build and npm test.
+================================================

@@ -1,30 +1,54 @@
 import {
+  Body,
   Controller,
   Get,
   NotImplementedException,
   Patch,
   Post,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiConflictResponse,
+  ApiCookieAuth,
+  ApiCreatedResponse,
+  ApiNotFoundResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
-import { FlightsService } from './flights.service';
+import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
+import { HoldSeatsDto } from './dto/hold-seats.dto';
+import {
+  FlightBookingsService,
+  FlightHoldResponse,
+} from './flight-bookings.service';
 
 @ApiTags('Flight Bookings')
 @ApiCookieAuth()
 @Controller('flight-bookings')
 export class FlightBookingsController {
-  constructor(private readonly flightsService: FlightsService) {}
+  constructor(private readonly flightBookingsService: FlightBookingsService) {}
 
   @Roles(Role.REGISTERED_USER)
   @Post('hold')
   @ApiOperation({
     summary: 'FLT-22: Place concurrency-safe temporary seat hold',
+    description:
+      'Reserves seats on every leg and creates a HELD booking that expires automatically. Infants need no seat.',
   })
-  holdSeats() {
-    throw new NotImplementedException(
-      'POST /api/flight-bookings/hold not implemented yet',
-    );
+  @ApiCreatedResponse({ description: 'Seats held; booking is in HELD status' })
+  @ApiBadRequestResponse({ description: 'Invalid passengers, legs or trip' })
+  @ApiNotFoundResponse({ description: 'Flight or cabin not found' })
+  @ApiConflictResponse({
+    description: 'Not enough seats, or the flight/airline cannot be booked',
+  })
+  holdSeats(
+    @Body() dto: HoldSeatsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<FlightHoldResponse> {
+    return this.flightBookingsService.holdSeats(user.userId, dto);
   }
 
   @Roles(Role.REGISTERED_USER)
