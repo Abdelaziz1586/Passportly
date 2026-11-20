@@ -375,3 +375,58 @@ export class CreateTransportCostDto {
   @IsString()
   notes?: string;
 }
+
+export class UpdateTransportCostDto {
+  @ApiPropertyOptional({ enum: TransportMode })
+  @IsOptional()
+  @IsEnum(TransportMode)
+  mode?: TransportMode;
+
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  amount?: number;
+
+  @ApiPropertyOptional({ example: 'EUR', minLength: 3, maxLength: 3 })
+  @IsOptional()
+  @Transform(normalizeCurrency)
+  @IsString()
+  @Length(3, 3)
+  @Matches(/^[A-Z]{3}$/)
+  currency?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsMongoId()
+  fromCityId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsMongoId()
+  toCityId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trimString)
+  @IsString()
+  fromCityName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trimString)
+  @IsString()
+  toCityName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsMongoId()
+  departureDayId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trimString)
+  @IsString()
+  notes?: string;
+}

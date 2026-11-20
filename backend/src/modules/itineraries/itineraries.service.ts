@@ -33,6 +33,7 @@ import {
   UpdateBudgetEntryDto,
   UpdateItineraryDayDto,
   UpdateItineraryDto,
+  UpdateTransportCostDto,
 } from './dto/itinerary-endpoints.dto';
 import { Activity, ActivityDocument } from './schemas/activity.schema';
 import {
@@ -496,6 +497,45 @@ export class ItinerariesService {
     });
   }
 
+  async updateTransportCost(
+    id: string,
+    userId: string,
+    dto: UpdateTransportCostDto,
+  ): Promise<TransportCostDocument> {
+    const cost = await this.findOwnedTransportCost(id, userId);
+    if (dto.mode) cost.mode = dto.mode;
+    if (typeof dto.amount === 'number') cost.amount = dto.amount;
+    if (typeof dto.currency === 'string') {
+      const currency = dto.currency.trim().toUpperCase();
+      await this.assertSupportedCurrency(currency);
+      cost.currency = currency;
+    }
+    if (typeof dto.fromCityId === 'string') {
+      const city = await this.findCity(dto.fromCityId);
+      cost.fromCity = city._id;
+      if (typeof dto.fromCityName !== 'string') cost.fromCityName = city.name;
+    }
+    if (typeof dto.toCityId === 'string') {
+      const city = await this.findCity(dto.toCityId);
+      cost.toCity = city._id;
+      if (typeof dto.toCityName !== 'string') cost.toCityName = city.name;
+    }
+    if (typeof dto.fromCityName === 'string') {
+      cost.fromCityName = dto.fromCityName.trim() || undefined;
+    }
+    if (typeof dto.toCityName === 'string') {
+      cost.toCityName = dto.toCityName.trim() || undefined;
+    }
+    if (typeof dto.departureDayId === 'string') {
+      const itinerary = await this.findItineraryById(String(cost.itinerary));
+      const day = this.findDay(itinerary, dto.departureDayId);
+      cost.departureDayId = day._id;
+    }
+    if (typeof dto.notes === 'string')
+      cost.notes = dto.notes.trim() || undefined;
+    return cost.save();
+  }
+
   private async getItineraryDetails(
     itinerary: ItineraryDocument,
   ): Promise<Record<string, unknown>> {
@@ -582,6 +622,20 @@ export class ItinerariesService {
       throw new ForbiddenException('You do not own this budget entry');
     }
     return entry;
+  }
+
+  private async findOwnedTransportCost(
+    id: string,
+    userId: string,
+  ): Promise<TransportCostDocument> {
+    const cost = await this.transportCostModel
+      .findById(this.objectId(id, 'id'))
+      .exec();
+    if (!cost) throw new NotFoundException('Transport cost not found');
+    if (String(cost.user) !== userId) {
+      throw new ForbiddenException('You do not own this transport cost');
+    }
+    return cost;
   }
 
   private findDay(itinerary: ItineraryDocument, dayId: string) {
