@@ -6,6 +6,7 @@ import {
   NotImplementedException,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import {
   ApiCookieAuth,
@@ -19,6 +20,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { CreateItineraryDto } from './dto/create-itinerary.dto';
+import { ListItinerariesQueryDto } from './dto/itinerary-endpoints.dto';
 import { ItinerariesService } from './itineraries.service';
 
 @ApiTags('Itineraries & Budgeting')
@@ -60,10 +62,11 @@ export class ItinerariesController {
   @Roles(Role.REGISTERED_USER)
   @Get('itineraries')
   @ApiOperation({ summary: 'ITN-03: List current user itineraries' })
-  listMyItineraries() {
-    throw new NotImplementedException(
-      'GET /api/itineraries not implemented yet',
-    );
+  listMyItineraries(
+    @Query() query: ListItinerariesQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.listMyItineraries(user.userId, query);
   }
 
   @ApiCookieAuth()

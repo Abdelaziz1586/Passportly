@@ -9,12 +9,14 @@ import { InjectModel } from '@nestjs/mongoose';
 import {
   Model,
   Error as MongooseError,
+  QueryFilter,
   Types,
   isValidObjectId,
 } from 'mongoose';
 import { ItineraryVisibility } from '../../common/enums';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
 import { CreateItineraryDto } from './dto/create-itinerary.dto';
+import { ListItinerariesQueryDto } from './dto/itinerary-endpoints.dto';
 import { Activity, ActivityDocument } from './schemas/activity.schema';
 import {
   BudgetEntry,
@@ -75,6 +77,33 @@ export class ItinerariesService {
     });
 
     return this.saveItinerary(itinerary);
+  }
+
+  async listMyItineraries(userId: string, query: ListItinerariesQueryDto) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const filter: QueryFilter<ItineraryDocument> = {
+      user: this.objectId(userId, 'userId'),
+    };
+    if (query.visibility) filter.visibility = query.visibility;
+    if (query.search?.trim()) {
+      const search = new RegExp(this.escapeRegex(query.search.trim()), 'i');
+      filter.$or = [{ title: search }, { description: search }];
+    }
+
+    const [items, total] = await Promise.all([
+      this.itineraryModel
+        .find(filter)
+        .sort(this.sortOptions(query.sortBy, query.sortOrder))
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .exec(),
+      this.itineraryModel.countDocuments(filter).exec(),
+    ]);
+    return {
+      items,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
   }
 
   private async validateCountryIds(
@@ -138,5 +167,27 @@ export class ItinerariesService {
       }
       throw error;
     }
+  }
+
+  private sortOptions(
+    sortBy?: string,
+    sortOrder: 'asc' | 'desc' = 'desc',
+  ): Record<string, 1 | -1> {
+    const field = sortBy ?? 'createdAt';
+    const allowedFields = new Set([
+      'createdAt',
+      'updatedAt',
+      'startDate',
+      'title',
+      'cloneCount',
+    ]);
+    if (!allowedFields.has(field)) {
+      throw new BadRequestException('Unsupported sortBy field');
+    }
+    return { [field]: sortOrder === 'asc' ? 1 : -1 };
+  }
+
+  private escapeRegex(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 }

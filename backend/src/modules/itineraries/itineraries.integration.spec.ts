@@ -159,6 +159,29 @@ describe('Itinerary endpoints and persistence', () => {
       startDate: '2027-06-15',
     });
 
+  it('SCRUM-89/90: creates a private itinerary, normalizes currency, and lists only the owner records', async () => {
+    const itinerary = await service.createItinerary(ownerId, {
+      title: '  Paris  ',
+      startDate: '2027-06-15T14:00:00Z',
+      displayCurrency: 'eur',
+    });
+    await service.createItinerary(otherId, {
+      title: 'Other trip',
+      startDate: '2027-06-15',
+    });
+    expect(itinerary.title).toBe('Paris');
+    expect(itinerary.visibility).toBe(ItineraryVisibility.PRIVATE);
+    expect(itinerary.startDate.toISOString()).toBe('2027-06-15T00:00:00.000Z');
+    expect(itinerary.displayCurrency).toBe('EUR');
+    const result = await service.listMyItineraries(ownerId, {
+      page: 1,
+      limit: 1,
+      search: 'Paris',
+    });
+    expect(result.items.map((item) => item.title)).toEqual(['Paris']);
+    expect(result.pagination.total).toBe(1);
+  });
+
   it('SCRUM-89: rejects unsupported currency, absent reference currency, and missing country IDs', async () => {
     await expect(
       service.createItinerary(ownerId, {
