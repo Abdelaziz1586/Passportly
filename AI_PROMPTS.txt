@@ -1501,4 +1501,12 @@ Implement SCRUM-119 [BLG-03] GET /api/posts/mine - List current user blog posts 
 
 How the output was used:
 Added ListMyPostsQueryDto, BlogService.listMyPosts scoped to CurrentUser.userId with optional DRAFT/PUBLISHED filter, BlogController.listMyPosts wired with @Roles(Role.REGISTERED_USER) above :id routes, and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
+
+Related Requirement: BLG-02 (SCRUM-120, GET /api/posts/:id)
+
+Prompt:
+Implement SCRUM-120 [BLG-02] GET /api/posts/:id - Get blog post details & comments returning published non-hidden post (or draft only to author) with author info and visible comments.
+
+How the output was used:
+Added OptionalJwtAuthGuard for optional authenticated author draft access on @Public() route, BlogCommentItemDto and BlogPostDetailResponseDto, UsersModule import in BlogModule, BlogService.getPost enforcing visibility and non-hidden comment filtering, BlogController.getPost Swagger wiring, and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
 ================================================

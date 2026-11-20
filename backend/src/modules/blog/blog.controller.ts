@@ -4,17 +4,21 @@ import {
   Delete,
   Get,
   NotImplementedException,
+  Param,
   Patch,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiCookieAuth,
   ApiCreatedResponse,
   ApiForbiddenResponse,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -25,12 +29,14 @@ import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { BlogService } from './blog.service';
 import {
+  BlogPostDetailResponseDto,
   BlogPostItemDto,
   PaginatedBlogPostsResponseDto,
 } from './dto/blog-post-response.dto';
 import { CreatePostDto } from './dto/create-post.dto';
 import { ListMyPostsQueryDto } from './dto/list-my-posts-query.dto';
 import { ListPostsQueryDto } from './dto/list-posts-query.dto';
+import { OptionalJwtAuthGuard } from './guards/optional-jwt-auth.guard';
 
 @ApiTags('Blog & Community')
 @Controller()
@@ -94,10 +100,25 @@ export class BlogController {
   }
 
   @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('posts/:id')
-  @ApiOperation({ summary: 'BLG-02: Get published blog post details' })
-  getPost() {
-    throw new NotImplementedException('GET /api/posts/:id not implemented yet');
+  @ApiOperation({
+    summary: 'BLG-02: Get published blog post details (or draft by author)',
+  })
+  @ApiParam({ name: 'id', description: 'Blog post MongoDB ObjectId' })
+  @ApiOkResponse({
+    description: 'Blog post details with author summary and visible comments',
+    type: BlogPostDetailResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid blog post ID' })
+  @ApiNotFoundResponse({
+    description: 'Blog post not found or not accessible',
+  })
+  getPost(
+    @Param('id') id: string,
+    @CurrentUser() user?: AuthenticatedUser,
+  ): Promise<BlogPostDetailResponseDto> {
+    return this.blogService.getPost(id, user);
   }
 
   @ApiCookieAuth()

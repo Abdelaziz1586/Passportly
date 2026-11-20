@@ -4,6 +4,7 @@ import { Types } from 'mongoose';
 import { PostStatus } from '../../common/enums';
 import {
   BlogAuthorSummaryDto,
+  BlogCommentItemDto,
   BlogMediaItemDto,
   BlogPostItemDto,
 } from './dto/blog-post-response.dto';
@@ -50,9 +51,45 @@ export interface LeanBlogPostLike {
   updatedAt?: Date;
 }
 
+export interface LeanCommentLike {
+  _id: Types.ObjectId | string;
+  post: Types.ObjectId | string;
+  author: PopulatedAuthorLike | Types.ObjectId | string;
+  content: string;
+  isHidden: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export function extractAuthorId(
+  authorRef: PopulatedAuthorLike | Types.ObjectId | string,
+): string {
+  if (authorRef instanceof Types.ObjectId || typeof authorRef === 'string') {
+    return String(authorRef);
+  }
+  return String(authorRef._id);
+}
+
+export function formatComment(comment: LeanCommentLike): BlogCommentItemDto {
+  return {
+    id: String(comment._id),
+    post: String(comment.post),
+    author: formatAuthor(comment.author),
+    content: comment.content,
+    isHidden: comment.isHidden,
+    ...(comment.createdAt !== undefined
+      ? { createdAt: comment.createdAt }
+      : {}),
+    ...(comment.updatedAt !== undefined
+      ? { updatedAt: comment.updatedAt }
+      : {}),
+  };
+}
+
 export function escapeRegex(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
+
 export function slugify(input: string): string {
   return input
     .toLowerCase()
