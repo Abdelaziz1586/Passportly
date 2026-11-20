@@ -34,6 +34,8 @@ export const LIVE_PAYMENT_STATUSES: PaymentStatus[] = [
   ...OPEN_PAYMENT_STATUSES,
   PaymentStatus.SUCCEEDED,
 ];
+/** How long a payment without an intent id counts as "still being created" (a crashed creation is retryable after this). */
+export const INTENT_CREATION_GRACE_MS = 60_000;
 const REUSABLE_INTENT_STATUSES: Stripe.PaymentIntent.Status[] = [
   'requires_payment_method',
   'requires_confirmation',
@@ -185,8 +187,24 @@ export class PaymentsService {
       throw this.toProviderException(error);
     }
 
+    // Attach the intent in ONE conditional update that also checks the payment is still open. If
+    // the payment expiry job marked it EXPIRED while Stripe was being called (it saw no intent to
+    // cancel), the new intent must not be handed out: it could be paid and never confirmed or refunded.
+    const attached = await this.paymentModel.updateOne(
+      {
+        _id: payment._id,
+        status: { $in: OPEN_PAYMENT_STATUSES },
+        stripePaymentIntentId: { $exists: false },
+      },
+      { $set: { stripePaymentIntentId: intent.id } },
+    );
+    if (attached.modifiedCount !== 1) {
+      await this.cancelIntent(stripe, intent.id);
+      throw new ConflictException(
+        'The payment can no longer be completed (the hold ended while it was being created)',
+      );
+    }
     payment.stripePaymentIntentId = intent.id;
-    await payment.save();
 
     // Link the payment to the booking, but only while the booking is still payable.
     const linked = await this.bookingModelFor(dto.bookingType).updateOne(
@@ -225,6 +243,16 @@ export class PaymentsService {
     }
     if (payment.status === PaymentStatus.PROCESSING) {
       throw new ConflictException('This payment is still being processed');
+    }
+    // The first intent of a payment is still being created (createPayment inserted the payment and is
+    // awaiting Stripe): a retry now would create a second intent next to it and only one id can be kept.
+    if (
+      !payment.stripePaymentIntentId &&
+      now.getTime() - payment.createdAt.getTime() < INTENT_CREATION_GRACE_MS
+    ) {
+      throw new ConflictException(
+        'The payment is still being created: try again in a moment',
+      );
     }
     const { bookingType, bookingId } = this.linkedBooking(payment);
     const booking = await this.findOwnedBooking(userId, bookingType, bookingId);
