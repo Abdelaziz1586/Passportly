@@ -24,6 +24,7 @@ import { CreateItineraryDto } from './dto/create-itinerary.dto';
 import {
   CreateItineraryDayDto,
   ListItinerariesQueryDto,
+  ReorderItineraryDaysDto,
   UpdateItineraryDayDto,
   UpdateItineraryDto,
 } from './dto/itinerary-endpoints.dto';
@@ -131,10 +132,12 @@ export class ItinerariesController {
   @ApiOperation({
     summary: 'ITN-08: Reorder itinerary days & recalculate dates',
   })
-  reorderDays() {
-    throw new NotImplementedException(
-      'PATCH /api/itineraries/:id/days/reorder not implemented yet',
-    );
+  reorderDays(
+    @Param('id') id: string,
+    @Body() dto: ReorderItineraryDaysDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.reorderDays(id, user.userId, dto);
   }
 
   @ApiCookieAuth()

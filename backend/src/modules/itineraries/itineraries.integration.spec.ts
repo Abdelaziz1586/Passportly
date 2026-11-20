@@ -249,6 +249,56 @@ describe('Itinerary endpoints and persistence', () => {
     });
     expect(updated.days[0].date.toISOString()).toBe('2027-06-20T00:00:00.000Z');
   });
+
+  it('SCRUM-97: reorders IDs, renumbers days, and rejects duplicates and incomplete permutations', async () => {
+    const { itinerary, dayId } = await itineraryWithDay();
+    const id = String(itinerary._id);
+    const second = await addDay(id);
+    const result = await service.reorderDays(id, ownerId, {
+      dayIds: [String(second._id), dayId],
+    });
+    expect(
+      result.days.map((day) => [
+        String(day._id),
+        day.dayNumber,
+        day.date.toISOString().slice(0, 10),
+      ]),
+    ).toEqual([
+      [String(second._id), 1, '2027-06-15'],
+      [dayId, 2, '2027-06-16'],
+    ]);
+    await expect(
+      service.reorderDays(id, ownerId, { dayIds: [dayId, dayId] }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.reorderDays(id, ownerId, { dayIds: [dayId] }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('SCRUM-95/96/97: normalizes uppercase day IDs and never deletes the wrong day', async () => {
+    const { itinerary, dayId } = await itineraryWithDay();
+    const id = String(itinerary._id);
+    const second = await addDay(id);
+    expect(
+      await service.updateDay(id, dayId.toUpperCase(), ownerId, {
+        title: 'Changed',
+      }),
+    ).toHaveProperty('title', 'Changed');
+    await expect(
+      service.reorderDays(id, ownerId, {
+        dayIds: [dayId, dayId.toUpperCase()],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await service.reorderDays(id, ownerId, {
+      dayIds: [dayId.toUpperCase(), String(second._id).toUpperCase()],
+    });
+    await service.deleteDay(id, dayId.toUpperCase(), ownerId);
+    expect(
+      (await service.itineraryModel.findById(id).orFail()).days.map((day) =>
+        String(day._id),
+      ),
+    ).toEqual([String(second._id)]);
+  });
   it('SCRUM-89: creates an owned private itinerary through HTTP', async () => {
     await request(server())
       .post('/api/itineraries')

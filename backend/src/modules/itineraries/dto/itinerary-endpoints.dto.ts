@@ -1,4 +1,4 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 import { Transform } from 'class-transformer';
 
@@ -131,4 +131,12 @@ export class UpdateItineraryDayDto {
   @Transform(trimString)
   @IsString()
   notes?: string;
+}
+
+export class ReorderItineraryDaysDto {
+  @ApiProperty({ type: [String], example: ['673c1f2a9c4b2d001f8a1234'] })
+  @IsArray()
+  @ArrayUnique()
+  @IsMongoId({ each: true })
+  dayIds: string[];
 }
