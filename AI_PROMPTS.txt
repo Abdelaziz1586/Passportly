@@ -1026,3 +1026,14 @@ Implement POST /api/flight-bookings/:id/cancel: the owner cancels a CONFIRMED bo
 How the output was used:
 The generated service, DTOs, controller wiring and tests were integrated and checked with lint, build, unit tests, 56 live checks (tiers, round trip, zero refund, after departure, concurrency, real Stripe refunds) and a Swagger "Try it out" run for the preview and the cancellation.
 ================================================
+================================================
+Date: 2026-11-19
+Student: Abdulrahman Ahmed
+Branch: feature/SCRUM-78-HTL-16-hotel-booking-hold (stacked on feature/SCRUM-74-FLT-26-cancel-flight-booking)
+Tool: Claude Code (terminal, Claude Sonnet 5.5)
+Related Requirement: HTL-16, HTL-18 (POST /api/hotel-bookings), GEN-11
+Prompt:
+Implement POST /api/hotel-bookings: one reservation for one or more rooms of the same hotel and dates, with the adults and children (ages 0-17) of each room (at least one adult, no room above its maximum occupancy), check-out after check-in and check-in not in the past. All rooms and all stay nights (UTC midnight) are held in one MongoDB transaction with a conditional update per night (not blocked, booked + held + 1 <= total); if any room or night is unavailable the whole request is rejected and nothing is held. The reservation is Pending Payment for 10 minutes and then Expired, which releases the rooms (hold-expiry job and a notification). The total is the sum over rooms of nights x that room's price at booking time, the hotel policies are copied onto the reservation. Then write unit tests and run live checks (real transaction rollback, concurrency, payment and webhook confirmation, expiry job) plus the Swagger page in a browser.
+How the output was used:
+The generated service, DTOs, date helpers, controller wiring, schema fields and tests were integrated and checked with lint, build, unit tests, 60 live checks and a Swagger "Try it out" run.
+================================================

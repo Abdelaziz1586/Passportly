@@ -26,6 +26,14 @@ export class BookedRoomItem {
 
   @Prop({ type: Number, min: 1 })
   guestCount?: number;
+
+  /** HTL-16: the adults assigned to this room. */
+  @Prop({ type: Number, min: 0 })
+  adults?: number;
+
+  /** HTL-16: ages (0-17) of the children assigned to this room. */
+  @Prop({ type: [Number], default: [] })
+  childrenAges?: number[];
 }
 
 export const BookedRoomItemSchema =

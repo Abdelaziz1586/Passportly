@@ -2,6 +2,7 @@ import { HotelAdminAuditInterceptor } from './hotel-admin-audit.interceptor';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { HotelBookingsController } from './hotel-bookings.controller';
+import { HotelBookingsService } from './hotel-bookings.service';
 import { HotelsController } from './hotels.controller';
 import { HotelsService } from './hotels.service';
 import {
@@ -21,12 +22,14 @@ import { HotelAccessService } from './hotel-access.service';
 import { HotelInventoryService } from './hotel-inventory.service';
 import { HotelReviewsService } from './hotel-reviews.service';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
     ReferenceDataModule,
     UploadsModule,
     AuditLogsModule,
+    NotificationsModule,
     MongooseModule.forFeature([
       { name: Hotel.name, schema: HotelSchema },
       { name: Room.name, schema: RoomSchema },
@@ -42,11 +45,13 @@ import { AuditLogsModule } from '../audit-logs/audit-logs.module';
     HotelAccessService,
     HotelInventoryService,
     HotelReviewsService,
+    HotelBookingsService,
   ],
   exports: [
     HotelsService,
     HotelInventoryService,
     HotelReviewsService,
+    HotelBookingsService,
     MongooseModule,
   ],
 })
