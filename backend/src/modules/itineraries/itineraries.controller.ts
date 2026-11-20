@@ -8,8 +8,13 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
+  ApiBody,
+  ApiConsumes,
   ApiCookieAuth,
   ApiCreatedResponse,
   ApiOperation,
@@ -209,10 +214,21 @@ export class ItinerariesController {
   @Roles(Role.REGISTERED_USER)
   @Post('activities/:id/images')
   @ApiOperation({ summary: 'ITN-12, GEN-08: Upload image for activity' })
-  uploadActivityImage() {
-    throw new NotImplementedException(
-      'POST /api/activities/:id/images not implemented yet',
-    );
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+      required: ['file'],
+    },
+  })
+  @UseInterceptors(FileInterceptor('file'))
+  uploadActivityImage(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.uploadActivityImage(id, user.userId, file);
   }
 
   @ApiCookieAuth()
