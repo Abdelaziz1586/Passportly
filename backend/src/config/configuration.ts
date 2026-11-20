@@ -25,6 +25,15 @@ export interface AppConfig {
     dir: string;
     maxImageSizeBytes: number;
   };
+  mail: {
+    host: string;
+    port: number;
+    secure: boolean;
+    user: string;
+    pass: string;
+    from: string;
+    appBaseUrl: string;
+  };
 }
 
 export default (): AppConfig => ({
@@ -57,5 +66,16 @@ export default (): AppConfig => ({
       process.env.MAX_IMAGE_SIZE_BYTES ?? String(5 * 1024 * 1024),
       10,
     ),
+  },
+  mail: {
+    host: process.env.SMTP_HOST ?? '',
+    port: parseInt(process.env.SMTP_PORT ?? '587', 10),
+    secure: process.env.SMTP_SECURE === 'true',
+    user: process.env.SMTP_USER ?? '',
+    pass: process.env.SMTP_PASS ?? '',
+    from: process.env.MAIL_FROM ?? 'Passportly <no-reply@passportly.local>',
+    appBaseUrl:
+      process.env.APP_BASE_URL ??
+      `http://localhost:${parseInt(process.env.PORT ?? '3000', 10)}`,
   },
 });
