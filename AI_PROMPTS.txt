@@ -1485,4 +1485,12 @@ Implement SCRUM-117 [BLG-01] POST /api/posts - Create blog post (Draft or Publis
 
 How the output was used:
 Fixed .gitignore upload path pattern and added shared UploadsModule/UploadsService so the backend builds cleanly, created CreatePostDto, BlogPostItemDto, blog.utils.ts helpers, BlogService.createPost, BlogController.createPost with Swagger/role decorators, and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
+
+Related Requirement: BLG-02, BLG-09 (SCRUM-118, GET /api/posts)
+
+Prompt:
+Implement SCRUM-118 [BLG-02, BLG-09] GET /api/posts - List and search published blog posts with pagination, keyword search, tag filter, author filter, and sorting.
+
+How the output was used:
+Added ListPostsQueryDto, PaginatedBlogPostsResponseDto, escapeRegex helper, UsersModule import in BlogModule for author population, BlogService.listPosts enforcing status == PUBLISHED and isHidden == false with $and-combined filters, BlogController.listPosts with @Public() and Swagger annotations, and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
 ================================================

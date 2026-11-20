@@ -8,8 +8,9 @@ import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.inte
 import { BlogController } from './blog.controller';
 import { BlogService } from './blog.service';
 import { CreatePostDto } from './dto/create-post.dto';
+import { ListPostsQueryDto } from './dto/list-posts-query.dto';
 
-describe('BlogController (SCRUM-117 BLG-01 create post)', () => {
+describe('BlogController', () => {
   let controller: BlogController;
 
   const validationPipe = new ValidationPipe({
@@ -21,6 +22,7 @@ describe('BlogController (SCRUM-117 BLG-01 create post)', () => {
 
   const mockBlogService = {
     createPost: jest.fn(),
+    listPosts: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -32,6 +34,55 @@ describe('BlogController (SCRUM-117 BLG-01 create post)', () => {
     }).compile();
 
     controller = module.get<BlogController>(BlogController);
+  });
+
+  it('marks listPosts endpoint as @Public()', () => {
+    const reflector = new Reflector();
+    const handler = Object.getOwnPropertyDescriptor(
+      BlogController.prototype,
+      'listPosts',
+    )?.value as (...args: never[]) => unknown;
+
+    expect(reflector.get<boolean>(IS_PUBLIC_KEY, handler)).toBe(true);
+  });
+
+  it('validates ListPostsQueryDto and delegates to BlogService.listPosts', async () => {
+    const query = (await validationPipe.transform(
+      {
+        search: '  Cairo  ',
+        tag: '  Travel Tips ',
+        author: '673c1f2a9c4b2d001f8a1111',
+        page: '2',
+        limit: '10',
+        sortBy: 'likesCount',
+        sortOrder: 'desc',
+      },
+      { type: 'query', metatype: ListPostsQueryDto },
+    )) as ListPostsQueryDto;
+
+    const expected = { data: [], total: 0, page: 2, limit: 10, totalPages: 0 };
+    mockBlogService.listPosts.mockResolvedValue(expected);
+
+    const result = await controller.listPosts(query);
+
+    expect(result).toEqual(expected);
+    expect(mockBlogService.listPosts).toHaveBeenCalledWith(query);
+  });
+
+  it('rejects invalid author ObjectId or unsupported sortBy via ValidationPipe', async () => {
+    await expect(
+      validationPipe.transform(
+        { author: 'not-an-id' },
+        { type: 'query', metatype: ListPostsQueryDto },
+      ),
+    ).rejects.toThrow(BadRequestException);
+
+    await expect(
+      validationPipe.transform(
+        { sortBy: 'passwordHash' },
+        { type: 'query', metatype: ListPostsQueryDto },
+      ),
+    ).rejects.toThrow(BadRequestException);
   });
 
   it('requires authentication and Role.REGISTERED_USER on createPost', () => {

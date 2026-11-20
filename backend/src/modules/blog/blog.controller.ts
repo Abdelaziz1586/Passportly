@@ -6,12 +6,14 @@ import {
   NotImplementedException,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiCookieAuth,
   ApiCreatedResponse,
   ApiForbiddenResponse,
+  ApiOkResponse,
   ApiOperation,
   ApiTags,
   ApiUnauthorizedResponse,
@@ -22,8 +24,12 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { BlogService } from './blog.service';
-import { BlogPostItemDto } from './dto/blog-post-response.dto';
+import {
+  BlogPostItemDto,
+  PaginatedBlogPostsResponseDto,
+} from './dto/blog-post-response.dto';
 import { CreatePostDto } from './dto/create-post.dto';
+import { ListPostsQueryDto } from './dto/list-posts-query.dto';
 
 @ApiTags('Blog & Community')
 @Controller()
@@ -55,8 +61,15 @@ export class BlogController {
   @ApiOperation({
     summary: 'BLG-02, BLG-09: List & search published blog posts',
   })
-  listPosts() {
-    throw new NotImplementedException('GET /api/posts not implemented yet');
+  @ApiOkResponse({
+    description: 'Paginated published blog posts',
+    type: PaginatedBlogPostsResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid query parameters' })
+  listPosts(
+    @Query() query: ListPostsQueryDto,
+  ): Promise<PaginatedBlogPostsResponseDto> {
+    return this.blogService.listPosts(query);
   }
 
   @ApiCookieAuth()

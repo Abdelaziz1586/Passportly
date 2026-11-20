@@ -92,3 +92,19 @@ export class BlogPostItemDto {
   @ApiPropertyOptional()
   updatedAt?: Date;
 }
+export class PaginatedBlogPostsResponseDto {
+  @ApiProperty({ type: [BlogPostItemDto] })
+  data: BlogPostItemDto[];
+
+  @ApiProperty({ example: 12 })
+  total: number;
+
+  @ApiProperty({ example: 1 })
+  page: number;
+
+  @ApiProperty({ example: 20 })
+  limit: number;
+
+  @ApiProperty({ example: 1 })
+  totalPages: number;
+}
