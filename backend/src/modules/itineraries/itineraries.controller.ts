@@ -22,6 +22,7 @@ import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { CreateItineraryDto } from './dto/create-itinerary.dto';
 import {
+  CreateActivityDto,
   CreateItineraryDayDto,
   ListItinerariesQueryDto,
   ReorderItineraryDaysDto,
@@ -171,10 +172,13 @@ export class ItinerariesController {
   @Roles(Role.REGISTERED_USER)
   @Post('itineraries/:id/days/:dayId/activities')
   @ApiOperation({ summary: 'ITN-10: Add activity to itinerary day' })
-  addActivity() {
-    throw new NotImplementedException(
-      'POST /api/itineraries/:id/days/:dayId/activities not implemented yet',
-    );
+  addActivity(
+    @Param('id') id: string,
+    @Param('dayId') dayId: string,
+    @Body() dto: CreateActivityDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.addActivity(id, dayId, user.userId, dto);
   }
 
   @ApiCookieAuth()

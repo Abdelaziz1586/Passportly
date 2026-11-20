@@ -1,18 +1,20 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 
 import {
   ArrayUnique,
   IsArray,
   IsDateString,
   IsEnum,
+  IsInt,
   IsMongoId,
   IsNotEmpty,
   IsOptional,
   IsString,
   Length,
   Matches,
+  Min,
 } from 'class-validator';
 
 import { ItineraryVisibility } from '../../../common/enums';
@@ -139,4 +141,58 @@ export class ReorderItineraryDaysDto {
   @ArrayUnique()
   @IsMongoId({ each: true })
   dayIds: string[];
+}
+
+export class CreateActivityDto {
+  @ApiProperty()
+  @Transform(trimString)
+  @IsString()
+  @IsNotEmpty()
+  title: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trimString)
+  @IsString()
+  description?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trimString)
+  @IsString()
+  category?: string;
+
+  @ApiPropertyOptional({ description: 'Optional MongoDB attraction ID' })
+  @IsOptional()
+  @IsMongoId()
+  attractionId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(trimString)
+  @IsString()
+  locationName?: string;
+
+  @ApiPropertyOptional({
+    example: '09:30',
+    pattern: '^([01]\\d|2[0-3]):[0-5]\\d$',
+  })
+  @IsOptional()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/)
+  startTime?: string;
+
+  @ApiPropertyOptional({
+    example: '11:00',
+    pattern: '^([01]\\d|2[0-3]):[0-5]\\d$',
+  })
+  @IsOptional()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/)
+  endTime?: string;
+
+  @ApiPropertyOptional({ minimum: 0, default: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  orderIndex?: number;
 }

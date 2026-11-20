@@ -299,6 +299,32 @@ describe('Itinerary endpoints and persistence', () => {
       ),
     ).toEqual([String(second._id)]);
   });
+
+  it('SCRUM-96: rolls child deletion back when the itinerary save fails', async () => {
+    const { itinerary, dayId } = await itineraryWithDay();
+    const activity = await service.addActivity(
+      String(itinerary._id),
+      dayId,
+      ownerId,
+      { title: 'Museum' },
+    );
+    const save = jest
+      .spyOn(
+        service.itineraryModel.prototype as { save: () => Promise<unknown> },
+        'save',
+      )
+      .mockRejectedValueOnce(new Error('write failed'));
+    await expect(
+      service.deleteDay(String(itinerary._id), dayId, ownerId),
+    ).rejects.toThrow('write failed');
+    save.mockRestore();
+    expect(
+      await service.activityModel.exists({ _id: activity._id }),
+    ).not.toBeNull();
+    expect(
+      (await service.itineraryModel.findById(itinerary._id).orFail()).days,
+    ).toHaveLength(1);
+  });
   it('SCRUM-89: creates an owned private itinerary through HTTP', async () => {
     await request(server())
       .post('/api/itineraries')
