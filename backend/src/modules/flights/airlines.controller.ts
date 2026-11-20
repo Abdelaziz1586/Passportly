@@ -51,6 +51,7 @@ export class AirlinesController {
     FileInterceptor('logo', { limits: { fileSize: maxLogoBytes, files: 1 } }),
   )
   @Post()
+  @ApiOperation({ summary: 'FLT-01: Create an airline profile' })
   createAirline(
     @CurrentUser() user: AuthenticatedUser,
     @Body() input: AirlineCreate,
