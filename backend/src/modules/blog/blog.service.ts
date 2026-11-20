@@ -44,7 +44,6 @@ import { Comment, CommentDocument } from './schemas/comment.schema';
 import { Like, LikeDocument } from './schemas/like.schema';
 import { Tag, TagDocument } from './schemas/tag.schema';
 
-
 function isMongoDuplicateKeyError(error: unknown): boolean {
   return (
     typeof error === 'object' &&
@@ -725,5 +724,4 @@ export class BlogService {
       likesCount: updated?.likesCount ?? post.likesCount + 1,
     };
   }
-
 }
