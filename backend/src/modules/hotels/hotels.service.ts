@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
@@ -13,6 +14,7 @@ import {
   CreateHotelDto,
   HotelDetailsQueryDto,
   SearchHotelsDto,
+  UpdateHotelDto,
 } from './dto/hotel.dto';
 import { HotelAccessService } from './hotel-access.service';
 import {
@@ -28,6 +30,7 @@ import {
   pagination,
   PLATFORM_CURRENCY,
 } from './hotel-utils';
+import { MediaItem } from '../../common/schemas/media-item.schema';
 import {
   HotelBooking,
   HotelBookingDocument,
@@ -77,6 +80,29 @@ export class HotelsService {
       baseCurrency: PLATFORM_CURRENCY,
       images,
     });
+  }
+
+  async updateHotel(id: string, dto: UpdateHotelDto, user: AuthenticatedUser) {
+    const hotel = await this.access.managedHotel(id, user);
+    if (!Object.values(dto).some((value) => value !== undefined))
+      throw new BadRequestException('Provide at least one hotel field');
+    const location =
+      dto.city || dto.country
+        ? await this.reference.hotelLocation(
+            dto.city ?? hotel.city.toString(),
+            dto.country,
+          )
+        : {};
+    const images = dto.images
+      ? await this.uploads.storedImages(dto.images)
+      : undefined;
+    return this.hotelModel
+      .findByIdAndUpdate(
+        hotel._id,
+        { $set: { ...dto, ...location, ...(images ? { images } : {}) } },
+        { returnDocument: 'after', runValidators: true },
+      )
+      .lean();
   }
 
   async getHotel(id: string, query: HotelDetailsQueryDto) {
@@ -239,5 +265,46 @@ export class HotelsService {
     });
     const { page, limit, skip } = pagination(query.page, query.limit);
     return paged(data.slice(skip, skip + limit), data.length, page, limit);
+  }
+
+  async uploadImages(
+    id: string,
+    files: Express.Multer.File[],
+    user: AuthenticatedUser,
+  ) {
+    await this.access.managedHotel(id, user);
+    if (!files.length)
+      throw new BadRequestException('Provide one or more images');
+    const stored: MediaItem[] = [];
+    try {
+      for (const file of files)
+        stored.push(await this.uploads.storeImage(file));
+      const hotel = await this.hotelModel
+        .findOneAndUpdate(
+          {
+            _id: objectId(id),
+            $expr: {
+              $lte: [
+                {
+                  $add: [
+                    { $size: { $ifNull: ['$images', []] } },
+                    stored.length,
+                  ],
+                },
+                5,
+              ],
+            },
+          },
+          { $push: { images: { $each: stored } } },
+          { returnDocument: 'after', runValidators: true },
+        )
+        .lean();
+      if (!hotel)
+        throw new ConflictException('A hotel may have at most five images');
+      return hotel;
+    } catch (error) {
+      await this.uploads.discard(stored);
+      throw error;
+    }
   }
 }
