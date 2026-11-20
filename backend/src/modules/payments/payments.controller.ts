@@ -1,6 +1,9 @@
 import {
+  Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   NotImplementedException,
   Param,
   Post,
@@ -22,11 +25,16 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import {
+  AcceptPoliciesResponse,
   BookingPoliciesResponse,
   BookingPoliciesService,
 } from './booking-policies.service';
+import { AcceptPoliciesDto } from './dto/accept-policies.dto';
 import { BookingParamsDto } from './dto/booking-params.dto';
-import { BookingPoliciesResponseDto } from './dto/booking-policies-response.dto';
+import {
+  AcceptPoliciesResponseDto,
+  BookingPoliciesResponseDto,
+} from './dto/booking-policies-response.dto';
 import { PaymentsService } from './payments.service';
 
 @ApiTags('Payments & Refunds')
@@ -63,6 +71,41 @@ export class PaymentsController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<BookingPoliciesResponse> {
     return this.bookingPoliciesService.getPolicies(
+      user.userId,
+      params.type,
+      params.id,
+    );
+  }
+
+  @ApiCookieAuth()
+  @Roles(Role.REGISTERED_USER)
+  @Post('bookings/:type/:id/accept-policies')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'PAY-02: Record policy acceptance with timestamp before payment',
+    description:
+      'Sends the acceptance checkbox ({ "accepted": true }). Stores policyAcceptedAt (server time) and policyAcceptedBy (the signed-in user) on the booking. Payment is blocked until this was done. Only a PENDING_PAYMENT booking whose 10-minute hold is still running can accept; the hold is never extended. A second call keeps the first timestamp.',
+  })
+  @ApiOkResponse({
+    description: 'Acceptance stored',
+    type: AcceptPoliciesResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid :type or :id, or accepted is not true',
+  })
+  @ApiUnauthorizedResponse({ description: 'Not signed in' })
+  @ApiForbiddenResponse({ description: 'Only registered users may call this' })
+  @ApiNotFoundResponse({ description: 'Booking not found or not yours' })
+  @ApiConflictResponse({
+    description:
+      'Booking is not PENDING_PAYMENT, its hold expired, or it has no policies yet',
+  })
+  acceptBookingPolicies(
+    @Param() params: BookingParamsDto,
+    @Body() _dto: AcceptPoliciesDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<AcceptPoliciesResponse> {
+    return this.bookingPoliciesService.acceptPolicies(
       user.userId,
       params.type,
       params.id,

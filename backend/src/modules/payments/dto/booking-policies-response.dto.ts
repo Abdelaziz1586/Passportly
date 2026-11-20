@@ -26,3 +26,11 @@ export class BookingPoliciesResponseDto {
   @ApiProperty({ nullable: true, type: String }) policyAcceptedBy:
     string | null;
 }
+
+export class AcceptPoliciesResponseDto {
+  @ApiProperty({ enum: BookingType }) bookingType: BookingType;
+  @ApiProperty() bookingId: string;
+  @ApiProperty() bookingReference: string;
+  @ApiProperty({ type: Date }) policyAcceptedAt: Date;
+  @ApiProperty() policyAcceptedBy: string;
+}

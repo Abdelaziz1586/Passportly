@@ -210,3 +210,167 @@ describe('BookingPoliciesService.getPolicies', () => {
     ).rejects.toBeInstanceOf(ConflictException);
   });
 });
+
+describe('BookingPoliciesService.acceptPolicies', () => {
+  it('stores policyAcceptedAt and policyAcceptedBy from the JWT user', async () => {
+    const booking = makeBooking();
+    const { service, flightModel } = build([booking]);
+    const before = Date.now();
+
+    const result = await service.acceptPolicies(
+      userId.toString(),
+      BookingType.FLIGHT,
+      booking._id.toString(),
+    );
+
+    expect(result.policyAcceptedAt.getTime()).toBeGreaterThanOrEqual(before);
+    expect(result.policyAcceptedBy).toBe(userId.toString());
+    expect(booking.policyAcceptedAt).toBe(result.policyAcceptedAt);
+    const [filter] = flightModel.findOneAndUpdate.mock.calls[0];
+    expect(filter.status).toBe(BookingStatus.PENDING_PAYMENT);
+    expect(filter.user.equals(userId)).toBe(true);
+  });
+
+  it('accepts a hotel reservation through the hotel collection', async () => {
+    const reservation = makeBooking();
+    const { service, flightModel, hotelModel } = build([], [reservation]);
+
+    await service.acceptPolicies(
+      userId.toString(),
+      BookingType.HOTEL,
+      reservation._id.toString(),
+    );
+
+    expect(hotelModel.findOneAndUpdate).toHaveBeenCalledTimes(1);
+    expect(flightModel.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(reservation.policyAcceptedAt).toBeInstanceOf(Date);
+  });
+
+  it('does not crash on a stored acceptance without an accepting user', async () => {
+    const booking = makeBooking({ policyAcceptedAt: new Date() });
+    const { service } = build([booking]);
+
+    const result = await service.acceptPolicies(
+      userId.toString(),
+      BookingType.FLIGHT,
+      booking._id.toString(),
+    );
+
+    expect(result.policyAcceptedBy).toBe('');
+  });
+
+  it('keeps the first acceptance and changes nothing on a second call', async () => {
+    const acceptedAt = new Date('2026-11-19T10:00:00.000Z');
+    const booking = makeBooking({
+      policyAcceptedAt: acceptedAt,
+      policyAcceptedBy: userId,
+    });
+    const { service, flightModel } = build([booking]);
+
+    const result = await service.acceptPolicies(
+      userId.toString(),
+      BookingType.FLIGHT,
+      booking._id.toString(),
+    );
+
+    expect(result.policyAcceptedAt).toEqual(acceptedAt);
+    expect(flightModel.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it("cannot accept someone else's booking (404, nothing written)", async () => {
+    const booking = makeBooking();
+    const { service, flightModel } = build([booking]);
+
+    await expect(
+      service.acceptPolicies(
+        otherUserId.toString(),
+        BookingType.FLIGHT,
+        booking._id.toString(),
+      ),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(flightModel.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(booking.policyAcceptedAt).toBeUndefined();
+  });
+
+  it.each([
+    BookingStatus.CONFIRMED,
+    BookingStatus.CANCELLED,
+    BookingStatus.EXPIRED,
+    BookingStatus.COMPLETED,
+  ])('refuses a %s booking with 409', async (status) => {
+    const booking = makeBooking({ status });
+    const { service, flightModel } = build([booking]);
+
+    await expect(
+      service.acceptPolicies(
+        userId.toString(),
+        BookingType.FLIGHT,
+        booking._id.toString(),
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(flightModel.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('refuses when the hold already ran out', async () => {
+    const booking = makeBooking({ holdExpiresAt: new Date(Date.now() - 1) });
+    const { service } = build([booking]);
+
+    await expect(
+      service.acceptPolicies(
+        userId.toString(),
+        BookingType.FLIGHT,
+        booking._id.toString(),
+      ),
+    ).rejects.toThrow(/hold has expired/);
+    expect(booking.policyAcceptedAt).toBeUndefined();
+  });
+
+  it('refuses a booking without policies', async () => {
+    const booking = makeBooking({ policySnapshot: undefined });
+    const { service } = build([booking]);
+
+    await expect(
+      service.acceptPolicies(
+        userId.toString(),
+        BookingType.FLIGHT,
+        booking._id.toString(),
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('returns the winner when two accepts race (second update finds nothing)', async () => {
+    const booking = makeBooking();
+    const { service, flightModel } = build([booking]);
+    const acceptedAt = new Date();
+    flightModel.findOneAndUpdate.mockImplementationOnce(() => {
+      // the other request lands between our read and our update
+      booking.policyAcceptedAt = acceptedAt;
+      booking.policyAcceptedBy = userId;
+      return Promise.resolve(null);
+    });
+
+    const result = await service.acceptPolicies(
+      userId.toString(),
+      BookingType.FLIGHT,
+      booking._id.toString(),
+    );
+
+    expect(result.policyAcceptedAt).toEqual(acceptedAt);
+  });
+
+  it('is a 409 when the update finds nothing and nobody accepted (hold ran out in between)', async () => {
+    const booking = makeBooking();
+    const { service, flightModel } = build([booking]);
+    flightModel.findOneAndUpdate.mockImplementationOnce(() =>
+      Promise.resolve(null),
+    );
+
+    await expect(
+      service.acceptPolicies(
+        userId.toString(),
+        BookingType.FLIGHT,
+        booking._id.toString(),
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+});
