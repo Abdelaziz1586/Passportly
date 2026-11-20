@@ -451,6 +451,12 @@ export class ItinerariesService {
     return entry.save();
   }
 
+  async deleteBudgetEntry(id: string, userId: string) {
+    const entry = await this.findOwnedBudgetEntry(id, userId);
+    await entry.deleteOne();
+    return { deleted: true, budgetEntryId: id };
+  }
+
   private async getItineraryDetails(
     itinerary: ItineraryDocument,
   ): Promise<Record<string, unknown>> {

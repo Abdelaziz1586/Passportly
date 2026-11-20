@@ -427,6 +427,34 @@ describe('Itinerary endpoints and persistence', () => {
     ).rejects.toHaveProperty('code', 'ENOENT');
   });
 
+  it('SCRUM-103/104/105: validates currency and owner before editing or deleting budget entries', async () => {
+    const { itinerary, dayId } = await itineraryWithDay();
+    const entry = await service.addBudgetEntry(
+      String(itinerary._id),
+      dayId,
+      ownerId,
+      budget,
+    );
+    await expect(
+      service.updateBudgetEntry(String(entry._id), otherId, { amount: 999 }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(
+      service.updateBudgetEntry(String(entry._id), ownerId, {
+        currency: 'ZZZ',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(
+      (
+        await service.updateBudgetEntry(String(entry._id), ownerId, {
+          amount: 20,
+          currency: 'EUR',
+        })
+      ).amount,
+    ).toBe(20);
+    await service.deleteBudgetEntry(String(entry._id), ownerId);
+    expect(await service.budgetEntryModel.countDocuments()).toBe(0);
+  });
+
   it('HTTP validation: rejects extra properties, invalid IDs, negative amounts, and accepts valid PATCH times', async () => {
     await request(server())
       .post('/api/itineraries')
