@@ -26,6 +26,7 @@ import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { FlightsService } from './flights.service';
 import { AirlineCreate } from './create-airline.dto';
+import { BaggagePolicy } from './airline-baggage-policy.dto';
 import { AirlineUpdate } from './update-airline.dto';
 
 @ApiTags('Airlines')
@@ -104,10 +105,12 @@ export class AirlinesController {
   @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
   @Put(':id/baggage-policy')
   @ApiOperation({ summary: 'FLT-04, FLT-08: Set airline baggage policy' })
-  updateBaggagePolicy() {
-    throw new NotImplementedException(
-      'PUT /api/airlines/:id/baggage-policy not implemented yet',
-    );
+  updateBaggagePolicy(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: BaggagePolicy,
+  ) {
+    return this.flightsService.updateBaggage(id, user, input);
   }
 
   @ApiCookieAuth()

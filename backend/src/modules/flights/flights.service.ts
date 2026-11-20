@@ -9,6 +9,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Model, Types, isObjectIdOrHexString } from 'mongoose';
 import { Role } from '../../common/enums';
 import { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
+import { ReferenceDataService } from '../reference-data/reference-data.service';
 import { Airline, AirlineDocument } from './schemas/airline.schema';
 import {
   CabinInventory,
@@ -20,6 +21,7 @@ import {
 } from './schemas/flight-booking.schema';
 import { Flight, FlightDocument } from './schemas/flight.schema';
 import { AirlineCreate } from './create-airline.dto';
+import { BaggagePolicy } from './airline-baggage-policy.dto';
 import { AirlineUpdate } from './update-airline.dto';
 
 function checkId(id: string) {
@@ -53,6 +55,7 @@ export class FlightsService {
     readonly cabinInventoryModel: Model<CabinInventoryDocument>,
     @InjectModel(FlightBooking.name)
     readonly flightBookingModel: Model<FlightBookingDocument>,
+    private readonly reference: ReferenceDataService,
   ) {}
 
   private authorize(user: AuthenticatedUser, airline: Types.ObjectId) {
@@ -127,5 +130,26 @@ export class FlightsService {
     airline.set(input);
     if (logoUrl !== undefined) airline.logoUrl = logoUrl;
     return this.airlineView(await unique(() => airline.save()));
+  }
+
+  private async currency(value: string) {
+    const currencyCode = value.toUpperCase();
+    if (!(await this.reference.isCurrencySupported(currencyCode))) {
+      throw new BadRequestException('Unsupported currency');
+    }
+    return currencyCode;
+  }
+
+  async updateBaggage(
+    id: string,
+    user: AuthenticatedUser,
+    input: BaggagePolicy,
+  ) {
+    const airline = await this.airline(id, user);
+    airline.set('baggagePolicy', {
+      ...input,
+      currency: await this.currency(input.currency),
+    });
+    return this.airlineView(await airline.save());
   }
 }
