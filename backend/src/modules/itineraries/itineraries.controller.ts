@@ -235,9 +235,15 @@ export class ItinerariesController {
   @Roles(Role.REGISTERED_USER)
   @Delete('activities/:id/images/:imageId')
   @ApiOperation({ summary: 'ITN-12: Delete activity image' })
-  deleteActivityImage() {
-    throw new NotImplementedException(
-      'DELETE /api/activities/:id/images/:imageId not implemented yet',
+  deleteActivityImage(
+    @Param('id') id: string,
+    @Param('imageId') imageId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.deleteActivityImage(
+      id,
+      imageId,
+      user.userId,
     );
   }
 
