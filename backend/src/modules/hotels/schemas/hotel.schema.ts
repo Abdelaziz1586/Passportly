@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
 import {
   MediaItem,
   MediaItemSchema,
@@ -8,7 +8,28 @@ import {
 export type HotelDocument = HydratedDocument<Hotel>;
 
 @Schema({ _id: false })
+export class HotelCancellationTier {
+  @Prop({ required: true, min: 0 })
+  daysBeforeCheckIn: number;
+
+  @Prop({ required: true, min: 0, max: 100 })
+  refundPercentage: number;
+}
+
+export const HotelCancellationTierSchema = SchemaFactory.createForClass(
+  HotelCancellationTier,
+);
+
+@Schema({ _id: false })
 export class HotelPolicy {
+  @Prop({
+    type: [HotelCancellationTierSchema],
+    default: () => [
+      { daysBeforeCheckIn: 0, refundPercentage: 50 },
+      { daysBeforeCheckIn: 2, refundPercentage: 100 },
+    ],
+  })
+  cancellationTiers: HotelCancellationTier[];
   @Prop({ trim: true, default: '15:00' })
   checkInTime: string;
 
@@ -56,13 +77,18 @@ export class Hotel {
   @Prop({ required: true, trim: true })
   address: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'City', required: true, index: true })
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'City',
+    required: true,
+    index: true,
+  })
   city: Types.ObjectId;
 
   @Prop({ trim: true, index: true })
   cityName?: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'Country', index: true })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Country', index: true })
   country?: Types.ObjectId;
 
   @Prop({ uppercase: true, trim: true })
@@ -95,7 +121,7 @@ export class Hotel {
   @Prop({ type: Date })
   deactivatedAt?: Date;
 
-  @Prop({ type: Types.ObjectId, ref: 'User' })
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User' })
   deactivatedBy?: Types.ObjectId;
 
   @Prop({ type: HotelPolicySchema, default: () => ({}) })
@@ -106,6 +132,10 @@ export class Hotel {
 
   @Prop({ type: Number, default: 0, min: 0 })
   reviewCount: number;
+
+  // Serializes concurrent review mutations before recalculating cached ratings.
+  @Prop({ default: 0, select: false })
+  reviewRevision: number;
 }
 
 export const HotelSchema = SchemaFactory.createForClass(Hotel);
