@@ -16,6 +16,7 @@ import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { FlightsService } from './flights.service';
 import { FlightCreate, FlightUpdate } from './create-flight.dto';
+import { FlightCancel } from './cancel-flight.dto';
 import { FlightSearch } from './flight-search.dto';
 
 @ApiTags('Flights')
@@ -66,10 +67,12 @@ export class FlightsController {
   @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
   @Post(':id/cancel')
   @ApiOperation({ summary: 'FLT-06: Cancel a flight' })
-  cancelFlight() {
-    throw new NotImplementedException(
-      'POST /api/flights/:id/cancel not implemented yet',
-    );
+  cancelFlight(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: FlightCancel,
+  ) {
+    return this.flightsService.cancelFlight(id, user, input);
   }
 
   @ApiCookieAuth()

@@ -43,6 +43,7 @@ import {
   assertLocalDate,
   flightInstant,
 } from './flight-time';
+import { FlightCancel } from './cancel-flight.dto';
 import { FlightEventsService } from './flight-events.service';
 
 function checkId(id: string) {
@@ -210,6 +211,17 @@ export class FlightsService {
     if (!flight) throw new NotFoundException('Flight not found');
     if (user) this.authorize(user, flight.airline);
     return flight;
+  }
+
+  private assertScheduled(flight: Flight) {
+    if (
+      flight.status !== FlightStatus.SCHEDULED ||
+      flight.departureTime.getTime() <= Date.now()
+    ) {
+      throw new ConflictException(
+        'Only future scheduled flights can be changed',
+      );
+    }
   }
 
   /** Booking and payment transactions must acquire this same write before touching inventory. */
@@ -608,5 +620,119 @@ export class FlightsService {
       }),
     );
     return this.flightDetails(id);
+  }
+  /**
+   * Call in the webhook transaction after marking the verified Stripe payment
+   * successful. Returns false for bookings outside the cancellation workflow.
+   */
+  async queuePaymentAfterCancellation(
+    bookingId: Types.ObjectId,
+    paymentId: Types.ObjectId,
+    session: ClientSession,
+  ): Promise<boolean> {
+    const booking = await this.flightBookingModel
+      .findOne({
+        _id: bookingId,
+        providerCancellationFlight: { $exists: true },
+        status: BookingStatus.EXPIRED,
+      })
+      .session(session);
+    if (!booking) return false;
+    if (
+      booking.payment?.equals(paymentId) &&
+      booking.refundAmount !== undefined
+    )
+      return true;
+    if (booking.payment && !booking.payment.equals(paymentId)) {
+      throw new ConflictException(
+        'A different payment is already attached to the cancelled booking',
+      );
+    }
+
+    booking.refundAmount = await this.events.queueRefund(
+      booking,
+      session,
+      paymentId,
+    );
+    booking.payment = paymentId;
+    await booking.save({ session });
+    return true;
+  }
+
+  async cancelFlight(id: string, user: AuthenticatedUser, input: FlightCancel) {
+    return this.connection.transaction(async (session) => {
+      const flight = await this.flight(id, user, session);
+      if (flight.status === FlightStatus.CANCELLED)
+        return {
+          id,
+          status: flight.status,
+          cancellationReason: flight.cancellationReason,
+        };
+      this.assertScheduled(flight);
+      flight.status = FlightStatus.CANCELLED;
+      flight.cancellationReason = input.reason;
+      await flight.save({ session });
+      const bookings = await this.flightBookingModel
+        .find({
+          'legs.flight': flight._id,
+          status: {
+            $in: [
+              BookingStatus.CONFIRMED,
+              BookingStatus.PENDING_PAYMENT,
+              BookingStatus.HELD,
+            ],
+          },
+        })
+        .session(session);
+      for (const booking of bookings) {
+        const confirmed = booking.status === BookingStatus.CONFIRMED;
+        const seats = booking.passengerCounts.totalSeatsRequired;
+        for (const leg of booking.legs) {
+          const result = await this.cabinInventoryModel.updateOne(
+            {
+              _id: leg.cabin,
+              flight: leg.flight,
+              $expr: {
+                $lte: [{ $add: ['$availableSeats', seats] }, '$totalSeats'],
+              },
+              ...(confirmed ? {} : { heldSeats: { $gte: seats } }),
+            },
+            {
+              $inc: {
+                availableSeats: seats,
+                ...(confirmed ? {} : { heldSeats: -seats }),
+              },
+            },
+            { session },
+          );
+          if (!result.matchedCount)
+            throw new ConflictException('Booking inventory is inconsistent');
+        }
+        booking.status = confirmed
+          ? BookingStatus.CANCELLED
+          : BookingStatus.EXPIRED;
+        booking.cancelledAt = new Date();
+        booking.cancellationReason = input.reason;
+        booking.providerCancellationFlight = flight._id;
+        if (confirmed) {
+          booking.refundAmount = await this.events.queueRefund(
+            booking,
+            session,
+          );
+        }
+        await booking.save({ session });
+        await this.events.notify(
+          booking,
+          flight,
+          NotificationType.FLIGHT_CANCELLED,
+          session,
+        );
+      }
+      return {
+        id,
+        status: flight.status,
+        cancellationReason: flight.cancellationReason,
+      };
+    });
   }
 }
