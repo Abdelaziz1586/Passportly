@@ -1,12 +1,17 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 import { ReportStatus, ReportTargetType } from '../../../common/enums';
 
 export type ReportDocument = HydratedDocument<Report>;
 
 @Schema({ timestamps: true, collection: 'reports' })
 export class Report {
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  })
   reporter: Types.ObjectId;
 
   @Prop({
@@ -17,7 +22,7 @@ export class Report {
   })
   targetType: ReportTargetType;
 
-  @Prop({ type: Types.ObjectId, required: true, index: true })
+  @Prop({ type: SchemaTypes.ObjectId, required: true, index: true })
   targetId: Types.ObjectId;
 
   @Prop({ required: true, trim: true })
@@ -34,7 +39,7 @@ export class Report {
   })
   status: ReportStatus;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', default: null })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'User', default: null })
   reviewedBy?: Types.ObjectId | null;
 
   @Prop({ type: Date })
