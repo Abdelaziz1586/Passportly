@@ -12,6 +12,7 @@ import {
   Airport,
   AirportSchema,
 } from '../reference-data/schemas/airport.schema';
+import { FlightCancellationService } from './flight-cancellation.service';
 import { Payment, PaymentSchema } from '../payments/schemas/payment.schema';
 import { Refund, RefundSchema } from '../payments/schemas/refund.schema';
 import { FlightBookingViewService } from './flight-booking-view.service';
@@ -52,6 +53,7 @@ import { Flight, FlightSchema } from './schemas/flight.schema';
     FlightBookingsService,
     FlightETicketService,
     FlightBookingViewService,
+    FlightCancellationService,
   ],
   exports: [FlightsService, FlightBookingsService, MongooseModule],
 })
