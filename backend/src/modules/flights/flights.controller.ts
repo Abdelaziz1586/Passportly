@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Param,
   Patch,
   Post,
   Query,
@@ -45,10 +46,8 @@ export class FlightsController {
   @Public()
   @Get(':id')
   @ApiOperation({ summary: 'FLT-17: Get flight details & cabin availability' })
-  getFlight() {
-    throw new NotImplementedException(
-      'GET /api/flights/:id not implemented yet',
-    );
+  getFlight(@Param('id') id: string) {
+    return this.flightsService.getFlight(id);
   }
 
   @ApiCookieAuth()

@@ -536,4 +536,8 @@ export class FlightsService {
     ]);
     return { outbound, ...(inbound && { return: inbound }) };
   }
+
+  async getFlight(id: string) {
+    return this.flightDetails(id);
+  }
 }
