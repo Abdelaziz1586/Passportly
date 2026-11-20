@@ -275,10 +275,20 @@ export class BlogController {
   @Roles(Role.REGISTERED_USER)
   @Delete('posts/:id/like')
   @ApiOperation({ summary: 'BLG-06: Unlike a post' })
-  unlikePost() {
-    throw new NotImplementedException(
-      'DELETE /api/posts/:id/like not implemented yet',
-    );
+  @ApiParam({ name: 'id', description: 'Blog post MongoDB ObjectId' })
+  @ApiOkResponse({
+    description: 'Like removed if present and likesCount returned',
+    type: PostLikeResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid blog post ID' })
+  @ApiUnauthorizedResponse({ description: 'Authentication required' })
+  @ApiForbiddenResponse({ description: 'Insufficient role permissions' })
+  @ApiNotFoundResponse({ description: 'Blog post not found' })
+  unlikePost(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<PostLikeResponseDto> {
+    return this.blogService.unlikePost(id, user.userId);
   }
 
   @ApiCookieAuth()

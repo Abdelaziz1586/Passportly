@@ -1557,4 +1557,12 @@ Implement SCRUM-126 [BLG-06] POST /api/posts/:id/like - Like a published post (a
 
 How the output was used:
 Added PostLikeResponseDto, BlogService.likePost verifying PUBLISHED/non-hidden status, inserting Like with duplicate-key ConflictException handling, and atomically incrementing BlogPost.likesCount, plus BlogController.likePost Swagger/role wiring and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
+
+Related Requirement: BLG-06 (SCRUM-127, DELETE /api/posts/:id/like)
+
+Prompt:
+Implement SCRUM-127 [BLG-06] DELETE /api/posts/:id/like - Remove like from a post and decrement BlogPost.likesCount only if a like was removed.
+
+How the output was used:
+Implemented BlogService.unlikePost with atomic Like deletion and guarded likesCount decrement when a like existed, wired BlogController.unlikePost with Swagger/role decorators, and added unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
 ================================================
