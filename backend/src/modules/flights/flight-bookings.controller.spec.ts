@@ -1,10 +1,14 @@
 import 'reflect-metadata';
+import { StreamableFile } from '@nestjs/common';
 import { PATH_METADATA } from '@nestjs/common/constants';
 import { ROLES_KEY } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { ListFlightBookingsQueryDto } from './dto/list-flight-bookings-query.dto';
 import { FlightBookingsController } from './flight-bookings.controller';
+import { ETicketFormat, ETicketQueryDto } from './dto/e-ticket-query.dto';
+import { FlightBookingIdParamDto } from './dto/flight-booking-id-param.dto';
+import { FlightETicketService } from './flight-e-ticket.service';
 import {
   FlightBookingListResponse,
   FlightBookingsService,
@@ -18,9 +22,10 @@ const handlers = FlightBookingsController.prototype as unknown as Record<
 
 describe('FlightBookingsController.listBookings', () => {
   const listBookings = jest.fn();
-  const controller = new FlightBookingsController({
-    listBookings,
-  } as unknown as FlightBookingsService);
+  const controller = new FlightBookingsController(
+    { listBookings } as unknown as FlightBookingsService,
+    {} as FlightETicketService,
+  );
 
   const user: AuthenticatedUser = {
     userId: '665f1c2e8a1b2c3d4e5f6a7b',
@@ -71,6 +76,69 @@ describe('FlightBookingsController.listBookings', () => {
     );
     expect(order.indexOf('listBookings')).toBeLessThan(
       order.indexOf('getBooking'),
+    );
+  });
+});
+
+describe('FlightBookingsController.getETicket (FLT-23)', () => {
+  const getETicket = jest.fn();
+  const toPdf = jest.fn();
+  const controller = new FlightBookingsController(
+    {} as FlightBookingsService,
+    { getETicket, toPdf } as unknown as FlightETicketService,
+  );
+  const user: AuthenticatedUser = {
+    userId: '665f1c2e8a1b2c3d4e5f6a7b',
+    email: 'a@example.com',
+    role: Role.REGISTERED_USER,
+    jti: 'jti',
+  };
+  const params = Object.assign(new FlightBookingIdParamDto(), {
+    id: '665f1c2e8a1b2c3d4e5f6a7c',
+  });
+  const ticket = { bookingReference: 'ABCD2345' };
+
+  afterEach(() => jest.clearAllMocks());
+
+  it('returns the JSON ticket for the JWT user by default', async () => {
+    getETicket.mockResolvedValue(ticket);
+
+    const result = await controller.getETicket(
+      params,
+      new ETicketQueryDto(),
+      user,
+    );
+
+    expect(getETicket).toHaveBeenCalledWith(user, params.id);
+    expect(result).toBe(ticket);
+    expect(toPdf).not.toHaveBeenCalled();
+  });
+
+  it('streams a PDF attachment named after the booking reference with ?format=pdf', async () => {
+    getETicket.mockResolvedValue(ticket);
+    toPdf.mockReturnValue(Buffer.from('%PDF-1.4'));
+
+    const result = await controller.getETicket(
+      params,
+      Object.assign(new ETicketQueryDto(), { format: ETicketFormat.PDF }),
+      user,
+    );
+
+    expect(result).toBeInstanceOf(StreamableFile);
+    const headers = (result as StreamableFile).getHeaders();
+    expect(headers.type).toBe('application/pdf');
+    expect(headers.disposition).toBe(
+      'attachment; filename="e-ticket-ABCD2345.pdf"',
+    );
+  });
+
+  it('is open to the owner, admins and airline moderators only', () => {
+    const roles = Reflect.getMetadata(ROLES_KEY, handlers.getETicket) as Role[];
+    expect([...roles].sort()).toEqual(
+      [Role.ADMIN, Role.AIRLINE_MODERATOR, Role.REGISTERED_USER].sort(),
+    );
+    expect(Reflect.getMetadata(PATH_METADATA, handlers.getETicket)).toBe(
+      ':id/e-ticket',
     );
   });
 });
