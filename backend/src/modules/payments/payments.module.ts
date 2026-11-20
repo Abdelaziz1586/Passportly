@@ -20,6 +20,7 @@ import { BookingPoliciesService } from './booking-policies.service';
 import { PaymentExpiryService } from './payment-expiry.service';
 import { PaymentWebhookService } from './payment-webhook.service';
 import { PaymentsController } from './payments.controller';
+import { RefundsService } from './refunds.service';
 import { PaymentsService } from './payments.service';
 import { Payment, PaymentSchema } from './schemas/payment.schema';
 import { Refund, RefundSchema } from './schemas/refund.schema';
@@ -41,7 +42,13 @@ import { Refund, RefundSchema } from './schemas/refund.schema';
     PaymentWebhookService,
     PaymentExpiryService,
     BookingPoliciesService,
+    RefundsService,
   ],
-  exports: [PaymentsService, BookingPoliciesService, MongooseModule],
+  exports: [
+    PaymentsService,
+    BookingPoliciesService,
+    RefundsService,
+    MongooseModule,
+  ],
 })
 export class PaymentsModule {}

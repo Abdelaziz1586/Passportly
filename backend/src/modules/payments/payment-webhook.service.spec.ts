@@ -104,11 +104,13 @@ function build() {
     findOne: jest.fn(),
     findOneAndUpdate: jest.fn(),
   };
-  const refundModel = {
-    findOne: jest.fn(() => query<unknown>(null)),
-    create: jest.fn((doc: Record<string, unknown>) =>
-      Promise.resolve({ _id: new Types.ObjectId(), ...doc }),
+  const refundsService = {
+    recordRefund: jest.fn((input: Record<string, unknown>) =>
+      Promise.resolve({ _id: new Types.ObjectId(), ...input }),
     ),
+    dispatchRefund: jest.fn().mockResolvedValue(true),
+    settleForPayment: jest.fn().mockResolvedValue(true),
+    syncFromStripe: jest.fn().mockResolvedValue(true),
   };
   const cabinModel = {
     updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
@@ -131,7 +133,6 @@ function build() {
   const paymentsService = {
     stripe: stripe as unknown,
     paymentModel,
-    refundModel,
     flightBookingModel,
     hotelBookingModel,
   };
@@ -139,6 +140,7 @@ function build() {
     paymentsService as never,
     configService as never,
     notificationsService as never,
+    refundsService as never,
     cabinModel as never,
     roomAvailabilityModel as never,
     connection as never,
@@ -146,7 +148,7 @@ function build() {
   return {
     service,
     paymentModel,
-    refundModel,
+    refundsService,
     flightBookingModel,
     hotelBookingModel,
     cabinModel,
@@ -370,31 +372,21 @@ describe('PaymentWebhookService payment_intent.succeeded', () => {
     function setupOrphan() {
       const ctx = setupFlight();
       ctx.flightBookingModel.findOne.mockReturnValue(query(null)); // expired meanwhile
-      const refunds = {
-        create: jest
-          .fn()
-          .mockResolvedValue({ id: 're_1', status: 'succeeded' }),
-      };
-      Object.assign(ctx.paymentsService, { stripe: { refunds } });
       // what ensureOrphanRefund reads back after the transaction flagged the payment
       ctx.paymentModel.findById.mockReturnValue(
-        query({
-          ...ctx.payment,
-          metadata: { needsRefund: true },
-        }),
+        query({ ...ctx.payment, metadata: { needsRefund: true } }),
       );
-      return { ...ctx, refunds };
+      return ctx;
     }
 
-    it('does not confirm, refunds in full through the Stripe Refunds API, records it and tells the user', async () => {
+    it('does not confirm, records a full refund and sends it through the Refunds API service', async () => {
       const {
         service,
         paymentModel,
         flightBookingModel,
         cabinModel,
         notificationsService,
-        refundModel,
-        refunds,
+        refundsService,
         payment,
       } = setupOrphan();
 
@@ -410,77 +402,53 @@ describe('PaymentWebhookService payment_intent.succeeded', () => {
         { $set: { 'metadata.needsRefund': true } },
         expect.anything(),
       );
-      expect(refunds.create).toHaveBeenCalledWith(
-        expect.objectContaining({ payment_intent: 'pi_123' }),
-        { idempotencyKey: `orphan-refund-${payment._id.toString()}` },
-      );
-      expect(refundModel.create).toHaveBeenCalledWith(
+      expect(refundsService.recordRefund).toHaveBeenCalledWith(
         expect.objectContaining({
           payment: payment._id,
           user: userId,
+          bookingType: BookingType.FLIGHT,
+          bookingId: payment.flightBooking,
           amount: 250.5,
           currency: 'USD',
-          stripeRefundId: 're_1',
-          status: 'SUCCEEDED',
         }),
       );
-      expect(notificationsService.createNotification).toHaveBeenCalledTimes(1);
-      expect(notificationsService.createNotification).toHaveBeenCalledWith(
-        expect.objectContaining({ type: NotificationType.REFUND_PROCESSED }),
-      );
-      // the refund is remembered on the payment so a retried event never refunds twice
-      expect(paymentModel.updateOne).toHaveBeenCalledWith(
-        { _id: payment._id },
-        { $set: { 'metadata.orphanRefundId': expect.any(String) as unknown } },
-      );
+      expect(refundsService.dispatchRefund).toHaveBeenCalledTimes(1);
+      // the refund service owns the refund notification: the webhook sends none
+      expect(notificationsService.createNotification).not.toHaveBeenCalled();
     });
 
-    it('lets Stripe retry the event when the refund call fails', async () => {
-      const { service, refunds } = setupOrphan();
-      refunds.create.mockRejectedValue(new Error('stripe down'));
+    it('lets Stripe retry the event when the refund cannot be sent', async () => {
+      const { service, refundsService } = setupOrphan();
+      refundsService.dispatchRefund.mockRejectedValue(new Error('stripe down'));
 
       await expect(
         service.handleEvent(intentEvent('payment_intent.succeeded')),
       ).rejects.toThrow('stripe down');
     });
 
-    it('a retried event finishes a refund that never completed, but never refunds twice', async () => {
-      const retry = setupOrphan();
-      retry.paymentModel.findOne.mockReturnValue(
-        query({ ...retry.payment, metadata: { needsRefund: true } }),
+    it('a retried event asks for the same refund again (the service returns the existing one)', async () => {
+      const ctx = setupOrphan();
+      ctx.paymentModel.findOne.mockReturnValue(
+        query({ ...ctx.payment, metadata: { needsRefund: true } }),
       );
-      retry.paymentModel.findOneAndUpdate.mockResolvedValue(null); // already SUCCEEDED
+      ctx.paymentModel.findOneAndUpdate.mockResolvedValue(null); // already SUCCEEDED
 
-      const result = await retry.service.handleEvent(
+      const result = await ctx.service.handleEvent(
         intentEvent('payment_intent.succeeded'),
       );
-      expect(result.outcome).toBe('duplicate');
-      expect(retry.refunds.create).toHaveBeenCalledTimes(1);
 
-      const done = setupOrphan();
-      done.paymentModel.findOne.mockReturnValue(
-        query({ ...done.payment, metadata: { needsRefund: true } }),
-      );
-      done.paymentModel.findOneAndUpdate.mockResolvedValue(null);
-      done.paymentModel.findById.mockReturnValue(
-        query({
-          ...done.payment,
-          metadata: { needsRefund: true, orphanRefundId: 'abc' },
-        }),
-      );
-      await done.service.handleEvent(intentEvent('payment_intent.succeeded'));
-      expect(done.refunds.create).not.toHaveBeenCalled();
+      expect(result.outcome).toBe('duplicate');
+      expect(ctx.refundsService.recordRefund).toHaveBeenCalledTimes(1);
+      expect(ctx.refundsService.dispatchRefund).toHaveBeenCalledTimes(1);
     });
 
-    it('records a pending Stripe refund as PENDING', async () => {
-      const { service, refunds, refundModel } = setupOrphan();
-      refunds.create.mockResolvedValue({ id: 're_2', status: 'pending' });
+    it('a duplicate of a normally confirmed payment never refunds', async () => {
+      const ctx = setupFlight();
+      ctx.paymentModel.findOneAndUpdate.mockResolvedValue(null);
 
-      await service.handleEvent(intentEvent('payment_intent.succeeded'));
+      await ctx.service.handleEvent(intentEvent('payment_intent.succeeded'));
 
-      expect(refundModel.create).toHaveBeenCalledWith(
-        expect.objectContaining({ status: 'PENDING', processedAt: undefined }),
-      );
+      expect(ctx.refundsService.recordRefund).not.toHaveBeenCalled();
     });
   });
 
@@ -721,6 +689,7 @@ describe('PaymentWebhookService other events', () => {
 
   it('charge.refunded marks REFUNDED for a full refund and PARTIALLY_REFUNDED otherwise', async () => {
     const { service, paymentModel } = build();
+    paymentModel.findOne.mockReturnValue(query(makePayment()));
     const charge = (refunded: number) =>
       ({
         id: 'evt_2',
@@ -744,6 +713,72 @@ describe('PaymentWebhookService other events', () => {
       PaymentStatus.REFUNDED,
       PaymentStatus.PARTIALLY_REFUNDED,
     ]);
+  });
+
+  it('charge.refunded also settles the PENDING Refund of that payment', async () => {
+    const { service, paymentModel, refundsService } = build();
+    const payment = makePayment();
+    paymentModel.findOne.mockReturnValue(query(payment));
+
+    await service.handleEvent({
+      id: 'evt_5',
+      type: 'charge.refunded',
+      data: {
+        object: {
+          payment_intent: 'pi_123',
+          amount: 25050,
+          amount_refunded: 25050,
+        },
+      },
+    } as unknown as Stripe.Event);
+
+    expect(refundsService.settleForPayment).toHaveBeenCalledWith(payment._id);
+  });
+
+  it('charge.refunded for an unknown payment is ignored', async () => {
+    const { service, paymentModel, refundsService } = build();
+    paymentModel.findOne.mockReturnValue(query(null));
+
+    const result = await service.handleEvent({
+      id: 'evt_6',
+      type: 'charge.refunded',
+      data: {
+        object: { payment_intent: 'pi_x', amount: 1, amount_refunded: 1 },
+      },
+    } as unknown as Stripe.Event);
+
+    expect(result.outcome).toBe('ignored');
+    expect(refundsService.settleForPayment).not.toHaveBeenCalled();
+  });
+
+  it.each(['refund.updated', 'refund.failed'])(
+    '%s is handed to the refund service',
+    async (type) => {
+      const { service, refundsService } = build();
+      const refund = { id: 're_1', status: 'failed' };
+
+      const result = await service.handleEvent({
+        id: 'evt_7',
+        type,
+        data: { object: refund },
+      } as unknown as Stripe.Event);
+
+      expect(refundsService.syncFromStripe).toHaveBeenCalledWith(refund);
+      expect(result.outcome).toBe('refund_updated');
+    },
+  );
+
+  it('a refund event that changes nothing is ignored', async () => {
+    const { service, refundsService } = build();
+    refundsService.syncFromStripe.mockResolvedValue(false);
+
+    const result = await service.handleEvent({
+      id: 'evt_8',
+      type: 'refund.updated',
+      data: { object: { id: 're_1', status: 'pending' } },
+    } as unknown as Stripe.Event);
+
+    expect(result.outcome).toBe('ignored');
   });
 
   it('charge.refunded without a payment intent, and unknown event types, are ignored', async () => {

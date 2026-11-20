@@ -1004,3 +1004,14 @@ Implement GET /api/flight-bookings/:id: the full details of one booking with leg
 How the output was used:
 The generated view service, mapper, response DTOs, controller wiring and tests were integrated and checked with lint, build, unit tests, 25 live checks and a Swagger "Try it out" run.
 ================================================
+================================================
+Date: 2026-11-19
+Student: Abdulrahman Ahmed
+Branch: feature/SCRUM-88-PAY-03-refunds (stacked on feature/SCRUM-73-FLT-25-get-flight-booking)
+Tool: Claude Code (terminal, Claude Sonnet 5.5)
+Related Requirement: PAY-03 (GET /api/refunds/:id), FLT-09 / HTL-10 refund tier rule, GEN-01
+Prompt:
+Implement PAY-03: a refund engine that issues refunds through the Stripe Refunds API (recorded first as PENDING inside the cancellation transaction, then sent with an idempotency key, with a job that re-sends refunds that never reached Stripe), a pure tier calculator (the tier with the highest threshold not above the days remaining, otherwise 0%), GET /api/refunds/:id for the owner or an admin showing amount, status (Pending, Refunded, Failed), policyCalculationNotes and processedAt, Stripe event handling (charge.refunded, refund.updated, refund.failed), a refund summary on the booking details and an in-app notification. Replace the refund code of the payment-after-hold case with the same engine. Then write unit tests and run live checks against Stripe test mode plus the Swagger page in a browser.
+How the output was used:
+The generated service, calculator, schema indexes, DTOs, controller wiring and tests were integrated and checked with lint, build, unit tests, 38 live checks (real Stripe test-mode refunds, a job-sent partial refund, failed and settled refunds) and a Swagger "Try it out" run.
+================================================

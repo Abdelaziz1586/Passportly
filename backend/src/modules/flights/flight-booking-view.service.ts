@@ -1,14 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { Role } from '../../common/enums';
+import { BookingType, Role } from '../../common/enums';
 import { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { Payment } from '../payments/schemas/payment.schema';
+import { Refund } from '../payments/schemas/refund.schema';
 import { loadReadableFlightBookingRaw } from './flight-booking-access';
 import {
   BookingViewAirport,
   BookingViewLeg,
   BookingViewPayment,
+  BookingViewRefund,
   effectiveStatus,
   FlightBookingDetails,
   toViewPassenger,
@@ -35,6 +37,7 @@ export class FlightBookingViewService {
     @InjectModel(Airline.name) private readonly airlineModel: Model<Airline>,
     @InjectModel(Airport.name) private readonly airportModel: Model<Airport>,
     @InjectModel(Payment.name) private readonly paymentModel: Model<Payment>,
+    @InjectModel(Refund.name) private readonly refundModel: Model<Refund>,
   ) {}
 
   async getBooking(
@@ -147,8 +150,29 @@ export class FlightBookingViewService {
       payment: moderatorView
         ? null
         : await this.paymentSummary(booking.payment),
+      refund: moderatorView ? null : await this.refundSummary(booking._id),
       createdAt: booking.createdAt,
       updatedAt: booking.updatedAt,
+    };
+  }
+
+  /** PAY-03: status and amount of the booking's refund (Pending, Refunded or Failed). */
+  private async refundSummary(
+    bookingId: Types.ObjectId,
+  ): Promise<BookingViewRefund | null> {
+    const refund = (await this.refundModel
+      .findOne({ bookingType: BookingType.FLIGHT, bookingId })
+      .sort({ createdAt: -1 })
+      .lean()) as unknown as Lean<Refund> | null;
+    if (!refund) return null;
+    return {
+      id: refund._id.toString(),
+      status: refund.status,
+      amount: refund.amount,
+      currency: refund.currency,
+      reason: refund.reason ?? null,
+      policyCalculationNotes: refund.policyCalculationNotes ?? null,
+      processedAt: refund.processedAt ?? null,
     };
   }
 

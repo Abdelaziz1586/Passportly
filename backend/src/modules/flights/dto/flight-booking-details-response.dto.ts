@@ -5,6 +5,7 @@ import {
   FlightStatus,
   PassengerType,
   PaymentStatus,
+  RefundStatus,
   TripType,
 } from '../../../common/enums';
 import { FlightBookingPassengerCountsDto } from './flight-booking-list-response.dto';
@@ -70,6 +71,26 @@ export class BookingDetailsPaymentDto {
   @ApiProperty({ nullable: true, type: Date }) paidAt: Date | null;
 }
 
+export class BookingDetailsRefundDto {
+  @ApiProperty() id: string;
+  @ApiProperty({
+    enum: RefundStatus,
+    description: 'PENDING (being processed), SUCCEEDED (refunded) or FAILED',
+  })
+  status: RefundStatus;
+  @ApiProperty({ description: 'Major units, e.g. 123.45' }) amount: number;
+  @ApiProperty({ example: 'USD' }) currency: string;
+  @ApiProperty({ nullable: true, type: String }) reason: string | null;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description:
+      'How the amount was computed from the tiers stored on the booking',
+  })
+  policyCalculationNotes: string | null;
+  @ApiProperty({ nullable: true, type: Date }) processedAt: Date | null;
+}
+
 export class FlightBookingDetailsResponseDto {
   @ApiProperty() id: string;
   @ApiProperty() bookingReference: string;
@@ -122,6 +143,13 @@ export class FlightBookingDetailsResponseDto {
       'Payment summary (status, amount, paidAt); null until paying starts',
   })
   payment: BookingDetailsPaymentDto | null;
+  @ApiProperty({
+    type: BookingDetailsRefundDto,
+    nullable: true,
+    description:
+      'The refund of this booking with its status; null if none was issued',
+  })
+  refund: BookingDetailsRefundDto | null;
   @ApiProperty({ type: Date }) createdAt: Date;
   @ApiProperty({ type: Date }) updatedAt: Date;
 }
