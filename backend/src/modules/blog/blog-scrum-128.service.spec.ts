@@ -38,7 +38,10 @@ describe('BlogService (SCRUM-128 BLG-10/GEN-08 upload post image)', () => {
         { provide: getModelToken(Comment.name), useValue: {} },
         { provide: getModelToken(Like.name), useValue: {} },
         { provide: AuditLogsService, useValue: { log: jest.fn() } },
-        { provide: NotificationsService, useValue: { createNotification: jest.fn() } },
+        {
+          provide: NotificationsService,
+          useValue: { createNotification: jest.fn() },
+        },
         { provide: getModelToken(Tag.name), useValue: {} },
         { provide: UploadsService, useValue: mockUploadsService },
       ],
