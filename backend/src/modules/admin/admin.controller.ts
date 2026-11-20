@@ -1,23 +1,43 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   NotImplementedException,
+  Param,
   Patch,
   Post,
   Query,
+  Req,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
+  ApiConflictResponse,
   ApiCookieAuth,
+  ApiCreatedResponse,
   ApiForbiddenResponse,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiTags,
 } from '@nestjs/swagger';
+import type { Request } from 'express';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
+import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { AdminService } from './admin.service';
+import {
+  AdminResetPasswordDto,
+  AdminResetPasswordResponseDto,
+} from './dto/admin-reset-password.dto';
+import {
+  CreateModeratorDto,
+  ModeratorResponseDto,
+} from './dto/create-moderator.dto';
 import {
   ListAccountsQueryDto,
   PaginatedAccountsResponseDto,
@@ -31,21 +51,50 @@ export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
   @Post('users/:id/reset-password')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'ACC-07a: Admin-assisted password reset' })
-  resetUserPassword() {
-    throw new NotImplementedException(
-      'POST /api/admin/users/:id/reset-password not implemented yet',
-    );
+  @ApiParam({ name: 'id', type: String, description: 'Target user ID' })
+  @ApiOkResponse({
+    description: 'Temporary password set and active user sessions revoked',
+    type: AdminResetPasswordResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description:
+      'Invalid user ID, self-reset attempt, or weak temporary password',
+  })
+  @ApiForbiddenResponse({ description: 'Admin role required' })
+  @ApiNotFoundResponse({ description: 'User not found' })
+  resetUserPassword(
+    @Param('id') id: string,
+    @Body() dto: AdminResetPasswordDto,
+    @CurrentUser() admin: AuthenticatedUser,
+    @Req() req: Request,
+  ): Promise<AdminResetPasswordResponseDto> {
+    return this.adminService.resetUserPassword(id, dto, admin, req.ip);
   }
 
   @Post('moderators')
   @ApiOperation({
     summary: 'ACC-13: Create airline or hotel moderator account & assignment',
   })
-  createModerator() {
-    throw new NotImplementedException(
-      'POST /api/admin/moderators not implemented yet',
-    );
+  @ApiCreatedResponse({
+    description: 'Moderator account and provider assignment created',
+    type: ModeratorResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid moderator payload, role, or providerId',
+  })
+  @ApiConflictResponse({
+    description: 'Email already exists',
+  })
+  @ApiForbiddenResponse({ description: 'Admin role required' })
+  @ApiNotFoundResponse({ description: 'Target Airline or Hotel not found' })
+  createModerator(
+    @Body() dto: CreateModeratorDto,
+    @CurrentUser() admin: AuthenticatedUser,
+    @Req() req: Request,
+  ): Promise<ModeratorResponseDto> {
+    return this.adminService.createModerator(dto, admin, req.ip);
   }
 
   @Get('accounts')
