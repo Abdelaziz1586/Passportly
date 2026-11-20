@@ -1,16 +1,5 @@
-import { ApiProperty, PartialType } from '@nestjs/swagger';
-import { IsString, Matches } from 'class-validator';
-
-export class AirlineCreate {
-  @ApiProperty()
-  @IsString()
-  @Matches(/\S/)
-  name!: string;
-
-  @ApiProperty()
-  @Matches(/^[a-z0-9]{2}$/i)
-  iataCode!: string;
-}
+import { PartialType } from '@nestjs/swagger';
+import { AirlineCreate } from './create-airline.dto';
 
 export class AirlineUpdate extends PartialType(AirlineCreate, {
   skipNullProperties: false,

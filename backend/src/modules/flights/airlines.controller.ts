@@ -25,6 +25,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { FlightsService } from './flights.service';
+import { AirlineCreate } from './create-airline.dto';
 import { AirlineUpdate } from './update-airline.dto';
 
 @ApiTags('Airlines')
@@ -36,20 +37,38 @@ export class AirlinesController {
   ) {}
 
   @ApiCookieAuth()
-  @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
+  @ApiConsumes('application/json', 'multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        iataCode: { type: 'string', example: 'MS' },
+        logo: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @Roles(Role.ADMIN)
+  @UseInterceptors(
+    FileInterceptor('logo', { limits: { fileSize: maxLogoBytes, files: 1 } }),
+  )
   @Post()
   @ApiOperation({ summary: 'FLT-01: Create an airline profile' })
-  createAirline() {
-    throw new NotImplementedException('POST /api/airlines not implemented yet');
+  createAirline(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: AirlineCreate,
+    @UploadedFile() logo?: Express.Multer.File,
+  ) {
+    return this.uploads.withAirlineLogo(logo, (url) =>
+      this.flightsService.createAirline(user, input, url),
+    );
   }
 
   @Public()
   @Get(':id')
   @ApiOperation({ summary: 'FLT-01: Get airline details' })
-  getAirline() {
-    throw new NotImplementedException(
-      'GET /api/airlines/:id not implemented yet',
-    );
+  getAirline(@Param('id') id: string) {
+    return this.flightsService.getAirline(id);
   }
 
   @ApiCookieAuth()
@@ -69,6 +88,7 @@ export class AirlinesController {
     FileInterceptor('logo', { limits: { fileSize: maxLogoBytes, files: 1 } }),
   )
   @Patch(':id')
+  @ApiOperation({ summary: 'FLT-01: Update airline profile' })
   updateAirline(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,

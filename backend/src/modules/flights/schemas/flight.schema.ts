@@ -1,21 +1,36 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 import { FlightStatus } from '../../../common/enums';
 
 export type FlightDocument = HydratedDocument<Flight>;
 
 @Schema({ timestamps: true, collection: 'flights' })
 export class Flight {
-  @Prop({ type: Types.ObjectId, ref: 'Airline', required: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'Airline',
+    required: true,
+    index: true,
+  })
   airline: Types.ObjectId;
 
   @Prop({ required: true, uppercase: true, trim: true, index: true })
   flightNumber: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'Airport', required: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'Airport',
+    required: true,
+    index: true,
+  })
   departureAirport: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'Airport', required: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'Airport',
+    required: true,
+    index: true,
+  })
   arrivalAirport: Types.ObjectId;
 
   @Prop({ required: true, index: true })

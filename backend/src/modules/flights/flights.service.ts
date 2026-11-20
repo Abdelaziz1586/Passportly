@@ -19,6 +19,7 @@ import {
   FlightBookingDocument,
 } from './schemas/flight-booking.schema';
 import { Flight, FlightDocument } from './schemas/flight.schema';
+import { AirlineCreate } from './create-airline.dto';
 import { AirlineUpdate } from './update-airline.dto';
 
 function checkId(id: string) {
@@ -93,6 +94,27 @@ export class FlightsService {
       baggagePolicy: airline.baggagePolicy,
       cancellationPolicy: { tiers: airline.cancellationPolicy?.tiers ?? null },
     };
+  }
+
+  async createAirline(
+    user: AuthenticatedUser,
+    input: AirlineCreate,
+    logoUrl?: string,
+  ) {
+    if (user.role !== Role.ADMIN) throw new ForbiddenException();
+    return this.airlineView(
+      await unique(() =>
+        this.airlineModel.create({
+          ...input,
+          logoUrl,
+          cancellationPolicy: { tiers: [] },
+        }),
+      ),
+    );
+  }
+
+  async getAirline(id: string) {
+    return this.airlineView(await this.airline(id));
   }
 
   async updateAirline(
