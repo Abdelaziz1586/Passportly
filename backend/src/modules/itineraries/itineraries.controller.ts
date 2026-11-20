@@ -3,11 +3,11 @@ import {
   Controller,
   Delete,
   Get,
-  NotImplementedException,
   Param,
   Patch,
   Post,
   Query,
+  StreamableFile,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
@@ -18,6 +18,7 @@ import {
   ApiCookieAuth,
   ApiCreatedResponse,
   ApiOperation,
+  ApiProduces,
   ApiTags,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -398,12 +399,18 @@ export class ItinerariesController {
   }
 
   @ApiCookieAuth()
-  @Roles(Role.REGISTERED_USER)
+  @OptionalAuth()
   @Get('itineraries/:id/pdf')
   @ApiOperation({ summary: 'ITN-28 (Optional): Export itinerary as PDF' })
-  exportPdf() {
-    throw new NotImplementedException(
-      'GET /api/itineraries/:id/pdf not implemented yet',
-    );
+  @ApiProduces('application/pdf')
+  async exportPdf(
+    @Param('id') id: string,
+    @CurrentUser() user?: AuthenticatedUser,
+  ): Promise<StreamableFile> {
+    const pdf = await this.itinerariesService.exportPdf(id, user);
+    return new StreamableFile(pdf, {
+      type: 'application/pdf',
+      disposition: `attachment; filename="itinerary-${id}.pdf"`,
+    });
   }
 }
