@@ -22,20 +22,19 @@ export class AuditLogsService {
     },
     session?: ClientSession,
   ) {
-    const [entry] = await this.auditLogModel.create(
-      [
-        {
-          actor: params.actor ? new Types.ObjectId(params.actor) : null,
-          actorRole: params.actorRole,
-          action: params.action,
-          targetType: params.targetType,
-          targetId: params.targetId,
-          details: params.details,
-          ipAddress: params.ipAddress,
-        },
-      ],
-      { session },
-    );
-    return entry;
+    const payload = {
+      actor: params.actor ? new Types.ObjectId(params.actor) : null,
+      actorRole: params.actorRole,
+      action: params.action,
+      targetType: params.targetType,
+      targetId: params.targetId,
+      details: params.details,
+      ipAddress: params.ipAddress,
+    };
+    if (session) {
+      const [entry] = await this.auditLogModel.create([payload], { session });
+      return entry;
+    }
+    return this.auditLogModel.create(payload);
   }
 }
