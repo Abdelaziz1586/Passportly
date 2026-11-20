@@ -58,7 +58,6 @@ function isMongoDuplicateKeyError(error: unknown): boolean {
   );
 }
 
-
 function safeDecodeTag(rawTag: string): string {
   try {
     return decodeURIComponent(rawTag);
@@ -971,5 +970,4 @@ export class BlogService {
       totalPages: total === 0 ? 0 : Math.ceil(total / limit),
     };
   }
-
 }
