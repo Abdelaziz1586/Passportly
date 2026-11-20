@@ -1,4 +1,9 @@
-import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
+import {
+  ApiProperty,
+  ApiPropertyOptional,
+  OmitType,
+  PartialType,
+} from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   ArrayUnique,
@@ -95,3 +100,8 @@ export class FlightCreate extends FlightFields {
   @ArrayUnique((cabin: CabinCreate) => cabin?.cabinClass)
   cabins?: CabinCreate[];
 }
+
+export class CabinUpdate extends PartialType(
+  OmitType(CabinCreate, ['cabinClass']),
+  { skipNullProperties: false },
+) {}

@@ -36,7 +36,12 @@ import { AirlineCreate } from './create-airline.dto';
 import { BaggagePolicy } from './airline-baggage-policy.dto';
 import { CancellationPolicy } from './airline-cancellation-policy.dto';
 import { AirlineUpdate } from './update-airline.dto';
-import { CabinCreate, FlightCreate, FlightUpdate } from './create-flight.dto';
+import {
+  CabinCreate,
+  CabinUpdate,
+  FlightCreate,
+  FlightUpdate,
+} from './create-flight.dto';
 import { FlightSearch } from './flight-search.dto';
 import {
   airportLocalTime,
@@ -750,5 +755,36 @@ export class FlightsService {
         );
       }),
     );
+  }
+  async updateCabin(
+    id: string,
+    cabinId: string,
+    user: AuthenticatedUser,
+    input: CabinUpdate,
+  ) {
+    checkId(cabinId);
+    return this.connection.transaction(async (session) => {
+      const current = await this.flight(id, user, session);
+      const flight = await this.lockScheduledFlight(current._id, session);
+      const cabin = await this.cabinInventoryModel
+        .findOne({ _id: cabinId, flight: flight._id })
+        .session(session);
+      if (!cabin) throw new NotFoundException('Cabin not found');
+      const delta = (input.totalSeats ?? cabin.totalSeats) - cabin.totalSeats;
+      const updated = await this.cabinInventoryModel.findOneAndUpdate(
+        {
+          _id: cabin._id,
+          availableSeats: { $gte: Math.max(0, -delta) },
+        },
+        { $set: input, $inc: { availableSeats: delta } },
+        { session, returnDocument: 'after' },
+      );
+      if (!updated)
+        throw new ConflictException('Capacity is below booked and held seats');
+      return this.cabinView(
+        updated,
+        await this.airline(flight.airline.toString(), undefined, session),
+      );
+    });
   }
 }

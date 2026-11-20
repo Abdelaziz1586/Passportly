@@ -15,7 +15,12 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { FlightsService } from './flights.service';
-import { CabinCreate, FlightCreate, FlightUpdate } from './create-flight.dto';
+import {
+  CabinCreate,
+  CabinUpdate,
+  FlightCreate,
+  FlightUpdate,
+} from './create-flight.dto';
 import { FlightCancel } from './cancel-flight.dto';
 import { FlightSearch } from './flight-search.dto';
 
@@ -93,10 +98,13 @@ export class FlightsController {
   @ApiOperation({
     summary: 'FLT-04, FLT-05: Update cabin inventory or pricing',
   })
-  updateCabin() {
-    throw new NotImplementedException(
-      'PATCH /api/flights/:id/cabins/:cabinId not implemented yet',
-    );
+  updateCabin(
+    @Param('id') id: string,
+    @Param('cabinId') cabinId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: CabinUpdate,
+  ) {
+    return this.flightsService.updateCabin(id, cabinId, user, input);
   }
 
   @ApiCookieAuth()
