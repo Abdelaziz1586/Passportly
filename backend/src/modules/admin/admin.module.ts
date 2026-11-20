@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
 import { BlogModule } from '../blog/blog.module';
 import { FlightsModule } from '../flights/flights.module';
 import { HotelsModule } from '../hotels/hotels.module';
@@ -10,6 +11,7 @@ import { AdminService } from './admin.service';
 
 @Module({
   imports: [
+    AuthModule,
     UsersModule,
     FlightsModule,
     HotelsModule,
