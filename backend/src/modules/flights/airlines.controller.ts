@@ -26,6 +26,7 @@ import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { FlightsService } from './flights.service';
 import { AirlineCreate } from './create-airline.dto';
+import { AirlineUpdate } from './update-airline.dto';
 
 @ApiTags('Airlines')
 @Controller('airlines')
@@ -72,11 +73,30 @@ export class AirlinesController {
 
   @ApiCookieAuth()
   @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
+  @ApiConsumes('application/json', 'multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        iataCode: { type: 'string', example: 'MS' },
+        logo: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @UseInterceptors(
+    FileInterceptor('logo', { limits: { fileSize: maxLogoBytes, files: 1 } }),
+  )
   @Patch(':id')
   @ApiOperation({ summary: 'FLT-01: Update airline profile' })
-  updateAirline() {
-    throw new NotImplementedException(
-      'PATCH /api/airlines/:id not implemented yet',
+  updateAirline(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: AirlineUpdate,
+    @UploadedFile() logo?: Express.Multer.File,
+  ) {
+    return this.uploads.withAirlineLogo(logo, (url) =>
+      this.flightsService.updateAirline(id, user, input, url),
     );
   }
 

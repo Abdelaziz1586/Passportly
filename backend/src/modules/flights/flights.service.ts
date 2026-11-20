@@ -20,6 +20,7 @@ import {
 } from './schemas/flight-booking.schema';
 import { Flight, FlightDocument } from './schemas/flight.schema';
 import { AirlineCreate } from './create-airline.dto';
+import { AirlineUpdate } from './update-airline.dto';
 
 function checkId(id: string) {
   if (!isObjectIdOrHexString(id)) throw new BadRequestException('Invalid ID');
@@ -114,5 +115,17 @@ export class FlightsService {
 
   async getAirline(id: string) {
     return this.airlineView(await this.airline(id));
+  }
+
+  async updateAirline(
+    id: string,
+    user: AuthenticatedUser,
+    input: AirlineUpdate,
+    logoUrl?: string,
+  ) {
+    const airline = await this.airline(id, user);
+    airline.set(input);
+    if (logoUrl !== undefined) airline.logoUrl = logoUrl;
+    return this.airlineView(await unique(() => airline.save()));
   }
 }
