@@ -430,3 +430,13 @@ export class UpdateTransportCostDto {
   @IsString()
   notes?: string;
 }
+
+export class BudgetSummaryQueryDto {
+  @ApiPropertyOptional({ example: 'EUR', minLength: 3, maxLength: 3 })
+  @IsOptional()
+  @Transform(normalizeCurrency)
+  @IsString()
+  @Length(3, 3)
+  @Matches(/^[A-Z]{3}$/)
+  currency?: string;
+}

@@ -21,12 +21,14 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { OptionalAuth } from '../../common/decorators/optional-auth.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { CreateItineraryDto } from './dto/create-itinerary.dto';
 import {
+  BudgetSummaryQueryDto,
   CreateActivityDto,
   CreateBudgetEntryDto,
   CreateItineraryDayDto,
@@ -323,16 +325,18 @@ export class ItinerariesController {
   }
 
   @ApiCookieAuth()
-  @Roles(Role.REGISTERED_USER)
+  @OptionalAuth()
   @Get('itineraries/:id/budget-summary')
   @ApiOperation({
     summary:
       'ITN-14, ITN-18: Calculate itinerary budget summary using FXRatesAPI',
   })
-  getBudgetSummary() {
-    throw new NotImplementedException(
-      'GET /api/itineraries/:id/budget-summary not implemented yet',
-    );
+  getBudgetSummary(
+    @Param('id') id: string,
+    @Query() query: BudgetSummaryQueryDto,
+    @CurrentUser() user?: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.getBudgetSummary(id, query, user);
   }
 
   @ApiCookieAuth()
