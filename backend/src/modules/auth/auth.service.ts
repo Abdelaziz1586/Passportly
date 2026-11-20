@@ -22,9 +22,14 @@ import { ReferenceDataService } from '../reference-data/reference-data.service';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { ChangePasswordResponseDto } from './dto/change-password-response.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { ForgotPasswordResponseDto } from './dto/forgot-password-response.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
 import { LoginDto } from './dto/login.dto';
+import { LogoutResponseDto } from './dto/logout-response.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ResetPasswordResponseDto } from './dto/reset-password-response.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SafeUserResponseDto } from './dto/safe-user-response.dto';
 import { VerifyEmailQueryDto } from './dto/verify-email-query.dto';
 import { VerifyEmailResponseDto } from './dto/verify-email-response.dto';
@@ -48,6 +53,12 @@ export interface LoginResult {
   accessToken: string;
   cookieName: string;
   cookieOptions: CookieOptions;
+}
+
+export interface LogoutResult {
+  response: LogoutResponseDto;
+  cookieName: string;
+  clearCookieOptions: CookieOptions;
 }
 
 function isMongoDuplicateKeyError(error: unknown): boolean {
@@ -94,6 +105,9 @@ export class AuthService {
   private static readonly BCRYPT_SALT_ROUNDS = 12;
   private static readonly MAX_FAILED_LOGIN_ATTEMPTS = 5;
   private static readonly LOCKOUT_DURATION_MS = 15 * 60 * 1000;
+  private static readonly PASSWORD_RESET_TTL_MINUTES = 15;
+  private static readonly PASSWORD_RESET_TTL_MS =
+    AuthService.PASSWORD_RESET_TTL_MINUTES * 60 * 1000;
 
   constructor(
     @InjectModel(User.name) readonly userModel: Model<UserDocument>,
@@ -320,21 +334,11 @@ export class AuthService {
       ...(context.ipAddress ? { ipAddress: context.ipAddress } : {}),
     });
 
-    const cookieName = this.configService.get<string>(
-      'jwt.cookieName',
-      'access_token',
-    );
-    const cookieSecure = this.configService.get<boolean>(
-      'jwt.cookieSecure',
-      false,
-    );
+    const cookieName = this.getCookieName();
     const maxAge = Math.max(0, expiresAt.getTime() - Date.now());
 
     const cookieOptions: CookieOptions = {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: cookieSecure,
-      path: '/',
+      ...this.getBaseCookieOptions(),
       maxAge,
       expires: expiresAt,
     };
@@ -423,6 +427,149 @@ export class AuthService {
       message: 'Password changed successfully',
       mustChangePassword: false,
       revokedOtherSessionsCount,
+    };
+  }
+
+  /**
+   * Validates a single-use passwordResetToken and its expiry, updates the user's
+   * passwordHash, clears lockout/mustChangePassword flags, and revokes all active sessions.
+   */
+  async resetPassword(
+    dto: ResetPasswordDto,
+  ): Promise<ResetPasswordResponseDto> {
+    const resetToken = (dto.passwordResetToken ?? dto.token)?.trim();
+    if (!resetToken) {
+      throw new BadRequestException('passwordResetToken is required');
+    }
+
+    const now = new Date();
+    const user = await this.userModel
+      .findOne({ passwordResetToken: resetToken })
+      .select('+passwordResetExpiresAt status');
+
+    if (
+      !user ||
+      !user.passwordResetExpiresAt ||
+      user.passwordResetExpiresAt <= now
+    ) {
+      throw new BadRequestException('Invalid or expired password reset token');
+    }
+
+    if (user.status !== AccountStatus.ACTIVE) {
+      throw new BadRequestException('Account is not active');
+    }
+
+    const passwordHash = await bcrypt.hash(
+      dto.newPassword,
+      AuthService.BCRYPT_SALT_ROUNDS,
+    );
+
+    const updated = await this.userModel.findOneAndUpdate(
+      {
+        _id: user._id,
+        passwordResetToken: resetToken,
+        passwordResetExpiresAt: { $gt: now },
+      },
+      {
+        $set: {
+          passwordHash,
+          mustChangePassword: false,
+          failedLoginAttempts: 0,
+          lockoutUntil: null,
+        },
+        $unset: {
+          passwordResetToken: 1,
+          passwordResetExpiresAt: 1,
+        },
+      },
+      { returnDocument: 'after' },
+    );
+
+    if (!updated) {
+      throw new BadRequestException('Invalid or expired password reset token');
+    }
+
+    await this.sessionModel.updateMany(
+      { user: user._id, revokedAt: null },
+      { $set: { revokedAt: now } },
+    );
+
+    return {
+      message:
+        'Password reset successfully. Please log in with your new password.',
+    };
+  }
+
+  /**
+   * Generates a short-lived passwordResetToken and passwordResetExpiresAt for
+   * active accounts without leaking whether an account exists.
+   */
+  async forgotPassword(
+    dto: ForgotPasswordDto,
+  ): Promise<ForgotPasswordResponseDto> {
+    const email = dto.email.trim().toLowerCase();
+    const user = await this.userModel
+      .findOne({ email })
+      .select('email firstName status');
+
+    if (user && user.status === AccountStatus.ACTIVE) {
+      const passwordResetToken = randomBytes(32).toString('hex');
+      const passwordResetExpiresAt = new Date(
+        Date.now() + AuthService.PASSWORD_RESET_TTL_MS,
+      );
+
+      await this.userModel.findByIdAndUpdate(user._id, {
+        $set: {
+          passwordResetToken,
+          passwordResetExpiresAt,
+        },
+      });
+
+      await this.mailService.sendPasswordResetEmail({
+        to: user.email,
+        firstName: user.firstName,
+        token: passwordResetToken,
+        expiresInMinutes: AuthService.PASSWORD_RESET_TTL_MINUTES,
+      });
+    }
+
+    return {
+      message:
+        'If an active account exists with that email, a password reset link has been sent.',
+    };
+  }
+
+  /**
+   * Revokes the caller's active UserSession by jti and returns cookie-clearing
+   * options matching the auth cookie configuration.
+   */
+  async logout(user: AuthenticatedUser): Promise<LogoutResult> {
+    await this.sessionModel.updateOne(
+      { jti: user.jti, user: user.userId, revokedAt: null },
+      { $set: { revokedAt: new Date() } },
+    );
+
+    return {
+      response: { message: 'Logged out successfully' },
+      cookieName: this.getCookieName(),
+      clearCookieOptions: this.getBaseCookieOptions(),
+    };
+  }
+
+  private getCookieName(): string {
+    return this.configService.get<string>('jwt.cookieName', 'access_token');
+  }
+
+  private getBaseCookieOptions(): CookieOptions {
+    const cookieSecure = this.configService.get<boolean>(
+      'jwt.cookieSecure',
+      false,
+    );
+    return {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: cookieSecure,
+      path: '/',
     };
   }
 
