@@ -87,6 +87,91 @@ Implemented LoginDto, LoginResponseDto, AuthService.login (email normalization, 
 Date: 2026-11-19
 Student: Abdelaziz Mohamed
 Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-06 (POST /api/auth/logout)
+
+Prompt:
+Requirement: ACC-06
+Endpoint: POST /api/auth/logout
+Controller: backend/src/modules/auth/auth.controller.ts
+Allowed Roles: Authenticated (All Roles)
+Details: Mark current UserSession (by jti) as revoked (revokedAt = now) and clear the httpOnly auth cookie.
+
+How the output was used:
+Implemented LogoutResponseDto, AuthService.logout (revoking the active UserSession by jti and userId via revokedAt, and sharing cookie options with login via getBaseCookieOptions/getCookieName), and AuthController.logout (@HttpCode(HttpStatus.OK)) clearing the httpOnly auth cookie. Added unit tests in auth.service.spec.ts and auth.controller.spec.ts and verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-07 (Optional) (POST /api/auth/forgot-password, SCRUM-11)
+
+Prompt:
+Requirement: ACC-07 (Optional)
+Endpoint: POST /api/auth/forgot-password
+Controller: backend/src/modules/auth/auth.controller.ts
+Allowed Roles: Public
+Details: Generate short-lived passwordResetToken and passwordResetExpiresAt for active accounts without leaking account existence.
+
+How the output was used:
+Implemented ForgotPasswordDto, ForgotPasswordResponseDto, MailService.sendPasswordResetEmail, AuthService.forgotPassword (15-minute passwordResetToken & passwordResetExpiresAt generation for ACTIVE accounts only, generic non-leaking response for all requests), AuthController.forgotPassword (@Public(), 200 OK, Swagger metadata), and unit + HTTP integration tests in mail.service.spec.ts, auth.service.spec.ts, and auth.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-07 (Optional) (POST /api/auth/reset-password, SCRUM-12)
+
+Prompt:
+Requirement: ACC-07 (Optional)
+Endpoint: POST /api/auth/reset-password
+Controller: backend/src/modules/auth/auth.controller.ts
+Allowed Roles: Public
+Details: Validate passwordResetToken and expiry, enforce password rules, update passwordHash, and revoke existing sessions.
+
+How the output was used:
+Implemented ResetPasswordDto, ResetPasswordResponseDto, AuthService.resetPassword (validates passwordResetToken/token alias and expiry on ACTIVE accounts, enforces password complexity, hashes with bcryptjs, clears token/expiry/lockout/mustChangePassword atomically, and revokes active UserSessions), AuthController.resetPassword (@Public(), 200 OK, Swagger docs), and unit + HTTP integration tests in auth.service.spec.ts and auth.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-08 (PATCH /api/auth/change-password, SCRUM-13)
+
+Prompt:
+Requirement: ACC-08
+Endpoint: PATCH /api/auth/change-password
+Controller: backend/src/modules/auth/auth.controller.ts
+Allowed Roles: Authenticated (All Roles)
+Details: Verify current password, enforce password strength rules on new password, update passwordHash, clear mustChangePassword flag, and optionally revoke other sessions.
+
+How the output was used:
+Implemented ChangePasswordDto, ChangePasswordResponseDto, AuthService.changePassword (verifies currentPassword, enforces newPassword complexity and difference from current password, hashes with bcryptjs, clears mustChangePassword, and revokes other UserSessions unless revokeOtherSessions is false), AuthController.changePassword Swagger/validation wiring, and unit + HTTP integration tests in auth.service.spec.ts and auth.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-04, ACC-19 (GET /api/auth/me, SCRUM-14)
+
+Prompt:
+Requirement: ACC-04, ACC-19
+Endpoint: GET /api/auth/me
+Controller: backend/src/modules/auth/auth.controller.ts
+Allowed Roles: Authenticated (All Roles)
+Details: Return authenticated user details, role, status, and assignedProviderId/assignedProviderType for moderators.
+
+How the output was used:
+Implemented AuthMeResponseDto, AuthService.getMe (fetches User document, verifies ACTIVE status, maps safe profile fields + mustChangePassword + lastLoginAt without passwordHash/tokens, and includes assignedProviderId/assignedProviderType for moderators), AuthController.me Swagger/response wiring, and unit + HTTP integration tests in auth.service.spec.ts and auth.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
 Related Requirement: ACC-11 (GET /api/users/me, SCRUM-15)
 
 Prompt:
