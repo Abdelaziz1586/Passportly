@@ -30,3 +30,11 @@ export function toMinorUnits(amount: number, currency: string): number {
   if (THREE_DECIMAL.has(code)) return Math.round(amount * 100) * 10;
   return Math.round(amount * 100);
 }
+
+/** The reverse of toMinorUnits: Stripe's smallest unit back to a major-unit amount. */
+export function fromMinorUnits(minor: number, currency: string): number {
+  const code = currency.toUpperCase();
+  if (ZERO_DECIMAL.has(code)) return minor;
+  if (THREE_DECIMAL.has(code)) return minor / 1000;
+  return minor / 100;
+}

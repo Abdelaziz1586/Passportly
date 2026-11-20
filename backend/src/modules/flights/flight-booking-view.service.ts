@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { BookingType, Role } from '../../common/enums';
+import { BookingType, RefundStatus, Role } from '../../common/enums';
 import { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { Payment } from '../payments/schemas/payment.schema';
 import { Refund } from '../payments/schemas/refund.schema';
@@ -165,10 +165,28 @@ export class FlightBookingViewService {
       .sort({ createdAt: -1 })
       .lean()) as unknown as Lean<Refund> | null;
     if (!refund) return null;
+    // FLT-27: a refund spread over several payments is one refund to the traveller: add the shares.
+    const base = refund.key?.split(':')[0];
+    const shares =
+      base && refund.key?.includes(':')
+        ? ((await this.refundModel
+            .find({
+              bookingType: BookingType.FLIGHT,
+              bookingId,
+              key: { $regex: `^${escapeRegex(base)}:` },
+            })
+            .lean()) as unknown as Array<Lean<Refund>>)
+        : [refund];
+    const status = shares.some((r) => r.status === RefundStatus.FAILED)
+      ? RefundStatus.FAILED
+      : shares.some((r) => r.status === RefundStatus.PENDING)
+        ? RefundStatus.PENDING
+        : refund.status;
     return {
       id: refund._id.toString(),
-      status: refund.status,
-      amount: refund.amount,
+      status,
+      amount:
+        Math.round(shares.reduce((sum, r) => sum + r.amount * 100, 0)) / 100,
       currency: refund.currency,
       reason: refund.reason ?? null,
       policyCalculationNotes: refund.policyCalculationNotes ?? null,
@@ -193,4 +211,8 @@ export class FlightBookingViewService {
       paidAt: payment.paidAt ?? null,
     };
   }
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

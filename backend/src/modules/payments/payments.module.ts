@@ -17,6 +17,7 @@ import {
   RoomAvailabilitySchema,
 } from '../hotels/schemas/room-availability.schema';
 import { BookingPoliciesService } from './booking-policies.service';
+import { PaymentPurposeRegistry } from './payment-purpose-handlers';
 import { PaymentExpiryService } from './payment-expiry.service';
 import { PaymentWebhookService } from './payment-webhook.service';
 import { PaymentsController } from './payments.controller';
@@ -43,11 +44,13 @@ import { Refund, RefundSchema } from './schemas/refund.schema';
     PaymentExpiryService,
     BookingPoliciesService,
     RefundsService,
+    PaymentPurposeRegistry,
   ],
   exports: [
     PaymentsService,
     BookingPoliciesService,
     RefundsService,
+    PaymentPurposeRegistry,
     MongooseModule,
   ],
 })

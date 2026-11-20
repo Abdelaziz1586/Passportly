@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -17,7 +18,7 @@ import {
   Role,
 } from '../../common/enums';
 import { NotificationsService } from '../notifications/notifications.service';
-import { toMinorUnits } from './payment-amounts';
+import { fromMinorUnits, toMinorUnits } from './payment-amounts';
 import { PaymentsService } from './payments.service';
 import { Payment, PaymentDocument } from './schemas/payment.schema';
 import { Refund, RefundDocument } from './schemas/refund.schema';
@@ -33,6 +34,28 @@ export interface RecordRefundInput {
   currency: string;
   reason: string;
   notes: string;
+  /**
+   * FLT-27: names the event behind the refund. With a key a payment can have
+   * several refunds (total capped at what was paid) and the same key returns the
+   * same refund. Without a key a payment has at most one refund, as before.
+   */
+  key?: string;
+}
+
+/** A refund spread over the payments of one booking (the newest payment is refunded first). */
+export interface RecordBookingRefundInput {
+  /** Newest payment first. */
+  payments: Types.ObjectId[];
+  user: Types.ObjectId;
+  bookingType: BookingType;
+  bookingId: Types.ObjectId;
+  /** Major units, > 0. */
+  amount: number;
+  currency: string;
+  reason: string;
+  notes: string;
+  /** Idempotency key of the whole refund; each payment's share is `<key>:<paymentId>`. */
+  key: string;
 }
 
 export interface RefundResponse {
@@ -85,7 +108,7 @@ const GENERIC_FAILURE = 'The payment provider could not complete the refund';
  * commit the record is not visible yet and the job would pick it up later).
  */
 @Injectable()
-export class RefundsService {
+export class RefundsService implements OnModuleInit {
   private readonly logger = new Logger(RefundsService.name);
   private dispatching = false;
 
@@ -97,6 +120,20 @@ export class RefundsService {
     private readonly paymentsService: PaymentsService,
     private readonly notificationsService: NotificationsService,
   ) {}
+
+  /**
+   * FLT-27: the old unique index `payment_one_refund` (one refund per payment) would reject a
+   * payment's second refund. Mongoose builds the new `payment_refund_key` index but never removes
+   * an old one, so drop it once if a database still has it (nothing happens when it is gone).
+   */
+  async onModuleInit(): Promise<void> {
+    try {
+      await this.refundModel.collection.dropIndex('payment_one_refund');
+      this.logger.log('Dropped the old unique index payment_one_refund');
+    } catch {
+      // Not there (or the collection does not exist yet): nothing to do.
+    }
+  }
 
   /**
    * Records a PENDING refund. Pass the session of the cancellation transaction so
@@ -111,8 +148,10 @@ export class RefundsService {
     if (!(input.amount > 0)) {
       throw new BadRequestException('A refund needs a positive amount');
     }
+    if (input.key !== undefined) return this.recordKeyedRefund(input, session);
+    // Only refunds without a key count here: keyed refunds (FLT-27) are other events.
     const existing = await this.refundModel
-      .findOne({ payment: input.payment })
+      .findOne({ payment: input.payment, key: null })
       .session(session ?? null);
     if (existing) return existing;
 
@@ -156,11 +195,180 @@ export class RefundsService {
       if (!session && this.isDuplicateKey(error)) {
         const winner = await this.refundModel.findOne({
           payment: input.payment,
+          key: null,
         });
         if (winner) return winner;
       }
       throw error;
     }
+  }
+
+  /**
+   * FLT-27: records a refund that is one of several for the payment. The same
+   * key returns the refund already recorded; otherwise the total of this
+   * payment's refunds (a FAILED one gives its money back) must stay within the
+   * payment. Meant to run inside a transaction: the write to the payment makes
+   * two concurrent refunds of one payment conflict, so the second one is
+   * retried and sees the first one's amount.
+   */
+  private async recordKeyedRefund(
+    input: RecordRefundInput,
+    session?: ClientSession,
+  ): Promise<RefundDocument> {
+    // The cap is only safe inside a transaction (the write to the payment below makes
+    // two concurrent refunds of one payment conflict), so a session is required.
+    if (!session) {
+      throw new BadRequestException(
+        'A keyed refund must be recorded inside a transaction',
+      );
+    }
+    const existing = await this.refundModel
+      .findOne({ payment: input.payment, key: input.key })
+      .session(session);
+    if (existing) return existing;
+
+    const payment = await this.paymentModel
+      .findById(input.payment)
+      .session(session ?? null)
+      .lean();
+    if (!payment || !REFUNDABLE_PAYMENT_STATUSES.includes(payment.status)) {
+      throw new ConflictException(
+        'This payment has no money that can be refunded',
+      );
+    }
+    if (input.currency.toUpperCase() !== payment.currency.toUpperCase()) {
+      throw new BadRequestException(
+        'A refund cannot exceed the payment or use another currency',
+      );
+    }
+    const refundable = await this.refundableCents(
+      input.payment,
+      payment.amount,
+      payment.currency,
+      session,
+    );
+    if (toMinorUnits(input.amount, input.currency) > refundable) {
+      throw new ConflictException(
+        'This refund is more than what is still refundable on the payment',
+      );
+    }
+    await this.paymentModel.updateOne(
+      { _id: input.payment },
+      { $inc: { 'metadata.refundWrites': 1 } },
+      { session },
+    );
+
+    const [created] = await this.refundModel.create(
+      [
+        {
+          payment: input.payment,
+          user: input.user,
+          bookingType: input.bookingType,
+          bookingId: input.bookingId,
+          amount: input.amount,
+          currency: input.currency.toUpperCase(),
+          status: RefundStatus.PENDING,
+          reason: input.reason,
+          policyCalculationNotes: input.notes,
+          key: input.key,
+        },
+      ],
+      { session },
+    );
+    return created;
+  }
+
+  /** What can still be refunded on a payment, in minor units (refunds that did not fail for good count as spent). */
+  async refundableCents(
+    paymentId: Types.ObjectId,
+    paymentAmount: number,
+    currency: string,
+    session?: ClientSession,
+  ): Promise<number> {
+    const refunds = (await this.refundModel
+      .find({
+        payment: paymentId,
+        // A refund Stripe refused for good gives its money back. One given up before Stripe's
+        // answer was known (no Stripe id) may still turn out to have gone through, so it still counts.
+        $or: [
+          { status: { $ne: RefundStatus.FAILED } },
+          { status: RefundStatus.FAILED, stripeRefundId: null },
+        ],
+      })
+      .session(session ?? null)
+      .lean()) as unknown as Array<{ amount: number }>;
+    const spent = refunds.reduce(
+      (sum, refund) => sum + toMinorUnits(refund.amount, currency),
+      0,
+    );
+    return Math.max(0, toMinorUnits(paymentAmount, currency) - spent);
+  }
+
+  /**
+   * FLT-27: refunds `amount` of a booking that was paid with several payments
+   * (the original and one per paid change): newest payment first, each payment
+   * up to what is still refundable on it, one keyed refund per payment used.
+   * Idempotent per key. Throws 409 when the payments cannot cover the amount.
+   */
+  async recordBookingRefund(
+    input: RecordBookingRefundInput,
+    session?: ClientSession,
+  ): Promise<RefundDocument[]> {
+    let leftCents = toMinorUnits(input.amount, input.currency);
+    if (!(leftCents > 0)) {
+      throw new BadRequestException('A refund needs a positive amount');
+    }
+    const refunds: RefundDocument[] = [];
+    for (const paymentId of input.payments) {
+      if (leftCents <= 0) break;
+      const key = `${input.key}:${paymentId.toString()}`;
+      const done = await this.refundModel
+        .findOne({ payment: paymentId, key })
+        .session(session ?? null);
+      if (done) {
+        refunds.push(done);
+        leftCents -= toMinorUnits(done.amount, input.currency);
+        continue;
+      }
+      const payment = await this.paymentModel
+        .findById(paymentId)
+        .session(session ?? null)
+        .lean();
+      if (!payment || !REFUNDABLE_PAYMENT_STATUSES.includes(payment.status)) {
+        continue;
+      }
+      const room = await this.refundableCents(
+        paymentId,
+        payment.amount,
+        payment.currency,
+        session,
+      );
+      const share = Math.min(room, leftCents);
+      if (share <= 0) continue;
+      refunds.push(
+        await this.recordKeyedRefund(
+          {
+            payment: paymentId,
+            user: input.user,
+            bookingType: input.bookingType,
+            bookingId: input.bookingId,
+            amount: fromMinorUnits(share, input.currency),
+            currency: input.currency,
+            reason: input.reason,
+            notes: input.notes,
+            key,
+          },
+          session,
+        ),
+      );
+      leftCents -= share;
+    }
+    if (leftCents > 0) {
+      throw new ConflictException(
+        'The payments of this booking cannot cover this refund',
+      );
+    }
+    return refunds;
   }
 
   /**

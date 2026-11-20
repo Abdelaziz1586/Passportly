@@ -21,6 +21,8 @@ import {
   RefundTier,
 } from '../payments/refund-calculation';
 import { RefundsService } from '../payments/refunds.service';
+import { paymentsNewestFirst } from './flight-change.service';
+import { fromMinorUnits, toMinorUnits } from '../payments/payment-amounts';
 import { CancelFlightBookingDto } from './dto/cancel-flight-booking.dto';
 import { CabinInventory } from './schemas/cabin-inventory.schema';
 import { FlightBooking } from './schemas/flight-booking.schema';
@@ -136,12 +138,46 @@ export class FlightCancellationService {
             .session(session)
             .lean()
         : null;
-      const refundable =
-        quote.amount > 0 &&
-        !!payment &&
-        payment.status === PaymentStatus.SUCCEEDED;
+      // FLT-27: a booking whose flights were changed was paid with more than one payment and may
+      // already have been refunded a fare difference: refund what is still refundable, newest first.
+      const changed = (booking.changeCount ?? 0) > 0;
+      const changedPayments = changed ? paymentsNewestFirst(booking) : [];
+      let changedRoomCents = 0;
+      for (const id of changedPayments) {
+        const paid = await this.paymentModel
+          .findById(id)
+          .session(session)
+          .lean();
+        if (
+          paid &&
+          (paid.status === PaymentStatus.SUCCEEDED ||
+            paid.status === PaymentStatus.PARTIALLY_REFUNDED)
+        ) {
+          changedRoomCents += await this.refundsService.refundableCents(
+            id,
+            paid.amount,
+            paid.currency,
+            session,
+          );
+        }
+      }
+      const refundable = changed
+        ? quote.amount > 0 && changedRoomCents > 0
+        : quote.amount > 0 &&
+          !!payment &&
+          payment.status === PaymentStatus.SUCCEEDED;
       // Only an amount that really gets refunded is stored on the booking and announced.
-      const refundAmount = refundable ? quote.amount : 0;
+      const refundAmount = !refundable
+        ? 0
+        : changed
+          ? fromMinorUnits(
+              Math.min(
+                toMinorUnits(quote.amount, booking.currency),
+                changedRoomCents,
+              ),
+              booking.currency,
+            )
+          : quote.amount;
 
       // One conditional update: only a CONFIRMED booking that has not departed can be cancelled.
       const cancelled = await this.bookingModel.findOneAndUpdate(
@@ -150,6 +186,12 @@ export class FlightCancellationService {
           user: owner,
           status: BookingStatus.CONFIRMED,
           'legs.0.departureTime': { $gt: now },
+          // FLT-27: only the state that was read (a flight change in between would make the seats,
+          // total and payments we computed from stale).
+          changeCount:
+            (booking.changeCount ?? 0) === 0
+              ? { $in: [0, null] }
+              : booking.changeCount,
         },
         {
           $set: {
@@ -179,6 +221,23 @@ export class FlightCancellationService {
           );
         }
       }
+      if (changed && refundable) {
+        const refunds = await this.refundsService.recordBookingRefund(
+          {
+            payments: changedPayments,
+            user: owner,
+            bookingType: BookingType.FLIGHT,
+            bookingId: booking._id,
+            amount: refundAmount,
+            currency: booking.currency,
+            reason: 'Cancelled by the traveller',
+            notes: quote.notes,
+            key: `cancel-${booking._id.toString()}`,
+          },
+          session,
+        );
+        return { refund: refunds[0] ?? null, refunds, refundAmount };
+      }
       const refund =
         refundable && payment
           ? await this.refundsService.recordRefund(
@@ -195,13 +254,24 @@ export class FlightCancellationService {
               session,
             )
           : null;
-      return { refund, refundAmount };
+      return { refund, refunds: refund ? [refund] : [], refundAmount };
     });
 
     // After the commit: send the money to Stripe. A failure here is not the traveller's problem:
     // the refund stays PENDING and the refund job sends it again.
     let current = outcome.refund;
     if (outcome.refund) {
+      // Several refunds only after a flight change (one per payment used); the first is shown.
+      for (const refund of outcome.refunds.slice(1)) {
+        try {
+          await this.refundsService.dispatchRefund(refund._id);
+        } catch (error) {
+          this.logger.error(
+            `Could not send refund ${refund._id.toString()} to Stripe now`,
+            error instanceof Error ? error.stack : String(error),
+          );
+        }
+      }
       try {
         await this.refundsService.dispatchRefund(outcome.refund._id);
         current =
