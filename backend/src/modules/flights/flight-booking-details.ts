@@ -53,6 +53,8 @@ export type LegPolicySnapshot = {
   };
   cancellationPolicy: {
     allowCancellation: boolean;
+    /** FLT-09 refund tiers copied at booking time; refunds use these, never the live airline policy. */
+    tiers: { daysBeforeDeparture: number; refundPercentage: number }[];
     freeCancellationHoursBeforeDeparture: number;
     cancellationFeePercentage: number;
     fixedCancellationFee: number;
@@ -358,6 +360,13 @@ export function buildPolicySnapshot(
         },
         cancellationPolicy: {
           allowCancellation: cancellation.allowCancellation,
+          // Highest threshold first: the refund uses the first tier whose threshold the days left reach.
+          tiers: (cancellation.tiers ?? [])
+            .map((tier) => ({
+              daysBeforeDeparture: tier.daysBeforeDeparture,
+              refundPercentage: tier.refundPercentage,
+            }))
+            .sort((a, b) => b.daysBeforeDeparture - a.daysBeforeDeparture),
           freeCancellationHoursBeforeDeparture:
             cancellation.freeCancellationHoursBeforeDeparture,
           cancellationFeePercentage: cancellation.cancellationFeePercentage,
