@@ -8,6 +8,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -22,6 +23,7 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import type { Request } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -31,6 +33,7 @@ import { BlogService } from './blog.service';
 import {
   BlogPostDetailResponseDto,
   BlogPostItemDto,
+  DeleteBlogPostResponseDto,
   PaginatedBlogPostsResponseDto,
 } from './dto/blog-post-response.dto';
 import { CreatePostDto } from './dto/create-post.dto';
@@ -149,10 +152,24 @@ export class BlogController {
   @Roles(Role.REGISTERED_USER, Role.ADMIN)
   @Delete('posts/:id')
   @ApiOperation({ summary: 'BLG-04: Delete blog post' })
-  deletePost() {
-    throw new NotImplementedException(
-      'DELETE /api/posts/:id not implemented yet',
-    );
+  @ApiParam({ name: 'id', description: 'Blog post MongoDB ObjectId' })
+  @ApiOkResponse({
+    description: 'Blog post and related comments/likes deleted successfully',
+    type: DeleteBlogPostResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid blog post ID' })
+  @ApiUnauthorizedResponse({ description: 'Authentication required' })
+  @ApiForbiddenResponse({
+    description:
+      'Only the post author or an administrator can delete this post',
+  })
+  @ApiNotFoundResponse({ description: 'Blog post not found' })
+  deletePost(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
+  ): Promise<DeleteBlogPostResponseDto> {
+    return this.blogService.deletePost(id, user, req.ip);
   }
 
   @ApiCookieAuth()

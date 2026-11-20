@@ -1517,4 +1517,12 @@ Implement SCRUM-121 [BLG-04, BLG-08] PATCH /api/posts/:id - Update own blog post
 
 How the output was used:
 Added UpdatePostDto, BlogService.updatePost with author ownership verification, diff-based Tag usageCount synchronization, and first-publish publishedAt handling, BlogController.updatePost with Swagger/role decorators, and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
+
+Related Requirement: BLG-04 (SCRUM-122, DELETE /api/posts/:id)
+
+Prompt:
+Implement SCRUM-122 [BLG-04] DELETE /api/posts/:id - Delete blog post verifying author ownership or ADMIN, deleting related Comments and Likes, and decrementing Tag usageCounts.
+
+How the output was used:
+Added DeleteBlogPostResponseDto, BlogService.deletePost with author/ADMIN authorization, atomic post deletion, cascading Comment/Like deletion, guarded Tag usageCount decrement, image file cleanup, and admin audit/notification hooks, plus BlogController.deletePost and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
 ================================================
