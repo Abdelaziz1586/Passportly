@@ -1,29 +1,67 @@
+import { HotelAdminAuditInterceptor } from './hotel-admin-audit.interceptor';
 import {
+  Body,
   Controller,
   Delete,
   Get,
-  NotImplementedException,
+  Param,
   Patch,
   Post,
   Put,
+  Query,
+  UploadedFiles,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBody,
+  ApiConsumes,
+  ApiCookieAuth,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
+import { FilesInterceptor } from '@nestjs/platform-express';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import { HotelsService } from './hotels.service';
+import { HotelInventoryService } from './hotel-inventory.service';
+import { HotelReviewsService } from './hotel-reviews.service';
+import {
+  AvailabilityFieldsDto,
+  CreateHotelDto,
+  CreateRoomDto,
+  DateRangeDto,
+  HotelDetailsQueryDto,
+  HotelPaginationDto,
+  HotelPoliciesDto,
+  HotelReservationsQueryDto,
+  SearchHotelsDto,
+  StayQueryDto,
+  UpdateHotelDto,
+  UpdateRoomDto,
+} from './dto/hotel.dto';
 
 @ApiTags('Hotels & Rooms')
+@UseInterceptors(HotelAdminAuditInterceptor)
 @Controller('hotels')
 export class HotelsController {
-  constructor(private readonly hotelsService: HotelsService) {}
+  constructor(
+    private readonly hotelsService: HotelsService,
+    private readonly inventory: HotelInventoryService,
+    private readonly reviews: HotelReviewsService,
+  ) {}
 
   @ApiCookieAuth()
-  @Roles(Role.ADMIN, Role.HOTEL_MODERATOR)
+  @Roles(Role.ADMIN)
   @Post()
   @ApiOperation({ summary: 'HTL-01: Create hotel profile' })
-  createHotel() {
-    throw new NotImplementedException('POST /api/hotels not implemented yet');
+  createHotel(
+    @Body() dto: CreateHotelDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.hotelsService.createHotel(dto, user);
   }
 
   @Public()
@@ -32,68 +70,71 @@ export class HotelsController {
     summary:
       'HTL-11, HTL-12: Search hotels by destination, dates, and guest count',
   })
-  searchHotels() {
-    throw new NotImplementedException(
-      'GET /api/hotels/search not implemented yet',
-    );
+  searchHotels(@Query() query: SearchHotelsDto) {
+    return this.hotelsService.searchHotels(query);
   }
 
   @Public()
   @Get(':id')
   @ApiOperation({ summary: 'HTL-02: Get hotel details' })
-  getHotel() {
-    throw new NotImplementedException(
-      'GET /api/hotels/:id not implemented yet',
-    );
+  getHotel(@Param('id') id: string, @Query() query: HotelDetailsQueryDto) {
+    return this.hotelsService.getHotel(id, query);
   }
 
   @ApiCookieAuth()
   @Roles(Role.ADMIN, Role.HOTEL_MODERATOR)
   @Patch(':id')
   @ApiOperation({ summary: 'HTL-01: Update hotel profile' })
-  updateHotel() {
-    throw new NotImplementedException(
-      'PATCH /api/hotels/:id not implemented yet',
-    );
+  updateHotel(
+    @Param('id') id: string,
+    @Body() dto: UpdateHotelDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.hotelsService.updateHotel(id, dto, user);
   }
 
   @ApiCookieAuth()
   @Roles(Role.ADMIN, Role.HOTEL_MODERATOR)
   @Post(':id/rooms')
   @ApiOperation({ summary: 'HTL-03: Create room type/unit in hotel' })
-  createRoom() {
-    throw new NotImplementedException(
-      'POST /api/hotels/:id/rooms not implemented yet',
-    );
+  createRoom(
+    @Param('id') id: string,
+    @Body() dto: CreateRoomDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.inventory.createRoom(id, dto, user);
   }
 
   @ApiCookieAuth()
   @Roles(Role.ADMIN, Role.HOTEL_MODERATOR)
   @Patch(':id/rooms/:roomId')
   @ApiOperation({ summary: 'HTL-05: Update room details or pricing' })
-  updateRoom() {
-    throw new NotImplementedException(
-      'PATCH /api/hotels/:id/rooms/:roomId not implemented yet',
-    );
+  updateRoom(
+    @Param('id') id: string,
+    @Param('roomId') roomId: string,
+    @Body() dto: UpdateRoomDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.inventory.updateRoom(id, roomId, dto, user);
   }
 
   @ApiCookieAuth()
   @Roles(Role.ADMIN, Role.HOTEL_MODERATOR)
   @Delete(':id/rooms/:roomId')
   @ApiOperation({ summary: 'HTL-06: Delete or deactivate room' })
-  deleteRoom() {
-    throw new NotImplementedException(
-      'DELETE /api/hotels/:id/rooms/:roomId not implemented yet',
-    );
+  deleteRoom(
+    @Param('id') id: string,
+    @Param('roomId') roomId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.inventory.deleteRoom(id, roomId, user);
   }
 
   @Public()
   @Get(':id/rooms/available')
   @ApiOperation({ summary: 'HTL-15: List available rooms for stay dates' })
-  getAvailableRooms() {
-    throw new NotImplementedException(
-      'GET /api/hotels/:id/rooms/available not implemented yet',
-    );
+  getAvailableRooms(@Param('id') id: string, @Query() query: StayQueryDto) {
+    return this.inventory.getAvailableRooms(id, query);
   }
 
   @ApiCookieAuth()
@@ -102,10 +143,13 @@ export class HotelsController {
   @ApiOperation({
     summary: 'HTL-04: Set room availability and pricing for date range',
   })
-  setRoomAvailability() {
-    throw new NotImplementedException(
-      'POST /api/hotels/:id/rooms/:roomId/availability not implemented yet',
-    );
+  setRoomAvailability(
+    @Param('id') id: string,
+    @Param('roomId') roomId: string,
+    @Body() dto: AvailabilityFieldsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.inventory.setAvailability(id, roomId, dto, user, true);
   }
 
   @ApiCookieAuth()
@@ -114,19 +158,69 @@ export class HotelsController {
   @ApiOperation({
     summary: 'HTL-05, HTL-06: Block/unblock or update room availability',
   })
-  updateRoomAvailability() {
-    throw new NotImplementedException(
-      'PATCH /api/hotels/:id/rooms/:roomId/availability not implemented yet',
-    );
+  updateRoomAvailability(
+    @Param('id') id: string,
+    @Param('roomId') roomId: string,
+    @Body() dto: AvailabilityFieldsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.inventory.setAvailability(id, roomId, dto, user, false);
   }
 
   @Public()
   @Get(':id/availability')
   @ApiOperation({ summary: 'HTL-08: Get hotel availability calendar/summary' })
-  getHotelAvailability() {
-    throw new NotImplementedException(
-      'GET /api/hotels/:id/availability not implemented yet',
-    );
+  getHotelAvailability(@Param('id') id: string, @Query() query: DateRangeDto) {
+    return this.inventory.calendar(id, query);
+  }
+
+  @ApiCookieAuth()
+  @Roles(Role.ADMIN, Role.HOTEL_MODERATOR)
+  @Get(':id/availability/management')
+  @ApiOperation({
+    summary:
+      'HTL-08: Assigned moderator calendar with private reservation references',
+  })
+  getManagementCalendar(
+    @Param('id') id: string,
+    @Query() query: DateRangeDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.inventory.calendar(id, query, user);
+  }
+
+  @ApiCookieAuth()
+  @Roles(Role.ADMIN, Role.HOTEL_MODERATOR)
+  @Post(':id/images')
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['images'],
+      properties: {
+        images: {
+          type: 'array',
+          maxItems: 5,
+          items: { type: 'string', format: 'binary' },
+        },
+      },
+    },
+  })
+  @UseInterceptors(
+    FilesInterceptor('images', 5, {
+      limits: { fileSize: 5 * 1024 * 1024, files: 5 },
+    }),
+  )
+  @ApiOperation({
+    summary:
+      'HTL-01, GEN-08: Upload up to five server-stored JPG/PNG hotel photos',
+  })
+  uploadImages(
+    @Param('id') id: string,
+    @UploadedFiles() files: Express.Multer.File[],
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.hotelsService.uploadImages(id, files ?? [], user);
   }
 
   @ApiCookieAuth()
@@ -136,28 +230,30 @@ export class HotelsController {
     summary:
       'HTL-09, HTL-10: Update hotel check-in/out & cancellation policies',
   })
-  updatePolicies() {
-    throw new NotImplementedException(
-      'PUT /api/hotels/:id/policies not implemented yet',
-    );
+  updatePolicies(
+    @Param('id') id: string,
+    @Body() dto: HotelPoliciesDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.hotelsService.updatePolicies(id, dto, user);
   }
 
   @ApiCookieAuth()
   @Roles(Role.ADMIN, Role.HOTEL_MODERATOR)
   @Get(':id/reservations')
   @ApiOperation({ summary: 'HTL-22: List reservations for a hotel' })
-  getHotelReservations() {
-    throw new NotImplementedException(
-      'GET /api/hotels/:id/reservations not implemented yet',
-    );
+  getHotelReservations(
+    @Param('id') id: string,
+    @Query() query: HotelReservationsQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.hotelsService.getHotelReservations(id, query, user);
   }
 
   @Public()
   @Get(':id/reviews')
   @ApiOperation({ summary: 'HTL-24: List reviews for a hotel' })
-  getHotelReviews() {
-    throw new NotImplementedException(
-      'GET /api/hotels/:id/reviews not implemented yet',
-    );
+  getHotelReviews(@Param('id') id: string, @Query() query: HotelPaginationDto) {
+    return this.reviews.list(id, query);
   }
 }
