@@ -1,10 +1,21 @@
-import { Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+} from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model, Types } from 'mongoose';
+import { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { UploadsService } from '../uploads/uploads.service';
-import { StayQueryDto } from './dto/hotel.dto';
+import { CreateRoomDto, StayQueryDto } from './dto/hotel.dto';
 import { HotelAccessService } from './hotel-access.service';
-import { dateRange, money, paged, pagination } from './hotel-utils';
+import {
+  dateRange,
+  isDuplicateKey,
+  money,
+  paged,
+  pagination,
+} from './hotel-utils';
 import {
   HotelBooking,
   HotelBookingDocument,
@@ -36,6 +47,49 @@ export class HotelInventoryService {
     private readonly access: HotelAccessService,
     private readonly uploads: UploadsService,
   ) {}
+
+  private validateRoomCapacity(
+    room: Pick<Room, 'maxOccupancy' | 'maxAdults' | 'maxChildren'>,
+  ): void {
+    if (
+      (room.maxAdults ?? 1) > room.maxOccupancy ||
+      (room.maxChildren ?? 0) > room.maxOccupancy
+    ) {
+      throw new BadRequestException(
+        'Adult and child capacity cannot exceed maxOccupancy',
+      );
+    }
+  }
+
+  async createRoom(
+    hotelId: string,
+    dto: CreateRoomDto,
+    user: AuthenticatedUser,
+  ) {
+    const hotel = await this.access.managedHotel(hotelId, user);
+    this.validateRoomCapacity(dto);
+    if (dto.currency && dto.currency !== hotel.baseCurrency)
+      throw new BadRequestException(
+        'Room currency must match the hotel currency',
+      );
+    const images = dto.images
+      ? await this.uploads.storedImages(dto.images)
+      : [];
+    try {
+      return await this.rooms.create({
+        ...dto,
+        hotel: hotel._id,
+        currency: hotel.baseCurrency,
+        images,
+      });
+    } catch (error) {
+      if (isDuplicateKey(error))
+        throw new ConflictException(
+          'Room name must be unique within this hotel',
+        );
+      throw error;
+    }
+  }
 
   /** Missing calendar rows are unavailable; overrides are summed once per stay night. */
   async availableRooms(
