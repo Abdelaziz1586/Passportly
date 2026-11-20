@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 
 export type AirlineDocument = HydratedDocument<Airline>;
 
@@ -23,7 +23,6 @@ export class AirlineBaggagePolicy {
   @Prop({ type: Number, default: 50, min: 0 })
   extraBagFee: number;
 
-  /** FLT-08: most extra checked bags one passenger may add. Not set = no airline limit. */
   @Prop({ type: Number, min: 0 })
   maxExtraBagsPerPassenger?: number;
 
@@ -93,7 +92,7 @@ export class Airline {
   @Prop({ trim: true })
   description?: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'Country' })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'Country' })
   country?: Types.ObjectId;
 
   @Prop({ trim: true })
@@ -111,7 +110,7 @@ export class Airline {
   @Prop({ type: Date })
   deactivatedAt?: Date;
 
-  @Prop({ type: Types.ObjectId, ref: 'User' })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'User' })
   deactivatedBy?: Types.ObjectId;
 
   @Prop({ type: AirlineBaggagePolicySchema, default: () => ({}) })
