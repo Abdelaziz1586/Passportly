@@ -1,6 +1,10 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
-import { BookingType, PaymentStatus } from '../../../common/enums';
+import {
+  BookingType,
+  PaymentPurpose,
+  PaymentStatus,
+} from '../../../common/enums';
 
 export type PaymentDocument = HydratedDocument<Payment>;
 
@@ -22,6 +26,23 @@ export class Payment {
 
   @Prop({ type: Types.ObjectId, ref: 'HotelBooking', default: null })
   hotelBooking?: Types.ObjectId | null;
+
+  /**
+   * What this payment pays for. Not set (older payments) means BOOKING. A
+   * FLIGHT_CHANGE payment pays the fare difference of a change to a CONFIRMED
+   * booking: it is linked through the two fields below and NOT through
+   * `flightBooking`, so the one-live-payment-per-booking index does not apply.
+   */
+  @Prop({ type: String, enum: Object.values(PaymentPurpose) })
+  purpose?: PaymentPurpose;
+
+  /** FLT-27: the flight change this payment belongs to. */
+  @Prop({ type: Types.ObjectId, ref: 'FlightChange', default: null })
+  flightChange?: Types.ObjectId | null;
+
+  /** FLT-27: the (confirmed) flight booking being changed. */
+  @Prop({ type: Types.ObjectId, ref: 'FlightBooking', default: null })
+  changedFlightBooking?: Types.ObjectId | null;
 
   @Prop({ required: true, min: 0 })
   amount: number;

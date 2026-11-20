@@ -31,6 +31,13 @@ export class FlightBookingLeg {
 
   @Prop({ type: [String], default: [] })
   seatNumbers: string[];
+
+  /**
+   * What this leg costs for the whole party (all passengers), written by FLT-27 when a leg is
+   * changed so a later change can price it exactly. Bookings never changed do not have it.
+   */
+  @Prop({ type: Number, min: 0 })
+  fare?: number;
 }
 
 export const FlightBookingLegSchema =
@@ -167,6 +174,14 @@ export class FlightBooking {
 
   @Prop({ type: Number, min: 0 })
   refundAmount?: number;
+
+  /** FLT-27: how many times the flights of this confirmed booking were changed. */
+  @Prop({ type: Number, default: 0, min: 0 })
+  changeCount: number;
+
+  /** FLT-27: payments of fare differences of applied changes, oldest first (besides `payment`). */
+  @Prop({ type: [Types.ObjectId], ref: 'Payment', default: [] })
+  changePayments: Types.ObjectId[];
 }
 
 export const FlightBookingSchema = SchemaFactory.createForClass(FlightBooking);

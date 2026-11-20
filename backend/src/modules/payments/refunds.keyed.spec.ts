@@ -27,6 +27,7 @@ interface StoredRefund {
   amount: number;
   status: RefundStatus;
   key?: string;
+  stripeRefundId?: string | null;
 }
 
 /** An in-memory stand-in for the two collections, enough to see the rules. */
@@ -53,7 +54,7 @@ function build(
         refunds.filter(
           (r) =>
             r.payment.equals(filter.payment) &&
-            r.status !== RefundStatus.FAILED,
+            (r.status !== RefundStatus.FAILED || !r.stripeRefundId),
         ),
       ),
     ),
@@ -77,13 +78,22 @@ function build(
     ),
     updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
   };
-  const service = new RefundsService(
+  const raw = new RefundsService(
     refundModel as never,
     paymentModel as never,
     { stripe: null } as never,
     { createNotification: jest.fn() } as never,
   );
-  return { service, refundModel, paymentModel, refunds };
+  // Keyed refunds need a transaction session: the tests pass a stand-in one by default.
+  const session = {} as never;
+  const service = {
+    recordRefund: (input: Parameters<RefundsService['recordRefund']>[0]) =>
+      raw.recordRefund(input, session),
+    recordBookingRefund: (
+      input: Parameters<RefundsService['recordBookingRefund']>[0],
+    ) => raw.recordBookingRefund(input, session),
+  };
+  return { service, raw, refundModel, paymentModel, refunds };
 }
 
 const base = {
@@ -152,7 +162,21 @@ describe('RefundsService keyed refunds (several per payment)', () => {
     expect(t.refundModel.create).toHaveBeenCalledTimes(1);
   });
 
-  it('gives the money of a FAILED refund back', async () => {
+  it('refuses a keyed refund outside a transaction (the cap needs one)', async () => {
+    const payment = { _id: new Types.ObjectId(), amount: 100 };
+    const t = build([payment]);
+    await expect(
+      t.raw.recordRefund({
+        ...base,
+        payment: payment._id,
+        amount: 10,
+        key: 'k',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(t.refundModel.create).not.toHaveBeenCalled();
+  });
+
+  it('keeps counting a refund that was given up before Stripe answered (it may still go through)', async () => {
     const payment = { _id: new Types.ObjectId(), amount: 100 };
     const t = build(
       [payment],
@@ -163,6 +187,32 @@ describe('RefundsService keyed refunds (several per payment)', () => {
           amount: 100,
           status: RefundStatus.FAILED,
           key: 'a',
+          stripeRefundId: null,
+        },
+      ],
+    );
+    await expect(
+      t.service.recordRefund({
+        ...base,
+        payment: payment._id,
+        amount: 100,
+        key: 'b',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('gives the money of a refund Stripe refused for good back', async () => {
+    const payment = { _id: new Types.ObjectId(), amount: 100 };
+    const t = build(
+      [payment],
+      [
+        {
+          _id: new Types.ObjectId(),
+          payment: payment._id,
+          amount: 100,
+          status: RefundStatus.FAILED,
+          key: 'a',
+          stripeRefundId: 're_1',
         },
       ],
     );

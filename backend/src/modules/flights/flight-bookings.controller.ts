@@ -4,9 +4,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
-  NotImplementedException,
   Param,
-  Patch,
   Post,
   Query,
   StreamableFile,
@@ -226,15 +224,6 @@ export class FlightBookingsController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<CancellationResult> {
     return this.flightCancellationService.cancel(user.userId, params.id, dto);
-  }
-
-  @Roles(Role.REGISTERED_USER)
-  @Patch(':id/change-flight')
-  @ApiOperation({ summary: 'FLT-27 (Optional): Change flight on a booking' })
-  changeFlight() {
-    throw new NotImplementedException(
-      'PATCH /api/flight-bookings/:id/change-flight not implemented yet',
-    );
   }
 
   @Roles(Role.REGISTERED_USER, Role.ADMIN, Role.AIRLINE_MODERATOR)

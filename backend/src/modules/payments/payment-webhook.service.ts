@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Optional,
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -12,12 +13,17 @@ import {
   BookingStatus,
   BookingType,
   NotificationType,
+  PaymentPurpose,
   PaymentStatus,
 } from '../../common/enums';
 import { CabinInventory } from '../flights/schemas/cabin-inventory.schema';
 import { RoomAvailability } from '../hotels/schemas/room-availability.schema';
 import { NotificationsService } from '../notifications/notifications.service';
 import { toMinorUnits } from './payment-amounts';
+import {
+  PaidPaymentOutcome,
+  PaymentPurposeRegistry,
+} from './payment-purpose-handlers';
 import { OPEN_PAYMENT_STATUSES, PaymentsService } from './payments.service';
 import { RefundsService } from './refunds.service';
 import { PaymentDocument } from './schemas/payment.schema';
@@ -71,6 +77,8 @@ export class PaymentWebhookService {
     @InjectModel(RoomAvailability.name)
     private readonly roomAvailabilityModel: Model<RoomAvailability>,
     @InjectConnection() private readonly connection: Connection,
+    // Last and optional so the service can be built without it; Nest always supplies it.
+    @Optional() private readonly purposeRegistry?: PaymentPurposeRegistry,
   ) {}
 
   /** Verifies `stripe-signature` over the raw request body. Anything else is rejected with 400. */
@@ -182,6 +190,15 @@ export class PaymentWebhookService {
       }
       return 'duplicate' as const;
     }
+    if (typeof result === 'object' && 'kind' in result) {
+      // A payment of a special purpose (FLT-27): the handler already applied it, or asks for a refund.
+      await result.afterCommit();
+      if (result.kind === 'refund') {
+        await this.ensureOrphanRefund(payment._id);
+        return 'orphaned' as const;
+      }
+      return 'confirmed' as const;
+    }
     if (result === 'orphaned') {
       this.logger.warn(
         `Payment ${payment._id.toString()} succeeded after its booking expired or was cancelled: refunding`,
@@ -203,7 +220,7 @@ export class PaymentWebhookService {
     paymentId: Types.ObjectId,
     paidAt: Date,
     session: ClientSession,
-  ): Promise<ConfirmedBooking | 'duplicate' | 'orphaned'> {
+  ): Promise<ConfirmedBooking | PaidPaymentOutcome | 'duplicate' | 'orphaned'> {
     const paid = await this.paymentsService.paymentModel.findOneAndUpdate(
       { _id: paymentId, status: { $in: OPEN_PAYMENT_STATUSES } },
       {
@@ -213,6 +230,21 @@ export class PaymentWebhookService {
       { returnDocument: 'after', session },
     );
     if (!paid) return 'duplicate';
+
+    if (paid.purpose === PaymentPurpose.FLIGHT_CHANGE) {
+      const handler = this.purposeRegistry?.get(paid.purpose);
+      const outcome: PaidPaymentOutcome = handler
+        ? await handler.settle(paid, paidAt, session)
+        : { kind: 'refund', afterCommit: () => Promise.resolve() };
+      if (outcome.kind === 'refund') {
+        await this.paymentsService.paymentModel.updateOne(
+          { _id: paymentId },
+          { $set: { 'metadata.needsRefund': true } },
+          { session },
+        );
+      }
+      return outcome;
+    }
 
     const confirmed =
       paid.bookingType === BookingType.FLIGHT
@@ -418,7 +450,7 @@ export class PaymentWebhookService {
     if (!payment || payment.metadata?.needsRefund !== true) return;
     const bookingId =
       payment.bookingType === BookingType.FLIGHT
-        ? payment.flightBooking
+        ? (payment.flightBooking ?? payment.changedFlightBooking)
         : payment.hotelBooking;
     if (!bookingId) {
       this.logger.error(
@@ -433,9 +465,17 @@ export class PaymentWebhookService {
       bookingId,
       amount: payment.amount,
       currency: payment.currency,
-      reason: 'Payment received after the booking hold ended',
-      notes:
-        'Full refund: the payment completed after the booking expired or was cancelled, so the booking was not confirmed.',
+      ...(payment.purpose === PaymentPurpose.FLIGHT_CHANGE
+        ? {
+            reason: 'The flight change could not be applied',
+            notes:
+              'Full refund of the fare difference: the change could not be applied (the booking changed, or the new flight had no seats left), so the booking stays as it was.',
+          }
+        : {
+            reason: 'Payment received after the booking hold ended',
+            notes:
+              'Full refund: the payment completed after the booking expired or was cancelled, so the booking was not confirmed.',
+          }),
     });
     await this.refundsService.dispatchRefund(refund._id);
   }

@@ -13,6 +13,7 @@ import Stripe from 'stripe';
 import {
   BookingStatus,
   BookingType,
+  PaymentPurpose,
   PaymentStatus,
   Role,
 } from '../../common/enums';
@@ -94,6 +95,7 @@ type IntentSource = Pick<
   | 'bookingType'
   | 'flightBooking'
   | 'hotelBooking'
+  | 'changedFlightBooking'
 > & { _id: Types.ObjectId };
 
 /** Flight bookings and hotel reservations share these fields, so one model type serves both. */
@@ -203,6 +205,55 @@ export class PaymentsService {
     }
 
     return this.toIntentResponse(payment, intent, booking, dto.bookingType);
+  }
+
+  /**
+   * FLT-27: starts the payment of the fare difference of a flight change on a
+   * CONFIRMED booking. The amount comes from the server's own quote. The booking
+   * is not touched here: only the verified webhook applies the change (see
+   * PaymentPurposeRegistry). `expiresAt` ends the offer: after it the intent is
+   * cancelled by the payment expiry job.
+   */
+  async createChangePayment(params: {
+    user: Types.ObjectId;
+    booking: { _id: Types.ObjectId; bookingReference: string };
+    change: Types.ObjectId;
+    amount: number;
+    currency: string;
+    policyAcceptedAt: Date;
+    expiresAt: Date;
+  }): Promise<{ payment: PaymentDocument; intent: Stripe.PaymentIntent }> {
+    const stripe = this.requireStripe();
+    const payment = await this.paymentModel.create({
+      user: params.user,
+      bookingType: BookingType.FLIGHT,
+      purpose: PaymentPurpose.FLIGHT_CHANGE,
+      flightBooking: null,
+      changedFlightBooking: params.booking._id,
+      flightChange: params.change,
+      amount: params.amount,
+      currency: params.currency,
+      status: PaymentStatus.PENDING,
+      policyAcceptedAt: params.policyAcceptedAt,
+      holdExpiresAt: params.expiresAt,
+      metadata: { intentAttempts: 1 },
+    });
+    let intent: Stripe.PaymentIntent;
+    try {
+      intent = await this.createIntent(
+        stripe,
+        payment,
+        params.booking,
+        1,
+        PaymentPurpose.FLIGHT_CHANGE,
+      );
+    } catch (error) {
+      await this.paymentModel.deleteOne({ _id: payment._id });
+      throw this.toProviderException(error);
+    }
+    payment.stripePaymentIntentId = intent.id;
+    await payment.save();
+    return { payment, intent };
   }
 
   /**
@@ -316,8 +367,9 @@ export class PaymentsService {
   private createIntent(
     stripe: Stripe,
     payment: IntentSource,
-    booking: PayableBooking,
+    booking: Pick<PayableBooking, 'bookingReference'>,
     attempt: number,
+    purpose: PaymentPurpose = PaymentPurpose.BOOKING,
   ): Promise<Stripe.PaymentIntent> {
     const { bookingType, bookingId } = this.linkedBooking(payment);
     return stripe.paymentIntents.create(
@@ -331,6 +383,7 @@ export class PaymentsService {
           bookingType,
           bookingId,
           userId: payment.user.toString(),
+          ...(purpose === PaymentPurpose.BOOKING ? {} : { purpose }),
         },
       },
       { idempotencyKey: `payment-${payment._id.toString()}-${attempt}` },
@@ -402,14 +455,15 @@ export class PaymentsService {
   }
 
   private linkedBooking(
-    payment: Pick<Payment, 'bookingType' | 'flightBooking' | 'hotelBooking'>,
+    payment: Pick<Payment, 'bookingType' | 'flightBooking' | 'hotelBooking'> &
+      Partial<Pick<Payment, 'changedFlightBooking'>>,
   ): {
     bookingType: BookingType;
     bookingId: string;
   } {
     const id =
       payment.bookingType === BookingType.FLIGHT
-        ? payment.flightBooking
+        ? (payment.flightBooking ?? payment.changedFlightBooking)
         : payment.hotelBooking;
     if (!id) throw new NotFoundException('Booking not found');
     return { bookingType: payment.bookingType, bookingId: id.toString() };

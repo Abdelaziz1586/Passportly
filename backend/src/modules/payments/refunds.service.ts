@@ -198,9 +198,16 @@ export class RefundsService {
     input: RecordRefundInput,
     session?: ClientSession,
   ): Promise<RefundDocument> {
+    // The cap is only safe inside a transaction (the write to the payment below makes
+    // two concurrent refunds of one payment conflict), so a session is required.
+    if (!session) {
+      throw new BadRequestException(
+        'A keyed refund must be recorded inside a transaction',
+      );
+    }
     const existing = await this.refundModel
       .findOne({ payment: input.payment, key: input.key })
-      .session(session ?? null);
+      .session(session);
     if (existing) return existing;
 
     const payment = await this.paymentModel
@@ -254,7 +261,7 @@ export class RefundsService {
     return created;
   }
 
-  /** What can still be refunded on a payment, in minor units (refunds that did not fail count as spent). */
+  /** What can still be refunded on a payment, in minor units (refunds that did not fail for good count as spent). */
   async refundableCents(
     paymentId: Types.ObjectId,
     paymentAmount: number,
@@ -262,7 +269,15 @@ export class RefundsService {
     session?: ClientSession,
   ): Promise<number> {
     const refunds = (await this.refundModel
-      .find({ payment: paymentId, status: { $ne: RefundStatus.FAILED } })
+      .find({
+        payment: paymentId,
+        // A refund Stripe refused for good gives its money back. One given up before Stripe's
+        // answer was known (no Stripe id) may still turn out to have gone through, so it still counts.
+        $or: [
+          { status: { $ne: RefundStatus.FAILED } },
+          { status: RefundStatus.FAILED, stripeRefundId: null },
+        ],
+      })
       .session(session ?? null)
       .lean()) as unknown as Array<{ amount: number }>;
     const spent = refunds.reduce(

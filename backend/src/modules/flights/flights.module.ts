@@ -15,8 +15,14 @@ import { Payment, PaymentSchema } from '../payments/schemas/payment.schema';
 import { Refund, RefundSchema } from '../payments/schemas/refund.schema';
 import { FlightBookingViewService } from './flight-booking-view.service';
 import { FlightETicketService } from './flight-e-ticket.service';
+import { FlightChangesController } from './flight-changes.controller';
+import { FlightChangeService } from './flight-change.service';
 import { FlightSeatsController } from './flight-seats.controller';
 import { FlightSeatsService } from './flight-seats.service';
+import {
+  FlightChange,
+  FlightChangeSchema,
+} from './schemas/flight-change.schema';
 import {
   FlightSeatClaim,
   FlightSeatClaimSchema,
@@ -44,6 +50,7 @@ import { Flight, FlightSchema } from './schemas/flight.schema';
       { name: Payment.name, schema: PaymentSchema },
       { name: Refund.name, schema: RefundSchema },
       { name: FlightSeatClaim.name, schema: FlightSeatClaimSchema },
+      { name: FlightChange.name, schema: FlightChangeSchema },
     ]),
   ],
   controllers: [
@@ -51,6 +58,7 @@ import { Flight, FlightSchema } from './schemas/flight.schema';
     FlightsController,
     FlightBookingsController,
     FlightSeatsController,
+    FlightChangesController,
   ],
   providers: [
     FlightsService,
@@ -59,6 +67,7 @@ import { Flight, FlightSchema } from './schemas/flight.schema';
     FlightBookingViewService,
     FlightCancellationService,
     FlightSeatsService,
+    FlightChangeService,
   ],
   exports: [FlightsService, FlightBookingsService, MongooseModule],
 })
