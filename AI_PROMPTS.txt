@@ -82,3 +82,20 @@ Details: Verify credentials, enforce failed-login lockout & AccountStatus.ACTIVE
 How the output was used:
 Implemented LoginDto, LoginResponseDto, AuthService.login (email normalization, bcrypt password check, 5-attempt / 15-minute failed-login lockout, AccountStatus.ACTIVE enforcement, UserSession creation with jti and JWT-aligned expiresAt, httpOnly cookie configuration), and AuthController.login wiring with @Public() and Swagger annotations. Added unit tests in auth.service.spec.ts and auth.controller.spec.ts and verified with npm run lint, npm run build, and npm test.
 ================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-06 (POST /api/auth/logout)
+
+Prompt:
+Requirement: ACC-06
+Endpoint: POST /api/auth/logout
+Controller: backend/src/modules/auth/auth.controller.ts
+Allowed Roles: Authenticated (All Roles)
+Details: Mark current UserSession (by jti) as revoked (revokedAt = now) and clear the httpOnly auth cookie.
+
+How the output was used:
+Implemented LogoutResponseDto, AuthService.logout (revoking the active UserSession by jti and userId via revokedAt, and sharing cookie options with login via getBaseCookieOptions/getCookieName), and AuthController.logout (@HttpCode(HttpStatus.OK)) clearing the httpOnly auth cookie. Added unit tests in auth.service.spec.ts and auth.controller.spec.ts and verified with npm run lint, npm run build, and npm test.
+================================================

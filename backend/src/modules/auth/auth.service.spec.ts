@@ -29,6 +29,7 @@ describe('AuthService (ACC-01 register, ACC-02 verify-email, ACC-04/05 login)', 
 
   const mockSessionModel = {
     create: jest.fn(),
+    updateOne: jest.fn(),
   };
 
   const mockJwtService = {
@@ -541,6 +542,38 @@ describe('AuthService (ACC-01 register, ACC-02 verify-email, ACC-04/05 login)', 
         }),
       ).rejects.toThrow(ForbiddenException);
       expect(mockSessionModel.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('logout', () => {
+    it('revokes current UserSession by jti and returns clearCookie options', async () => {
+      mockSessionModel.updateOne.mockResolvedValue({ modifiedCount: 1 });
+
+      const result = await service.logout({
+        userId: '507f1f77bcf86cd799439011',
+        email: 'traveler@example.com',
+        role: Role.REGISTERED_USER,
+        jti: 'session-jti-123',
+      });
+
+      expect(mockSessionModel.updateOne).toHaveBeenCalledWith(
+        {
+          jti: 'session-jti-123',
+          user: '507f1f77bcf86cd799439011',
+          revokedAt: null,
+        },
+        { $set: { revokedAt: expect.any(Date) as Date } },
+      );
+      expect(result).toEqual({
+        response: { message: 'Logged out successfully' },
+        cookieName: 'access_token',
+        clearCookieOptions: {
+          httpOnly: true,
+          sameSite: 'lax',
+          secure: false,
+          path: '/',
+        },
+      });
     });
   });
 });
