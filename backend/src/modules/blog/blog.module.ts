@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ItinerariesModule } from '../itineraries/itineraries.module';
+import { UsersModule } from '../users/users.module';
 import { BlogController } from './blog.controller';
 import { BlogService } from './blog.service';
 import { BlogPost, BlogPostSchema } from './schemas/blog-post.schema';
@@ -11,6 +12,7 @@ import { Tag, TagSchema } from './schemas/tag.schema';
 @Module({
   imports: [
     ItinerariesModule,
+    UsersModule,
     MongooseModule.forFeature([
       { name: BlogPost.name, schema: BlogPostSchema },
       { name: Comment.name, schema: CommentSchema },
