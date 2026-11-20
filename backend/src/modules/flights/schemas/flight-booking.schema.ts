@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 import {
   BookingStatus,
   CabinClass,
@@ -11,10 +11,10 @@ export type FlightBookingDocument = HydratedDocument<FlightBooking>;
 
 @Schema({ _id: true })
 export class FlightBookingLeg {
-  @Prop({ type: Types.ObjectId, ref: 'Flight', required: true })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'Flight', required: true })
   flight: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'CabinInventory', required: true })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'CabinInventory', required: true })
   cabin: Types.ObjectId;
 
   @Prop({ type: String, enum: Object.values(CabinClass), required: true })
@@ -31,6 +31,13 @@ export class FlightBookingLeg {
 
   @Prop({ type: [String], default: [] })
   seatNumbers: string[];
+
+  /**
+   * What this leg costs for the whole party (all passengers), written by FLT-27 when a leg is
+   * changed so a later change can price it exactly. Bookings never changed do not have it.
+   */
+  @Prop({ type: Number, min: 0 })
+  fare?: number;
 }
 
 export const FlightBookingLegSchema =
@@ -86,7 +93,12 @@ export class FlightBooking {
   @Prop({ required: true, unique: true, uppercase: true, trim: true })
   bookingReference: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  })
   user: Types.ObjectId;
 
   @Prop({
@@ -147,13 +159,13 @@ export class FlightBooking {
   @Prop({ type: Date })
   policyAcceptedAt?: Date;
 
-  @Prop({ type: Types.ObjectId, ref: 'User' })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'User' })
   policyAcceptedBy?: Types.ObjectId;
 
   @Prop({ type: Object })
   policySnapshot?: Record<string, unknown>;
 
-  @Prop({ type: Types.ObjectId, ref: 'Payment', default: null })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'Payment', default: null })
   payment?: Types.ObjectId | null;
 
   @Prop({ type: Date })
@@ -165,9 +177,24 @@ export class FlightBooking {
   @Prop({ trim: true })
   cancellationReason?: string;
 
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'Flight' })
+  providerCancellationFlight?: Types.ObjectId;
+
   @Prop({ type: Number, min: 0 })
   refundAmount?: number;
+
+  /** FLT-27: how many times the flights of this confirmed booking were changed. */
+  @Prop({ type: Number, default: 0, min: 0 })
+  changeCount: number;
+
+  /** FLT-27: payments of fare differences of applied changes, oldest first (besides `payment`). */
+  @Prop({ type: [Types.ObjectId], ref: 'Payment', default: [] })
+  changePayments: Types.ObjectId[];
 }
 
 export const FlightBookingSchema = SchemaFactory.createForClass(FlightBooking);
 FlightBookingSchema.index({ status: 1, holdExpiresAt: 1 });
+FlightBookingSchema.index({ 'legs.flight': 1, status: 1 });
+// FLT-25 listing: one user's bookings, optionally by status, newest first.
+FlightBookingSchema.index({ user: 1, createdAt: -1 });
+FlightBookingSchema.index({ user: 1, status: 1, createdAt: -1 });
