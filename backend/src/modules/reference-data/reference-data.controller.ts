@@ -12,9 +12,17 @@ import {
 } from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator';
 import {
+  ListAirportsQueryDto,
+  PaginatedAirportsResponseDto,
+} from './dto/list-airports-query.dto';
+import {
   ListCitiesQueryDto,
   PaginatedCitiesResponseDto,
 } from './dto/list-cities-query.dto';
+import {
+  ListCountriesQueryDto,
+  PaginatedCountriesResponseDto,
+} from './dto/list-countries-query.dto';
 import { ReferenceDataService } from './reference-data.service';
 
 @ApiTags('Reference Data')
@@ -27,16 +35,30 @@ export class ReferenceDataController {
   @ApiOperation({
     summary: 'FLT-02: Search/list reference airports with IANA time zones',
   })
-  getAirports() {
-    throw new NotImplementedException('GET /api/airports not implemented yet');
+  @ApiOkResponse({
+    description: 'Paginated list of reference airports with IANA time zones',
+    type: PaginatedAirportsResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid query parameters' })
+  getAirports(
+    @Query() query: ListAirportsQueryDto,
+  ): Promise<PaginatedAirportsResponseDto> {
+    return this.referenceDataService.getAirports(query);
   }
 
   @Get('countries')
   @ApiOperation({
-    summary: 'List reference countries and supported currencies',
+    summary: 'REF-01: List reference countries and supported currencies',
   })
-  getCountries() {
-    throw new NotImplementedException('GET /api/countries not implemented yet');
+  @ApiOkResponse({
+    description: 'Paginated list of reference countries and currency codes',
+    type: PaginatedCountriesResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid query parameters' })
+  getCountries(
+    @Query() query: ListCountriesQueryDto,
+  ): Promise<PaginatedCountriesResponseDto> {
+    return this.referenceDataService.getCountries(query);
   }
 
   @Get('cities')
