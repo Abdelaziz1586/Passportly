@@ -234,10 +234,7 @@ export class HotelsController {
     @Body() dto: HotelPoliciesDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    void [id, dto, user];
-    throw new NotImplementedException(
-      'Implemented by the subsequent SCRUM-63 PR in this stack',
-    );
+    return this.hotelsService.updatePolicies(id, dto, user);
   }
 
   @ApiCookieAuth()
