@@ -38,6 +38,10 @@ import {
   ListAccountsQueryDto,
   PaginatedAccountsResponseDto,
 } from './dto/list-accounts-query.dto';
+import {
+  AccountStatusChangeResponseDto,
+  SuspendAccountDto,
+} from './dto/suspend-account.dto';
 
 type TimestampedUser = UserDocument & {
   createdAt?: Date;
@@ -471,6 +475,90 @@ export class AdminService {
       ...(isModerator ? { assignment } : {}),
       ...(user.createdAt !== undefined ? { createdAt: user.createdAt } : {}),
       ...(user.updatedAt !== undefined ? { updatedAt: user.updatedAt } : {}),
+    };
+  }
+  /**
+   * Suspends a user or moderator account (preventing self-suspension), revokes
+   * active sessions, sends an in-app notification, and writes an audit log.
+   */
+  async suspendAccount(
+    accountId: string,
+    dto: SuspendAccountDto = {},
+    admin: AuthenticatedUser,
+    ipAddress?: string,
+  ): Promise<AccountStatusChangeResponseDto> {
+    if (!isValidObjectId(accountId)) {
+      throw new BadRequestException('Invalid account ID');
+    }
+
+    if (accountId === admin.userId) {
+      throw new BadRequestException(
+        'Administrators cannot suspend their own account',
+      );
+    }
+
+    const user = await this.userModel.findById(accountId).lean();
+    if (!user) {
+      throw new NotFoundException('Account not found');
+    }
+
+    if (user.status === AccountStatus.SUSPENDED) {
+      throw new ConflictException('Account is already suspended');
+    }
+
+    const suspendedAt = new Date();
+    const suspendedReason = dto?.reason?.trim() || 'Suspended by administrator';
+
+    const updated = await this.userModel
+      .findByIdAndUpdate(
+        user._id,
+        {
+          $set: {
+            status: AccountStatus.SUSPENDED,
+            suspendedAt,
+            suspendedReason,
+          },
+        },
+        { returnDocument: 'after' },
+      )
+      .lean();
+
+    const sessionsRevoked = await this.authService.revokeUserSessions(user._id);
+
+    await this.notificationsService.createNotification({
+      recipient: user._id,
+      type: NotificationType.ACCOUNT_SUSPENDED,
+      title: 'Account Suspended',
+      message: `Your account has been suspended. Reason: ${suspendedReason}`,
+      relatedEntityType: 'User',
+      relatedEntityId: user._id,
+    });
+
+    await this.auditLogsService.log({
+      actor: admin.userId,
+      actorRole: admin.role,
+      action: 'ACCOUNT_SUSPENDED',
+      targetType: 'User',
+      targetId: String(user._id),
+      details: {
+        email: user.email,
+        role: user.role,
+        previousStatus: user.status,
+        reason: suspendedReason,
+        sessionsRevoked,
+      },
+      ipAddress,
+    });
+
+    return {
+      message: 'Account suspended successfully',
+      id: String(user._id),
+      email: updated?.email ?? user.email,
+      role: updated?.role ?? user.role,
+      status: updated?.status ?? AccountStatus.SUSPENDED,
+      suspendedAt: updated?.suspendedAt ?? suspendedAt,
+      suspendedReason: updated?.suspendedReason ?? suspendedReason,
+      sessionsRevoked,
     };
   }
 }

@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
+  ApiBody,
   ApiConflictResponse,
   ApiCookieAuth,
   ApiCreatedResponse,
@@ -42,6 +43,10 @@ import {
   ListAccountsQueryDto,
   PaginatedAccountsResponseDto,
 } from './dto/list-accounts-query.dto';
+import {
+  AccountStatusChangeResponseDto,
+  SuspendAccountDto,
+} from './dto/suspend-account.dto';
 
 @ApiTags('Administration')
 @ApiCookieAuth()
@@ -116,10 +121,25 @@ export class AdminController {
   @ApiOperation({
     summary: 'ACC-15, ACC-16: Suspend user or moderator account',
   })
-  suspendAccount() {
-    throw new NotImplementedException(
-      'PATCH /api/admin/accounts/:id/suspend not implemented yet',
-    );
+  @ApiParam({ name: 'id', type: String, description: 'Target account ID' })
+  @ApiBody({ type: SuspendAccountDto, required: false })
+  @ApiOkResponse({
+    description: 'Account suspended and active sessions revoked',
+    type: AccountStatusChangeResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid account ID or self-suspension attempt',
+  })
+  @ApiConflictResponse({ description: 'Account is already suspended' })
+  @ApiForbiddenResponse({ description: 'Admin role required' })
+  @ApiNotFoundResponse({ description: 'Account not found' })
+  suspendAccount(
+    @Param('id') id: string,
+    @Body() dto: SuspendAccountDto,
+    @CurrentUser() admin: AuthenticatedUser,
+    @Req() req: Request,
+  ): Promise<AccountStatusChangeResponseDto> {
+    return this.adminService.suspendAccount(id, dto, admin, req.ip);
   }
 
   @Patch('accounts/:id/reactivate')

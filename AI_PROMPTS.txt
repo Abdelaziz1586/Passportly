@@ -377,3 +377,16 @@ Implement SCRUM-24 (GET /api/admin/accounts): Support filtering by role, status,
 How the output was used:
 Implemented ListAccountsQueryDto, AccountAssignmentInfoDto, AdminAccountItemDto, PaginatedAccountsResponseDto, AdminService.listAccounts (safe projection excluding passwordHash/tokens, regex-escaped search, batched ModeratorAssignment lookup with provider info, sorting, and pagination), and AdminController.listAccounts. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
 ================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-15, ACC-16 (PATCH /api/admin/accounts/:id/suspend, SCRUM-25)
+
+Prompt:
+Implement SCRUM-25 (PATCH /api/admin/accounts/:id/suspend): Set AccountStatus.SUSPENDED, suspendedAt, suspendedReason; revoke active UserSessions; prevent suspending self; notify user & write AuditLog.
+
+How the output was used:
+Added AuthService.revokeUserSessions helper, imported AuthModule into AdminModule, implemented SuspendAccountDto, AccountStatusChangeResponseDto, AdminService.suspendAccount (self-suspension guard, status update, session revocation, ACCOUNT_SUSPENDED notification, ACCOUNT_SUSPENDED audit log), and AdminController.suspendAccount. Added unit tests in auth.service.spec.ts, admin.service.spec.ts, and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
