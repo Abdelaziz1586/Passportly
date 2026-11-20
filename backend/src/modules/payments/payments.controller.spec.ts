@@ -6,10 +6,11 @@ import { BookingType, Role } from '../../common/enums';
 import { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { BookingPoliciesService } from './booking-policies.service';
 import { AcceptPoliciesDto } from './dto/accept-policies.dto';
-import { BookingParamsDto } from './dto/booking-params.dto';
-import { PaymentsController } from './payments.controller';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { PaymentParamsDto } from './dto/payment-params.dto';
+import { BookingParamsDto } from './dto/booking-params.dto';
+import { PaymentWebhookService } from './payment-webhook.service';
+import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
 
 const handlers = PaymentsController.prototype as unknown as Record<
@@ -23,6 +24,7 @@ describe('PaymentsController PAY-02', () => {
   const controller = new PaymentsController(
     {} as PaymentsService,
     { getPolicies, acceptPolicies } as unknown as BookingPoliciesService,
+    {} as PaymentWebhookService,
   );
   const user: AuthenticatedUser = {
     userId: '665f1c2e8a1b2c3d4e5f6a7b',
@@ -85,11 +87,16 @@ describe('PaymentsController PAY-02', () => {
   });
 });
 
-describe('PaymentsController PAY-01 create (SCRUM-84)', () => {
+describe('PaymentsController PAY-01', () => {
   const createPayment = jest.fn();
+  const retryPayment = jest.fn();
+  const getPayment = jest.fn();
+  const verifyEvent = jest.fn();
+  const handleEvent = jest.fn();
   const controller = new PaymentsController(
-    { createPayment } as unknown as PaymentsService,
+    { createPayment, retryPayment, getPayment } as unknown as PaymentsService,
     {} as BookingPoliciesService,
+    { verifyEvent, handleEvent } as unknown as PaymentWebhookService,
   );
   const user: AuthenticatedUser = {
     userId: '665f1c2e8a1b2c3d4e5f6a7b',
@@ -111,99 +118,66 @@ describe('PaymentsController PAY-01 create (SCRUM-84)', () => {
     expect(createPayment).toHaveBeenCalledWith(user.userId, dto);
   });
 
-  it('is for registered users only and not public', () => {
-    expect(Reflect.getMetadata(ROLES_KEY, handlers.createPayment)).toEqual([
-      Role.REGISTERED_USER,
-    ]);
-    expect(
-      Reflect.getMetadata(IS_PUBLIC_KEY, handlers.createPayment),
-    ).toBeFalsy();
-  });
-
-  it('keeps the documented route', () => {
-    expect(Reflect.getMetadata(PATH_METADATA, handlers.createPayment)).toBe(
-      'payments',
-    );
-  });
-});
-
-describe('PaymentsController PAY-01 retry (SCRUM-85)', () => {
-  const retryPayment = jest.fn();
-  const controller = new PaymentsController(
-    { retryPayment } as unknown as PaymentsService,
-    {} as BookingPoliciesService,
-  );
-  const user: AuthenticatedUser = {
-    userId: '665f1c2e8a1b2c3d4e5f6a7b',
-    email: 'a@example.com',
-    role: Role.REGISTERED_USER,
-    jti: 'jti',
-  };
-
-  afterEach(() => jest.clearAllMocks());
-
-  it('retries a payment for the JWT user', async () => {
+  it('retries and reads payments for the JWT user (and role)', async () => {
     const params = Object.assign(new PaymentParamsDto(), {
       id: '665f1c2e8a1b2c3d4e5f6a7d',
     });
 
     await controller.retryPayment(params, user);
-
-    expect(retryPayment).toHaveBeenCalledWith(user.userId, params.id);
-  });
-
-  it('is for registered users only and not public', () => {
-    expect(Reflect.getMetadata(ROLES_KEY, handlers.retryPayment)).toEqual([
-      Role.REGISTERED_USER,
-    ]);
-    expect(
-      Reflect.getMetadata(IS_PUBLIC_KEY, handlers.retryPayment),
-    ).toBeFalsy();
-  });
-
-  it('keeps the documented route', () => {
-    expect(Reflect.getMetadata(PATH_METADATA, handlers.retryPayment)).toBe(
-      'payments/:id/retry',
-    );
-  });
-});
-
-describe('PaymentsController PAY-01 get (SCRUM-86)', () => {
-  const getPayment = jest.fn();
-  const controller = new PaymentsController(
-    { getPayment } as unknown as PaymentsService,
-    {} as BookingPoliciesService,
-  );
-  const user: AuthenticatedUser = {
-    userId: '665f1c2e8a1b2c3d4e5f6a7b',
-    email: 'a@example.com',
-    role: Role.REGISTERED_USER,
-    jti: 'jti',
-  };
-
-  afterEach(() => jest.clearAllMocks());
-
-  it('reads a payment for the JWT user and role (an admin can read any)', async () => {
-    const params = Object.assign(new PaymentParamsDto(), {
-      id: '665f1c2e8a1b2c3d4e5f6a7d',
-    });
-
     await controller.getPayment(params, { ...user, role: Role.ADMIN });
 
+    expect(retryPayment).toHaveBeenCalledWith(user.userId, params.id);
     expect(getPayment).toHaveBeenCalledWith(user.userId, Role.ADMIN, params.id);
   });
 
-  it('is for registered users and admins only and not public', () => {
-    expect(Reflect.getMetadata(ROLES_KEY, handlers.getPayment)).toEqual([
-      Role.REGISTERED_USER,
-      Role.ADMIN,
-    ]);
-    expect(Reflect.getMetadata(IS_PUBLIC_KEY, handlers.getPayment)).toBeFalsy();
+  it('verifies the raw body and signature before handling the event', async () => {
+    const rawBody = Buffer.from('{"id":"evt_1"}');
+    const event = { id: 'evt_1' };
+    verifyEvent.mockReturnValue(event);
+    handleEvent.mockResolvedValue({ received: true, outcome: 'confirmed' });
+
+    const result = await controller.handleWebhook(
+      { rawBody } as never,
+      't=1,v1=abc',
+    );
+
+    expect(verifyEvent).toHaveBeenCalledWith(rawBody, 't=1,v1=abc');
+    expect(handleEvent).toHaveBeenCalledWith(event);
+    expect(result).toEqual({ received: true, outcome: 'confirmed' });
   });
 
-  it('keeps the documented route', () => {
-    expect(Reflect.getMetadata(PATH_METADATA, handlers.getPayment)).toBe(
-      'payments/:id',
+  it('never handles an event whose signature failed', () => {
+    verifyEvent.mockImplementation(() => {
+      throw new Error('Invalid Stripe signature');
+    });
+
+    expect(() =>
+      controller.handleWebhook({ rawBody: Buffer.from('{}') } as never, 'bad'),
+    ).toThrow('Invalid Stripe signature');
+    expect(handleEvent).not.toHaveBeenCalled();
+  });
+
+  it('has the right roles; only the webhook is public', () => {
+    const roles = (name: string) =>
+      Reflect.getMetadata(ROLES_KEY, handlers[name]) as Role[] | undefined;
+    expect(roles('createPayment')).toEqual([Role.REGISTERED_USER]);
+    expect(roles('retryPayment')).toEqual([Role.REGISTERED_USER]);
+    expect(roles('getPayment')).toEqual([Role.REGISTERED_USER, Role.ADMIN]);
+    expect(Reflect.getMetadata(IS_PUBLIC_KEY, handlers.handleWebhook)).toBe(
+      true,
+    );
+    for (const name of ['createPayment', 'retryPayment', 'getPayment']) {
+      expect(Reflect.getMetadata(IS_PUBLIC_KEY, handlers[name])).toBeFalsy();
+    }
+  });
+
+  it('declares the webhook above the :id routes', () => {
+    const order = Object.getOwnPropertyNames(PaymentsController.prototype);
+    expect(order.indexOf('handleWebhook')).toBeLessThan(
+      order.indexOf('retryPayment'),
+    );
+    expect(Reflect.getMetadata(PATH_METADATA, handlers.handleWebhook)).toBe(
+      'payments/webhook',
     );
   });
 });

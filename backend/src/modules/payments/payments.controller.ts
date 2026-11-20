@@ -2,18 +2,23 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   NotImplementedException,
   Param,
   Post,
+  Req,
 } from '@nestjs/common';
+import type { RawBodyRequest } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
+  ApiBody,
   ApiConflictResponse,
   ApiCookieAuth,
   ApiCreatedResponse,
   ApiForbiddenResponse,
+  ApiHeader,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -21,6 +26,7 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import type { Request } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -44,6 +50,10 @@ import {
   BookingPoliciesResponseDto,
 } from './dto/booking-policies-response.dto';
 import {
+  PaymentWebhookService,
+  WebhookResult,
+} from './payment-webhook.service';
+import {
   PaymentIntentResponse,
   PaymentResponse,
   PaymentsService,
@@ -55,6 +65,7 @@ export class PaymentsController {
   constructor(
     private readonly paymentsService: PaymentsService,
     private readonly bookingPoliciesService: BookingPoliciesService,
+    private readonly paymentWebhookService: PaymentWebhookService,
   ) {}
 
   @ApiCookieAuth()
@@ -156,6 +167,51 @@ export class PaymentsController {
     return this.paymentsService.createPayment(user.userId, dto);
   }
 
+  // Static route: must stay above the ':id' routes.
+  @Public()
+  @Post('payments/webhook')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'PAY-01: Stripe webhook endpoint for payment verification',
+    description:
+      'Called by Stripe, not by users. Verifies the stripe-signature header over the raw request body with STRIPE_WEBHOOK_SECRET; an invalid or missing signature is rejected with 400 and nothing is read. Handles payment_intent.succeeded (the only thing that moves a booking from PENDING_PAYMENT to CONFIRMED, converts held inventory to booked, creates e-ticket numbers and notifies), payment_intent.payment_failed, payment_intent.canceled and charge.refunded. Idempotent: a repeated event changes nothing and notifies nothing.',
+  })
+  @ApiHeader({
+    name: 'stripe-signature',
+    required: true,
+    description: 'Stripe signature of the raw body',
+  })
+  @ApiBody({
+    description: 'The Stripe event JSON exactly as sent by Stripe',
+    schema: { type: 'object', additionalProperties: true },
+  })
+  @ApiOkResponse({
+    description: 'Event accepted (outcome says what happened)',
+    schema: {
+      type: 'object',
+      properties: {
+        received: { type: 'boolean', example: true },
+        outcome: { type: 'string', example: 'confirmed' },
+      },
+    },
+  })
+  @ApiBadRequestResponse({
+    description: 'Missing or invalid stripe-signature, or no raw body',
+  })
+  @ApiServiceUnavailableResponse({
+    description: 'Stripe webhook secret is not configured',
+  })
+  handleWebhook(
+    @Req() req: RawBodyRequest<Request>,
+    @Headers('stripe-signature') signature: string | undefined,
+  ): Promise<WebhookResult> {
+    const event = this.paymentWebhookService.verifyEvent(
+      req.rawBody,
+      signature,
+    );
+    return this.paymentWebhookService.handleEvent(event);
+  }
+
   @ApiCookieAuth()
   @Roles(Role.REGISTERED_USER)
   @Post('payments/:id/retry')
@@ -207,17 +263,6 @@ export class PaymentsController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<PaymentResponse> {
     return this.paymentsService.getPayment(user.userId, user.role, params.id);
-  }
-
-  @Public()
-  @Post('payments/webhook')
-  @ApiOperation({
-    summary: 'PAY-01: Stripe webhook endpoint for payment verification',
-  })
-  handleWebhook() {
-    throw new NotImplementedException(
-      'POST /api/payments/webhook not implemented yet',
-    );
   }
 
   @ApiCookieAuth()

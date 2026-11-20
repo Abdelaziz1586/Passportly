@@ -971,3 +971,14 @@ Implement PAY-02: show the provider policies of a flight or hotel booking before
 How the output was used:
 The generated service, DTOs, controller wiring, hotel snapshot helper and tests were integrated and checked with lint, build, unit tests, 52 live checks and a Swagger "Try it out" run. A live/unit check found that the global implicit conversion turned the strings "no" and "false" into true for the acceptance checkbox, so the DTO now keeps the raw value and only a real boolean true is accepted.
 ================================================
+================================================
+Date: 2026-11-19
+Student: Abdulrahman Ahmed
+Branch: feature/SCRUM-84-PAY-01-stripe-payments (stacked on feature/SCRUM-82-PAY-02-booking-policies)
+Tool: Claude Code (terminal, Claude Sonnet 5.5)
+Related Requirement: PAY-01 (POST /api/payments, POST /api/payments/:id/retry, GET /api/payments/:id, POST /api/payments/webhook), GEN-11
+Prompt:
+Implement PAY-01 with Stripe in test mode: create a PaymentIntent for a PENDING_PAYMENT flight booking or hotel reservation inside its hold (amount from the server-side booking total, policies must be accepted first), retry after a failed attempt until the hold expires, read a payment, and a webhook that verifies the Stripe signature on the raw body and is the only thing that moves a booking to CONFIRMED. The webhook must be idempotent, handle payment_intent.succeeded, payment_failed, canceled and charge.refunded, turn held seats or room units into booked ones, create e-ticket numbers and notify. When a hold expires the PaymentIntent must be cancelled. Then write unit tests and run live checks against Stripe test mode with self-signed webhook payloads on a throw-away database.
+How the output was used:
+The generated services, DTOs, controller wiring, schema indexes and tests were integrated and checked with lint, build, unit tests, 97 live checks and a Swagger "Try it out" run. The live run found that the unique partial indexes ("one live payment per booking") were silently dropped by Mongoose because the same fields also had index: true; this was fixed and the live run now asserts the indexes exist and that five concurrent payment requests create exactly one payment. A separate review then found that a payment completing after the hold ended kept the customer's money; the webhook now refunds it in full through the Stripe Refunds API, only a payment completed inside the hold confirms a booking, and the expiry job runs per payment hold and reconciles paid intents whose webhook never arrived.
+================================================
