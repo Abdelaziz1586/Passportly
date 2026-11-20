@@ -15,6 +15,10 @@ import {
   ListAirportsQueryDto,
   PaginatedAirportsResponseDto,
 } from './dto/list-airports-query.dto';
+import {
+  ListCountriesQueryDto,
+  PaginatedCountriesResponseDto,
+} from './dto/list-countries-query.dto';
 import { ReferenceDataService } from './reference-data.service';
 
 @ApiTags('Reference Data')
@@ -40,10 +44,17 @@ export class ReferenceDataController {
 
   @Get('countries')
   @ApiOperation({
-    summary: 'List reference countries and supported currencies',
+    summary: 'REF-01: List reference countries and supported currencies',
   })
-  getCountries() {
-    throw new NotImplementedException('GET /api/countries not implemented yet');
+  @ApiOkResponse({
+    description: 'Paginated list of reference countries and currency codes',
+    type: PaginatedCountriesResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid query parameters' })
+  getCountries(
+    @Query() query: ListCountriesQueryDto,
+  ): Promise<PaginatedCountriesResponseDto> {
+    return this.referenceDataService.getCountries(query);
   }
 
   @Get('cities')
