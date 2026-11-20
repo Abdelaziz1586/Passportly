@@ -51,6 +51,10 @@ import {
   ListReportsQueryDto,
   PaginatedReportsResponseDto,
 } from './dto/list-reports-query.dto';
+import {
+  ResolveReportDto,
+  ResolveReportResponseDto,
+} from './dto/resolve-report.dto';
 import { ReactivateAccountResponseDto } from './dto/reactivate-account-response.dto';
 import { DeactivateProviderResponseDto } from './dto/deactivate-provider-response.dto';
 import { ReactivateProviderResponseDto } from './dto/reactivate-provider-response.dto';
@@ -264,10 +268,24 @@ export class AdminController {
     summary:
       'GEN-10: Resolve report (dismiss, hide content, or delete content)',
   })
-  resolveReport() {
-    throw new NotImplementedException(
-      'PATCH /api/admin/reports/:id not implemented yet',
-    );
+  @ApiParam({ name: 'id', type: String, description: 'Report ID' })
+  @ApiOkResponse({
+    description: 'Report resolved and moderation action applied',
+    type: ResolveReportResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid report ID or resolution body',
+  })
+  @ApiConflictResponse({ description: 'Report has already been resolved' })
+  @ApiForbiddenResponse({ description: 'Admin role required' })
+  @ApiNotFoundResponse({ description: 'Report or target content not found' })
+  resolveReport(
+    @Param('id') id: string,
+    @Body() dto: ResolveReportDto,
+    @CurrentUser() admin: AuthenticatedUser,
+    @Req() req: Request,
+  ): Promise<ResolveReportResponseDto> {
+    return this.adminService.resolveReport(id, dto, admin, req.ip);
   }
 
   @Delete('content/:type/:id')
