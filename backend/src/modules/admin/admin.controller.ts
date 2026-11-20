@@ -45,6 +45,7 @@ import {
 } from './dto/list-accounts-query.dto';
 import { ReactivateAccountResponseDto } from './dto/reactivate-account-response.dto';
 import { DeactivateProviderResponseDto } from './dto/deactivate-provider-response.dto';
+import { ReactivateProviderResponseDto } from './dto/reactivate-provider-response.dto';
 import {
   AccountStatusChangeResponseDto,
   SuspendAccountDto,
@@ -195,10 +196,29 @@ export class AdminController {
 
   @Patch('providers/:type/:id/reactivate')
   @ApiOperation({ summary: 'ACC-15: Reactivate airline or hotel provider' })
-  reactivateProvider() {
-    throw new NotImplementedException(
-      'PATCH /api/admin/providers/:type/:id/reactivate not implemented yet',
-    );
+  @ApiParam({
+    name: 'type',
+    enum: ProviderType,
+    description: 'Provider type (airline or hotel)',
+  })
+  @ApiParam({ name: 'id', type: String, description: 'Provider ID' })
+  @ApiOkResponse({
+    description: 'Provider reactivated and assigned moderator notified',
+    type: ReactivateProviderResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid provider type or provider ID',
+  })
+  @ApiConflictResponse({ description: 'Provider is already active' })
+  @ApiForbiddenResponse({ description: 'Admin role required' })
+  @ApiNotFoundResponse({ description: 'Provider not found' })
+  reactivateProvider(
+    @Param('type') type: string,
+    @Param('id') id: string,
+    @CurrentUser() admin: AuthenticatedUser,
+    @Req() req: Request,
+  ): Promise<ReactivateProviderResponseDto> {
+    return this.adminService.reactivateProvider(type, id, admin, req.ip);
   }
 
   @Get('bookings')
