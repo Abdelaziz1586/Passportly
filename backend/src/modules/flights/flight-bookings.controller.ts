@@ -272,13 +272,4 @@ export class FlightBookingsController {
       disposition: `attachment; filename="e-ticket-${ticket.bookingReference}.pdf"`,
     });
   }
-
-  @Roles(Role.REGISTERED_USER)
-  @Patch(':id/seat')
-  @ApiOperation({ summary: 'FLT-28 (Optional): Select or change seat' })
-  selectSeat() {
-    throw new NotImplementedException(
-      'PATCH /api/flight-bookings/:id/seat not implemented yet',
-    );
-  }
 }

@@ -1059,3 +1059,15 @@ Implement POST /api/hotel-bookings/:id/cancel: the owner cancels a Confirmed res
 How the output was used:
 The generated service, DTOs, controller wiring and tests were integrated and checked with lint, build, unit tests, 48 live checks and a Swagger "Try it out" run for the preview and the cancellation.
 ================================================
+================================================
+================================================
+Date: 2026-11-20
+Student: Abdulrahman Ahmed
+Branch: feature/SCRUM-77-FLT-28-seat-selection (stacked on feature/SCRUM-81-HTL-21-cancel-hotel-booking)
+Tool: Claude Code (terminal, Claude Sonnet 5.5)
+Related Requirement: FLT-28 (PATCH /api/flight-bookings/:id/seat, optional bonus), FLT-11, GEN-11
+Prompt:
+Implement PATCH /api/flight-bookings/:id/seat: the owner selects or changes the seat of one non-infant passenger on one leg. The seat map is derived from the cabin capacity (rows of A-F, labels like 12C, cabins laid out front to back), the seat must be in the passenger's own cabin, the leg must not have departed, and the booking must be Confirmed or a live hold with passenger details. One passenger per seat on a flight is enforced by a unique index, so concurrent requests for the same seat give exactly one success and the others 409. Changing a seat frees the old one; a cancelled or expired booking frees its seats; seats cost nothing. Also a seat-map read endpoint so the traveller can see which seats are taken. Then write unit tests and run live checks (races, cancel/expiry release, round trip, departed leg) plus the Swagger page in a browser.
+How the output was used:
+The generated seat-map helper, claim schema, service, controller, DTOs and tests were integrated, a fresh reviewer found a window where a late payment could confirm a booking whose seat had been given away (fixed), and the result was checked with lint, build, unit tests, 59 live checks and a Swagger "Try it out" run.
+================================================
