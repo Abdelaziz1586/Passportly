@@ -1,5 +1,9 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import {
+  UserSession,
+  UserSessionSchema,
+} from '../auth/schemas/user-session.schema';
 import { ReferenceDataModule } from '../reference-data/reference-data.module';
 import { User, UserSchema } from './schemas/user.schema';
 import {
@@ -15,6 +19,7 @@ import { UsersService } from './users.service';
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: ModeratorAssignment.name, schema: ModeratorAssignmentSchema },
+      { name: UserSession.name, schema: UserSessionSchema },
     ]),
   ],
   controllers: [UsersController],
