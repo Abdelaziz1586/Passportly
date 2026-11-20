@@ -107,6 +107,14 @@ export class PostLikeResponseDto {
   likesCount: number;
 }
 
+export class UploadPostImageResponseDto {
+  @ApiProperty({ type: BlogMediaItemDto })
+  image: BlogMediaItemDto;
+
+  @ApiProperty({ type: [BlogMediaItemDto] })
+  images: BlogMediaItemDto[];
+}
+
 export class PaginatedBlogPostsResponseDto {
   @ApiProperty({ type: [BlogPostItemDto] })
   data: BlogPostItemDto[];

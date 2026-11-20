@@ -9,11 +9,16 @@ import {
   Post,
   Query,
   Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBadRequestResponse,
+  ApiBody,
   ApiConflictResponse,
+  ApiConsumes,
   ApiCookieAuth,
   ApiCreatedResponse,
   ApiForbiddenResponse,
@@ -39,6 +44,7 @@ import {
   DeleteCommentResponseDto,
   PaginatedBlogPostsResponseDto,
   PostLikeResponseDto,
+  UploadPostImageResponseDto,
 } from './dto/blog-post-response.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { CreatePostDto } from './dto/create-post.dto';
@@ -47,6 +53,8 @@ import { ListPostsQueryDto } from './dto/list-posts-query.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { OptionalJwtAuthGuard } from './guards/optional-jwt-auth.guard';
+
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 @ApiTags('Blog & Community')
 @Controller()
@@ -293,12 +301,42 @@ export class BlogController {
 
   @ApiCookieAuth()
   @Roles(Role.REGISTERED_USER)
+  @UseInterceptors(
+    FileInterceptor('image', {
+      limits: { files: 1, fileSize: MAX_UPLOAD_BYTES },
+    }),
+  )
   @Post('posts/:id/images')
   @ApiOperation({ summary: 'BLG-10, GEN-08: Upload image to blog post' })
-  uploadPostImage() {
-    throw new NotImplementedException(
-      'POST /api/posts/:id/images not implemented yet',
-    );
+  @ApiParam({ name: 'id', description: 'Blog post MongoDB ObjectId' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['image'],
+      properties: {
+        image: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @ApiCreatedResponse({
+    description: 'Image validated, stored, and attached to blog post',
+    type: UploadPostImageResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid post ID or invalid/oversized image file',
+  })
+  @ApiUnauthorizedResponse({ description: 'Authentication required' })
+  @ApiForbiddenResponse({
+    description: 'Only the post author can upload images to this blog post',
+  })
+  @ApiNotFoundResponse({ description: 'Blog post not found' })
+  uploadPostImage(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @UploadedFile() file?: Express.Multer.File,
+  ): Promise<UploadPostImageResponseDto> {
+    return this.blogService.uploadPostImage(id, user.userId, file);
   }
 
   @ApiCookieAuth()

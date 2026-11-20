@@ -1565,4 +1565,12 @@ Implement SCRUM-127 [BLG-06] DELETE /api/posts/:id/like - Remove like from a pos
 
 How the output was used:
 Implemented BlogService.unlikePost with atomic Like deletion and guarded likesCount decrement when a like existed, wired BlogController.unlikePost with Swagger/role decorators, and added unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
+
+Related Requirement: BLG-10, GEN-08 (SCRUM-128, POST /api/posts/:id/images)
+
+Prompt:
+Implement SCRUM-128 [BLG-10, GEN-08] POST /api/posts/:id/images - Upload validated image to blog post via UploadsService.saveImage() and append MediaItem to BlogPost.images.
+
+How the output was used:
+Implemented UploadsService.saveImage() with MIME/magic-byte/size validation and safe UUID disk storage, UploadPostImageResponseDto, BlogService.uploadPostImage with author ownership enforcement and orphan cleanup, BlogController.uploadPostImage multipart/form-data Swagger/FileInterceptor wiring, and unit tests in uploads.service.spec.ts, blog.controller.spec.ts, and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
 ================================================

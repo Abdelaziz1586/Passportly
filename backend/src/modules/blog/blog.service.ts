@@ -18,6 +18,7 @@ import {
   extractAuthorId,
   formatBlogPost,
   formatComment,
+  formatMediaItem,
   generatePostSlug,
   LeanBlogPostLike,
   LeanCommentLike,
@@ -32,6 +33,7 @@ import {
   DeleteCommentResponseDto,
   PaginatedBlogPostsResponseDto,
   PostLikeResponseDto,
+  UploadPostImageResponseDto,
 } from './dto/blog-post-response.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { CreatePostDto } from './dto/create-post.dto';
@@ -778,5 +780,62 @@ export class BlogService {
       liked: false,
       likesCount: updated?.likesCount ?? Math.max(0, post.likesCount - 1),
     };
+  }
+  /**
+   * Validates author ownership, validates & stores the image via UploadsService,
+   * and appends the resulting MediaItem to BlogPost.images.
+   */
+  async uploadPostImage(
+    postId: string,
+    userId: string,
+    file?: Express.Multer.File,
+  ): Promise<UploadPostImageResponseDto> {
+    if (!isValidObjectId(postId)) {
+      throw new BadRequestException('Invalid blog post ID');
+    }
+    if (!file) {
+      throw new BadRequestException('Image file is required');
+    }
+
+    const post = await this.blogPostModel.findById(postId).lean();
+    if (!post) {
+      throw new NotFoundException('Blog post not found');
+    }
+
+    if (String(post.author) !== userId) {
+      throw new ForbiddenException(
+        'You can only upload images to your own blog posts',
+      );
+    }
+
+    const mediaItem = await this.uploadsService.saveImage(file, 'blog-posts');
+
+    try {
+      const updated = await this.blogPostModel
+        .findOneAndUpdate(
+          { _id: post._id, author: new Types.ObjectId(userId) },
+          { $push: { images: mediaItem } },
+          { returnDocument: 'after' },
+        )
+        .lean();
+
+      if (!updated) {
+        await this.uploadsService.deleteImage(mediaItem.url);
+        throw new NotFoundException('Blog post not found');
+      }
+
+      const images = (updated.images ?? []).map(formatMediaItem);
+      const addedImage =
+        images.find((img) => img.filename === mediaItem.filename) ??
+        formatMediaItem(mediaItem);
+
+      return {
+        image: addedImage,
+        images,
+      };
+    } catch (error) {
+      await this.uploadsService.deleteImage(mediaItem.url);
+      throw error;
+    }
   }
 }
