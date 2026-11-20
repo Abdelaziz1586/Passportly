@@ -360,6 +360,12 @@ export class ItinerariesService {
     return activity.save();
   }
 
+  async deleteActivity(id: string, userId: string) {
+    const activity = await this.findOwnedActivity(id, userId);
+    await activity.deleteOne();
+    return { deleted: true, activityId: id };
+  }
+
   private async getItineraryDetails(
     itinerary: ItineraryDocument,
   ): Promise<Record<string, unknown>> {
