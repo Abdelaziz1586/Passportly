@@ -7,7 +7,12 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { isValidObjectId, Model, Types } from 'mongoose';
-import { AccountStatus, NotificationType, PostStatus, Role } from '../../common/enums';
+import {
+  AccountStatus,
+  NotificationType,
+  PostStatus,
+  Role,
+} from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -1047,5 +1052,4 @@ export class BlogService {
       },
     };
   }
-
 }

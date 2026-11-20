@@ -44,9 +44,15 @@ describe('BlogService (SCRUM-131 BLG-12 author profile & posts)', () => {
         { provide: getModelToken(BlogPost.name), useValue: mockBlogPostModel },
         { provide: getModelToken(Comment.name), useValue: {} },
         { provide: getModelToken(Like.name), useValue: {} },
-        { provide: UploadsService, useValue: { deleteImage: jest.fn(), saveImage: jest.fn() } },
+        {
+          provide: UploadsService,
+          useValue: { deleteImage: jest.fn(), saveImage: jest.fn() },
+        },
         { provide: AuditLogsService, useValue: { log: jest.fn() } },
-        { provide: NotificationsService, useValue: { createNotification: jest.fn() } },
+        {
+          provide: NotificationsService,
+          useValue: { createNotification: jest.fn() },
+        },
         { provide: getModelToken(Tag.name), useValue: {} },
         { provide: getModelToken(User.name), useValue: mockUserModel },
       ],
