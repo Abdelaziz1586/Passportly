@@ -211,3 +211,34 @@ export class TagPostsResponseDto extends PaginatedBlogPostsResponseDto {
   @ApiProperty({ type: BlogTagSummaryDto })
   tag: BlogTagSummaryDto;
 }
+
+export class PublicAuthorProfileDto {
+  @ApiProperty({ example: '673c1f2a9c4b2d001f8a1111' })
+  id: string;
+
+  @ApiProperty({ example: 'Abdullah' })
+  firstName: string;
+
+  @ApiProperty({ example: 'Emam' })
+  lastName: string;
+
+  @ApiProperty({ example: 'Abdullah Emam' })
+  fullName: string;
+
+  @ApiPropertyOptional({ example: '/uploads/avatars/avatar.jpg' })
+  avatarUrl?: string;
+
+  @ApiPropertyOptional({ example: 'Travel writer and photographer' })
+  bio?: string;
+
+  @ApiPropertyOptional()
+  createdAt?: Date;
+}
+
+export class AuthorProfileResponseDto {
+  @ApiProperty({ type: PublicAuthorProfileDto })
+  author: PublicAuthorProfileDto;
+
+  @ApiProperty({ type: PaginatedBlogPostsResponseDto })
+  posts: PaginatedBlogPostsResponseDto;
+}

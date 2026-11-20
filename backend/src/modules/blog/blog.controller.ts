@@ -37,6 +37,7 @@ import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { BlogService } from './blog.service';
 import {
+  AuthorProfileResponseDto,
   BlogCommentItemDto,
   BlogPostDetailResponseDto,
   BlogPostItemDto,
@@ -48,6 +49,7 @@ import {
   TagPostsResponseDto,
   UploadPostImageResponseDto,
 } from './dto/blog-post-response.dto';
+import { AuthorPostsQueryDto } from './dto/author-posts-query.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { CreatePostDto } from './dto/create-post.dto';
 import { ListMyPostsQueryDto } from './dto/list-my-posts-query.dto';
@@ -387,10 +389,18 @@ export class BlogController {
   @ApiOperation({
     summary: 'BLG-12: View public author profile and published posts',
   })
-  getAuthorPage() {
-    throw new NotImplementedException(
-      'GET /api/authors/:id not implemented yet',
-    );
+  @ApiParam({ name: 'id', description: 'Author user MongoDB ObjectId' })
+  @ApiOkResponse({
+    description: 'Safe public author profile and paginated published posts',
+    type: AuthorProfileResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid author ID or query params' })
+  @ApiNotFoundResponse({ description: 'Author not found' })
+  getAuthorPage(
+    @Param('id') id: string,
+    @Query() query: AuthorPostsQueryDto,
+  ): Promise<AuthorProfileResponseDto> {
+    return this.blogService.getAuthorPage(id, query);
   }
 
   @ApiCookieAuth()

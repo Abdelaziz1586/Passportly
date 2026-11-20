@@ -7,11 +7,17 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { isValidObjectId, Model, Types } from 'mongoose';
-import { NotificationType, PostStatus, Role } from '../../common/enums';
+import {
+  AccountStatus,
+  NotificationType,
+  PostStatus,
+  Role,
+} from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { UploadsService } from '../uploads/uploads.service';
+import { User, UserDocument } from '../users/schemas/user.schema';
 import {
   buildExcerpt,
   escapeRegex,
@@ -26,6 +32,7 @@ import {
   slugify,
 } from './blog.utils';
 import {
+  AuthorProfileResponseDto,
   BlogCommentItemDto,
   BlogPostDetailResponseDto,
   BlogPostItemDto,
@@ -37,6 +44,7 @@ import {
   TagPostsResponseDto,
   UploadPostImageResponseDto,
 } from './dto/blog-post-response.dto';
+import { AuthorPostsQueryDto } from './dto/author-posts-query.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { CreatePostDto } from './dto/create-post.dto';
 import { ListMyPostsQueryDto } from './dto/list-my-posts-query.dto';
@@ -66,6 +74,16 @@ function safeDecodeTag(rawTag: string): string {
   }
 }
 
+interface LeanPublicAuthor {
+  _id: Types.ObjectId | string;
+  firstName: string;
+  lastName: string;
+  avatarUrl?: string;
+  bio?: string;
+  status: AccountStatus;
+  createdAt?: Date;
+}
+
 @Injectable()
 export class BlogService {
   constructor(
@@ -74,6 +92,7 @@ export class BlogService {
     @InjectModel(Comment.name) readonly commentModel: Model<CommentDocument>,
     @InjectModel(Like.name) readonly likeModel: Model<LikeDocument>,
     @InjectModel(Tag.name) readonly tagModel: Model<TagDocument>,
+    @InjectModel(User.name) readonly userModel: Model<UserDocument>,
     private readonly uploadsService: UploadsService,
     private readonly auditLogsService: AuditLogsService,
     private readonly notificationsService: NotificationsService,
@@ -968,6 +987,69 @@ export class BlogService {
       page,
       limit,
       totalPages: total === 0 ? 0 : Math.ceil(total / limit),
+    };
+  }
+  /**
+   * Returns a safe public author profile (name, avatarUrl, bio) along with
+   * a paginated list of their published, non-hidden blog posts.
+   */
+  async getAuthorPage(
+    authorId: string,
+    query: AuthorPostsQueryDto,
+  ): Promise<AuthorProfileResponseDto> {
+    if (!isValidObjectId(authorId)) {
+      throw new BadRequestException('Invalid author ID');
+    }
+
+    const user = await this.userModel
+      .findById(authorId)
+      .select('firstName lastName avatarUrl bio status createdAt')
+      .lean<LeanPublicAuthor | null>();
+
+    if (!user || user.status !== AccountStatus.ACTIVE) {
+      throw new NotFoundException('Author not found');
+    }
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const sortBy = query.sortBy ?? 'publishedAt';
+    const sortDirection = query.sortOrder === 'asc' ? 1 : -1;
+
+    const filter = {
+      author: user._id,
+      status: PostStatus.PUBLISHED,
+      isHidden: false,
+    };
+
+    const [posts, total] = await Promise.all([
+      this.blogPostModel
+        .find(filter)
+        .sort({ [sortBy]: sortDirection, _id: sortDirection })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean<LeanBlogPostLike[]>(),
+      this.blogPostModel.countDocuments(filter),
+    ]);
+
+    const fullName = `${user.firstName} ${user.lastName}`.trim();
+
+    return {
+      author: {
+        id: String(user._id),
+        firstName: user.firstName,
+        lastName: user.lastName,
+        fullName,
+        ...(user.avatarUrl !== undefined ? { avatarUrl: user.avatarUrl } : {}),
+        ...(user.bio !== undefined ? { bio: user.bio } : {}),
+        ...(user.createdAt !== undefined ? { createdAt: user.createdAt } : {}),
+      },
+      posts: {
+        data: posts.map((post) => formatBlogPost(post)),
+        total,
+        page,
+        limit,
+        totalPages: total === 0 ? 0 : Math.ceil(total / limit),
+      },
     };
   }
 }

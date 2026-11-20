@@ -1589,4 +1589,12 @@ Implement SCRUM-130 [BLG-08] GET /api/tags/:tag/posts - List published blog post
 
 How the output was used:
 Added ListPostsByTagQueryDto, BlogTagSummaryDto, TagPostsResponseDto, UsersModule import in BlogModule, BlogService.getPostsByTag normalizing tag names/slugs and filtering published non-hidden posts, BlogController.getPostsByTag with @Public() and Swagger annotations, and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
+
+Related Requirement: BLG-12 (SCRUM-131, GET /api/authors/:id)
+
+Prompt:
+Implement SCRUM-131 [BLG-12] GET /api/authors/:id - View public author profile (name, avatarUrl, bio) and paginated published non-hidden BlogPosts.
+
+How the output was used:
+Added AuthorPostsQueryDto, PublicAuthorProfileDto, and AuthorProfileResponseDto, imported UsersModule in BlogModule, implemented BlogService.getAuthorPage enforcing ACTIVE account check and safe public field projection alongside published non-hidden posts, wired BlogController.getAuthorPage with @Public() and Swagger annotations, and added unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
 ================================================

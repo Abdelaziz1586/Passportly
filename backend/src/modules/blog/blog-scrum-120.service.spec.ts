@@ -10,6 +10,7 @@ import { BlogService } from './blog.service';
 import { BlogPost } from './schemas/blog-post.schema';
 import { Comment } from './schemas/comment.schema';
 import { Like } from './schemas/like.schema';
+import { User } from '../users/schemas/user.schema';
 import { Tag } from './schemas/tag.schema';
 
 describe('BlogService (SCRUM-120 BLG-02 get blog post details)', () => {
@@ -43,6 +44,7 @@ describe('BlogService (SCRUM-120 BLG-02 get blog post details)', () => {
           provide: NotificationsService,
           useValue: { createNotification: jest.fn() },
         },
+        { provide: getModelToken(User.name), useValue: {} },
         { provide: getModelToken(Tag.name), useValue: {} },
       ],
     }).compile();

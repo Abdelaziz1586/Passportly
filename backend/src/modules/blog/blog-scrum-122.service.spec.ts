@@ -14,6 +14,7 @@ import { BlogService } from './blog.service';
 import { BlogPost } from './schemas/blog-post.schema';
 import { Comment } from './schemas/comment.schema';
 import { Like } from './schemas/like.schema';
+import { User } from '../users/schemas/user.schema';
 import { Tag } from './schemas/tag.schema';
 
 describe('BlogService (SCRUM-122 BLG-04 delete post)', () => {
@@ -57,6 +58,7 @@ describe('BlogService (SCRUM-122 BLG-04 delete post)', () => {
         { provide: getModelToken(BlogPost.name), useValue: mockBlogPostModel },
         { provide: getModelToken(Comment.name), useValue: mockCommentModel },
         { provide: getModelToken(Like.name), useValue: mockLikeModel },
+        { provide: getModelToken(User.name), useValue: {} },
         { provide: getModelToken(Tag.name), useValue: mockTagModel },
         { provide: UploadsService, useValue: mockUploadsService },
         { provide: AuditLogsService, useValue: mockAuditLogsService },
