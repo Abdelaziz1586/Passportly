@@ -5,7 +5,6 @@ import {
   Get,
   HttpCode,
   HttpStatus,
-  NotImplementedException,
   Param,
   Patch,
   Post,
@@ -47,6 +46,10 @@ import {
   ListAdminBookingsQueryDto,
   PaginatedAdminBookingsResponseDto,
 } from './dto/list-admin-bookings-query.dto';
+import {
+  ListAuditLogsQueryDto,
+  PaginatedAuditLogsResponseDto,
+} from './dto/list-audit-logs-query.dto';
 import {
   ListReportsQueryDto,
   PaginatedReportsResponseDto,
@@ -315,9 +318,15 @@ export class AdminController {
 
   @Get('audit-logs')
   @ApiOperation({ summary: 'GEN-07: Query administrative audit logs' })
-  listAuditLogs() {
-    throw new NotImplementedException(
-      'GET /api/admin/audit-logs not implemented yet',
-    );
+  @ApiOkResponse({
+    description: 'Paginated administrative audit logs',
+    type: PaginatedAuditLogsResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid filter or date range query' })
+  @ApiForbiddenResponse({ description: 'Admin role required' })
+  listAuditLogs(
+    @Query() query: ListAuditLogsQueryDto,
+  ): Promise<PaginatedAuditLogsResponseDto> {
+    return this.adminService.listAuditLogs(query);
   }
 }
