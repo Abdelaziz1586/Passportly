@@ -25,9 +25,37 @@ function escapePdfText(text: string): string {
     .replace(/\)/g, '\\)');
 }
 
+function wrapPdfText(text: string, size: number): string[] {
+  const normalized = toLatin1(text);
+  const maxChars = Math.max(
+    20,
+    Math.floor((PAGE_WIDTH - MARGIN * 2) / (size * 0.52)),
+  );
+  if (normalized.length <= maxChars) {
+    return [normalized];
+  }
+  const indentMatch = /^(\s+)/.exec(normalized);
+  const indent =
+    indentMatch && indentMatch[1].length < maxChars - 10 ? indentMatch[1] : '';
+  const chunks: string[] = [];
+  let remaining = normalized.trimEnd();
+  while (remaining.length > maxChars) {
+    let splitAt = remaining.lastIndexOf(' ', maxChars);
+    if (splitAt <= indent.length) {
+      splitAt = maxChars;
+    }
+    chunks.push(remaining.slice(0, splitAt).trimEnd());
+    remaining = `${indent}${remaining.slice(splitAt).trimStart()}`;
+  }
+  if (remaining.length > 0 || chunks.length === 0) {
+    chunks.push(remaining);
+  }
+  return chunks;
+}
+
 /**
- * Builds a small text-only PDF (Helvetica, A4, automatic page breaks) without
- * any dependency. Used for the downloadable e-ticket.
+ * Builds a small text-only PDF (Helvetica, A4, automatic page breaks and wrapping)
+ * without any dependency. Used for the downloadable e-ticket.
  */
 export function buildSimplePdf(lines: PdfLine[]): Buffer {
   // Lay lines out on pages.
@@ -35,15 +63,18 @@ export function buildSimplePdf(lines: PdfLine[]): Buffer {
   let y = PAGE_HEIGHT - MARGIN;
   for (const line of lines) {
     const size = line.size ?? 11;
-    if (y - size < MARGIN) {
-      pages.push([]);
-      y = PAGE_HEIGHT - MARGIN;
+    const wrapped = wrapPdfText(line.text, size);
+    for (const part of wrapped) {
+      if (y - size < MARGIN) {
+        pages.push([]);
+        y = PAGE_HEIGHT - MARGIN;
+      }
+      y -= size;
+      pages[pages.length - 1].push(
+        `BT /${line.bold ? 'F2' : 'F1'} ${size} Tf ${MARGIN} ${y} Td (${escapePdfText(part)}) Tj ET`,
+      );
+      y -= LINE_GAP;
     }
-    y -= size;
-    pages[pages.length - 1].push(
-      `BT /${line.bold ? 'F2' : 'F1'} ${size} Tf ${MARGIN} ${y} Td (${escapePdfText(line.text)}) Tj ET`,
-    );
-    y -= LINE_GAP;
   }
 
   // Objects: 1 catalog, 2 pages, 3 font, 4 bold font, then (page, content) pairs.
