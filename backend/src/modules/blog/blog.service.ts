@@ -890,5 +890,4 @@ export class BlogService {
       images: (updated?.images ?? []).map(formatMediaItem),
     };
   }
-
 }

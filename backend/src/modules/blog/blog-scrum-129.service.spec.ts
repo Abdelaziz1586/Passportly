@@ -37,7 +37,10 @@ describe('BlogService (SCRUM-129 BLG-10 delete post image)', () => {
         { provide: getModelToken(Comment.name), useValue: {} },
         { provide: getModelToken(Like.name), useValue: {} },
         { provide: AuditLogsService, useValue: { log: jest.fn() } },
-        { provide: NotificationsService, useValue: { createNotification: jest.fn() } },
+        {
+          provide: NotificationsService,
+          useValue: { createNotification: jest.fn() },
+        },
         { provide: getModelToken(Tag.name), useValue: {} },
         { provide: UploadsService, useValue: mockUploadsService },
       ],
