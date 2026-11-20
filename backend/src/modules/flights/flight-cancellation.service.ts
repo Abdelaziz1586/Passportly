@@ -22,7 +22,7 @@ import {
 } from '../payments/refund-calculation';
 import { RefundsService } from '../payments/refunds.service';
 import { paymentsNewestFirst } from './flight-change.service';
-import { toMinorUnits } from '../payments/payment-amounts';
+import { fromMinorUnits, toMinorUnits } from '../payments/payment-amounts';
 import { CancelFlightBookingDto } from './dto/cancel-flight-booking.dto';
 import { CabinInventory } from './schemas/cabin-inventory.schema';
 import { FlightBooking } from './schemas/flight-booking.schema';
@@ -170,10 +170,13 @@ export class FlightCancellationService {
       const refundAmount = !refundable
         ? 0
         : changed
-          ? Math.min(
-              toMinorUnits(quote.amount, booking.currency),
-              changedRoomCents,
-            ) / 100
+          ? fromMinorUnits(
+              Math.min(
+                toMinorUnits(quote.amount, booking.currency),
+                changedRoomCents,
+              ),
+              booking.currency,
+            )
           : quote.amount;
 
       // One conditional update: only a CONFIRMED booking that has not departed can be cancelled.
@@ -183,6 +186,12 @@ export class FlightCancellationService {
           user: owner,
           status: BookingStatus.CONFIRMED,
           'legs.0.departureTime': { $gt: now },
+          // FLT-27: only the state that was read (a flight change in between would make the seats,
+          // total and payments we computed from stale).
+          changeCount:
+            (booking.changeCount ?? 0) === 0
+              ? { $in: [0, null] }
+              : booking.changeCount,
         },
         {
           $set: {

@@ -233,6 +233,11 @@ function build(
     ),
   };
   const airlineModel = {
+    find: jest.fn((filter: { _id: { $in: Types.ObjectId[] } }) =>
+      query(
+        w.airlines.filter((a) => filter._id.$in.some((x) => x.equals(a._id))),
+      ),
+    ),
     findById: jest.fn((id: Types.ObjectId) =>
       query(w.airlines.find((a) => a._id.equals(id)) ?? null),
     ),
@@ -1208,6 +1213,49 @@ describe('FlightChangeService.settle (the payment webhook)', () => {
       (await t2.service.settle(payment as never, new Date(), {} as never)).kind,
     ).toBe('refund');
     expect(t2.cabinModel.updateOne).not.toHaveBeenCalled();
+  });
+
+  it('refunds when another change was applied to the booking after the offer (stale plan)', async () => {
+    const w = world();
+    const n = addFlight(w, 'NA200', 360);
+    const { change, payment } = await pendingChange(w, n);
+    w.booking.changeCount = 1;
+    const t = build(w);
+    t.changeModel.findOne.mockReturnValue(query(change as never));
+    const out = await t.service.settle(
+      payment as never,
+      new Date(),
+      {} as never,
+    );
+    expect(out.kind).toBe('refund');
+    expect(t.cabinModel.updateOne).not.toHaveBeenCalled();
+    expect(t.bookingModel.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('refunds when the new airline was deactivated during the payment window', async () => {
+    const w = world();
+    const n = addFlight(w, 'NA200', 360);
+    const { change, payment } = await pendingChange(w, n);
+    w.airlines[0].isActive = false;
+    const t = build(w);
+    t.changeModel.findOne.mockReturnValue(query(change as never));
+    expect(
+      (await t.service.settle(payment as never, new Date(), {} as never)).kind,
+    ).toBe('refund');
+    expect(t.cabinModel.updateOne).not.toHaveBeenCalled();
+  });
+
+  it('guards the booking update with the change counter it was quoted from', async () => {
+    const w = world();
+    const n = addFlight(w, 'NA202', 300);
+    const t = build(w);
+    await t.service.change(owner(), w.booking._id.toString(), {
+      legs: legs(n.f._id),
+      acceptPolicies: true,
+    });
+    const [filter] = t.bookingModel.findOneAndUpdate.mock
+      .calls[0] as unknown as [Record<string, unknown>];
+    expect(filter.changeCount).toEqual({ $in: [0, null] });
   });
 
   it('registers itself for FLIGHT_CHANGE payments', () => {

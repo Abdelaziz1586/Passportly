@@ -40,14 +40,18 @@ function build(
   refunds: StoredRefund[] = [],
 ) {
   const refundModel = {
-    findOne: jest.fn((filter: { payment: Types.ObjectId; key?: string }) =>
-      query(
-        refunds.find(
-          (r) =>
-            r.payment.equals(filter.payment) &&
-            (filter.key === undefined || r.key === filter.key),
-        ) ?? null,
-      ),
+    findOne: jest.fn(
+      (filter: { payment: Types.ObjectId; key?: string | null }) =>
+        query(
+          refunds.find(
+            (r) =>
+              r.payment.equals(filter.payment) &&
+              (filter.key === undefined ||
+                (filter.key === null
+                  ? r.key === undefined
+                  : r.key === filter.key)),
+          ) ?? null,
+        ),
     ),
     find: jest.fn((filter: { payment: Types.ObjectId }) =>
       query(

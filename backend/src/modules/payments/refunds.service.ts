@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -107,7 +108,7 @@ const GENERIC_FAILURE = 'The payment provider could not complete the refund';
  * commit the record is not visible yet and the job would pick it up later).
  */
 @Injectable()
-export class RefundsService {
+export class RefundsService implements OnModuleInit {
   private readonly logger = new Logger(RefundsService.name);
   private dispatching = false;
 
@@ -119,6 +120,20 @@ export class RefundsService {
     private readonly paymentsService: PaymentsService,
     private readonly notificationsService: NotificationsService,
   ) {}
+
+  /**
+   * FLT-27: the old unique index `payment_one_refund` (one refund per payment) would reject a
+   * payment's second refund. Mongoose builds the new `payment_refund_key` index but never removes
+   * an old one, so drop it once if a database still has it (nothing happens when it is gone).
+   */
+  async onModuleInit(): Promise<void> {
+    try {
+      await this.refundModel.collection.dropIndex('payment_one_refund');
+      this.logger.log('Dropped the old unique index payment_one_refund');
+    } catch {
+      // Not there (or the collection does not exist yet): nothing to do.
+    }
+  }
 
   /**
    * Records a PENDING refund. Pass the session of the cancellation transaction so
@@ -134,8 +149,9 @@ export class RefundsService {
       throw new BadRequestException('A refund needs a positive amount');
     }
     if (input.key !== undefined) return this.recordKeyedRefund(input, session);
+    // Only refunds without a key count here: keyed refunds (FLT-27) are other events.
     const existing = await this.refundModel
-      .findOne({ payment: input.payment })
+      .findOne({ payment: input.payment, key: null })
       .session(session ?? null);
     if (existing) return existing;
 
@@ -179,6 +195,7 @@ export class RefundsService {
       if (!session && this.isDuplicateKey(error)) {
         const winner = await this.refundModel.findOne({
           payment: input.payment,
+          key: null,
         });
         if (winner) return winner;
       }

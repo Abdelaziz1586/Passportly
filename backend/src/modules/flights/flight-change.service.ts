@@ -25,6 +25,7 @@ import {
   TripType,
 } from '../../common/enums';
 import { NotificationsService } from '../notifications/notifications.service';
+import { toMinorUnits } from '../payments/payment-amounts';
 import {
   PaidPaymentHandler,
   PaidPaymentOutcome,
@@ -430,6 +431,9 @@ export class FlightChangeService implements OnModuleInit, PaidPaymentHandler {
       .lean()) as unknown as StoredBooking | null;
     if (!booking)
       return { ok: false, reason: 'the booking is no longer confirmed' };
+    if ((booking.changeCount ?? 0) !== plan.baseChangeCount) {
+      return { ok: false, reason: 'the booking changed since the offer' };
+    }
     if (booking.legs[0].departureTime.getTime() <= now.getTime()) {
       return { ok: false, reason: 'the booking has already departed' };
     }
@@ -444,12 +448,17 @@ export class FlightChangeService implements OnModuleInit, PaidPaymentHandler {
       .find({ _id: { $in: plan.replaced.map((r) => r.toFlight) } })
       .session(session)
       .lean();
+    const airlines = await this.airlineModel
+      .find({ _id: { $in: newFlights.map((f) => f.airline) } })
+      .session(session)
+      .lean();
     for (const replaced of plan.replaced) {
       const flight = newFlights.find((f) => f._id.equals(replaced.toFlight));
       if (
         !flight ||
         !BOOKABLE_FLIGHT_STATUSES.includes(flight.status) ||
-        flight.departureTime.getTime() <= now.getTime()
+        flight.departureTime.getTime() <= now.getTime() ||
+        !airlines.find((a) => a._id.equals(flight.airline))?.isActive
       ) {
         return { ok: false, reason: 'the new flight can no longer be booked' };
       }
@@ -537,6 +546,9 @@ export class FlightChangeService implements OnModuleInit, PaidPaymentHandler {
       _id: booking._id,
       user: owner,
       status: BookingStatus.CONFIRMED,
+      // Only on top of the state the change was quoted from (a missing counter means 0).
+      changeCount:
+        plan.baseChangeCount === 0 ? { $in: [0, null] } : plan.baseChangeCount,
     };
     for (const replaced of plan.replaced) {
       filter[`legs.${replaced.legIndex}._id`] = replaced.fromLeg;
@@ -572,6 +584,12 @@ export class FlightChangeService implements OnModuleInit, PaidPaymentHandler {
   ): Promise<Draft> {
     const booking = await this.loadChangeable(userId, bookingId, now);
     const seats = booking.passengerCounts.totalSeatsRequired;
+    // Fares are priced in cents like the rest of flight booking: other minor-unit currencies are not supported.
+    if (toMinorUnits(1, booking.currency) !== 100) {
+      throw new ConflictException(
+        `Changing flights is not supported for ${booking.currency} bookings`,
+      );
+    }
 
     const indexes = dto.legs.map((leg) => leg.legIndex);
     if (new Set(indexes).size !== indexes.length) {
@@ -793,6 +811,7 @@ export class FlightChangeService implements OnModuleInit, PaidPaymentHandler {
         toCabin: target.cabin._id,
       })),
       seatsRequired: seats,
+      baseChangeCount: booking.changeCount ?? 0,
     };
 
     const legViews: ChangeLegDto[] = [...targets.entries()].map(
@@ -889,6 +908,18 @@ export class FlightChangeService implements OnModuleInit, PaidPaymentHandler {
     const payment = pending.payment
       ? await this.paymentModel.findById(pending.payment).lean()
       : null;
+    // A change whose payment is still being created is not stale.
+    if (
+      !pending.payment &&
+      (pending as { createdAt?: Date }).createdAt &&
+      now.getTime() -
+        ((pending as { createdAt?: Date }).createdAt as Date).getTime() <
+        60_000
+    ) {
+      throw new ConflictException(
+        'A change of this booking is being prepared: try again in a moment',
+      );
+    }
     const offerOpen =
       !!pending.expiresAt && pending.expiresAt.getTime() > now.getTime();
     if (payment?.status === PaymentStatus.SUCCEEDED) {

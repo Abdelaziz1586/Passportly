@@ -33,6 +33,8 @@ export interface FlightChangePlan {
     toCabin: Types.ObjectId;
   }>;
   seatsRequired: number;
+  /** The booking's changeCount when the change was quoted: the change only applies on top of that state. */
+  baseChangeCount: number;
 }
 
 /**

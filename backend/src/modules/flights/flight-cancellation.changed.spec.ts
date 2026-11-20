@@ -185,6 +185,35 @@ describe('FlightCancellationService after a flight change', () => {
     expect(t.refundsService.recordBookingRefund).not.toHaveBeenCalled();
   });
 
+  it('only cancels the state it read: a flight change in between makes the update find nothing', async () => {
+    const booking = makeBooking({ changePayments: [] });
+    const t = build(booking, { [original.toString()]: 60000 });
+    await t.service.cancel(userId.toString(), booking._id.toString(), {
+      confirm: true,
+    });
+    const [filter] = t.bookingModel.findOneAndUpdate.mock
+      .calls[0] as unknown as [Record<string, unknown>];
+    expect(filter.changeCount).toBe(1);
+    const fresh = makeBooking({
+      changeCount: 0,
+      changePayments: [],
+      totalPrice: 600,
+    });
+    const t2 = build(fresh, {});
+    t2.refundsService.recordRefund.mockResolvedValue({
+      _id: new Types.ObjectId(),
+      status: RefundStatus.PENDING,
+      amount: 600,
+      currency: 'USD',
+    });
+    await t2.service.cancel(userId.toString(), fresh._id.toString(), {
+      confirm: true,
+    });
+    const [filter2] = t2.bookingModel.findOneAndUpdate.mock
+      .calls[0] as unknown as [Record<string, unknown>];
+    expect(filter2.changeCount).toEqual({ $in: [0, null] });
+  });
+
   it('keeps the old single-payment path for a booking that was never changed', async () => {
     const booking = makeBooking({
       changeCount: 0,
