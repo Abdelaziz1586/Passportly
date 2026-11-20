@@ -1533,4 +1533,12 @@ Implement SCRUM-123 [BLG-05] POST /api/posts/:id/comments - Add comment to a pub
 
 How the output was used:
 Added CreateCommentDto, BlogService.addComment with atomic PUBLISHED/non-hidden check and commentsCount increment (with rollback on write error), BlogController.addComment with Swagger/role decorators, and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
+
+Related Requirement: BLG-07 (SCRUM-124, PATCH /api/comments/:id)
+
+Prompt:
+Implement SCRUM-124 [BLG-07] PATCH /api/comments/:id - Update own comment enforcing Comment.author == CurrentUser.userId.
+
+How the output was used:
+Added UpdateCommentDto, BlogService.updateComment with comment author ownership and hidden-comment guards, BlogController.updateComment Swagger/role wiring, and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
 ================================================

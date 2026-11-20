@@ -34,6 +34,7 @@ import { CreateCommentDto } from './dto/create-comment.dto';
 import { CreatePostDto } from './dto/create-post.dto';
 import { ListMyPostsQueryDto } from './dto/list-my-posts-query.dto';
 import { ListPostsQueryDto } from './dto/list-posts-query.dto';
+import { UpdateCommentDto } from './dto/update-comment.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { BlogPost, BlogPostDocument } from './schemas/blog-post.schema';
 import { Comment, CommentDocument } from './schemas/comment.schema';
@@ -52,6 +53,46 @@ export class BlogService {
     private readonly auditLogsService: AuditLogsService,
     private readonly notificationsService: NotificationsService,
   ) {}
+
+  /**
+   * Updates a blog comment authored by the authenticated user.
+   */
+  async updateComment(
+    commentId: string,
+    userId: string,
+    dto: UpdateCommentDto,
+  ): Promise<BlogCommentItemDto> {
+    if (!isValidObjectId(commentId)) {
+      throw new BadRequestException('Invalid comment ID');
+    }
+
+    const comment = await this.commentModel.findById(commentId).lean();
+    if (!comment) {
+      throw new NotFoundException('Comment not found');
+    }
+
+    if (String(comment.author) !== userId) {
+      throw new ForbiddenException('You can only update your own comments');
+    }
+
+    if (comment.isHidden) {
+      throw new ForbiddenException('Hidden comments cannot be edited');
+    }
+
+    const updated = await this.commentModel
+      .findByIdAndUpdate(
+        comment._id,
+        { $set: { content: dto.content } },
+        { returnDocument: 'after' },
+      )
+      .lean<LeanCommentLike | null>();
+
+    if (!updated) {
+      throw new NotFoundException('Comment not found');
+    }
+
+    return formatComment(updated);
+  }
 
   /**
    * Verifies that a blog post is published and not hidden, atomically increments

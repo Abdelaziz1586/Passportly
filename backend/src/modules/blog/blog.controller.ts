@@ -41,6 +41,7 @@ import { CreateCommentDto } from './dto/create-comment.dto';
 import { CreatePostDto } from './dto/create-post.dto';
 import { ListMyPostsQueryDto } from './dto/list-my-posts-query.dto';
 import { ListPostsQueryDto } from './dto/list-posts-query.dto';
+import { UpdateCommentDto } from './dto/update-comment.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { OptionalJwtAuthGuard } from './guards/optional-jwt-auth.guard';
 
@@ -201,10 +202,25 @@ export class BlogController {
   @Roles(Role.REGISTERED_USER)
   @Patch('comments/:id')
   @ApiOperation({ summary: 'BLG-07: Update own comment' })
-  updateComment() {
-    throw new NotImplementedException(
-      'PATCH /api/comments/:id not implemented yet',
-    );
+  @ApiParam({ name: 'id', description: 'Comment MongoDB ObjectId' })
+  @ApiOkResponse({
+    description: 'Comment updated successfully',
+    type: BlogCommentItemDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid comment ID or comment payload',
+  })
+  @ApiUnauthorizedResponse({ description: 'Authentication required' })
+  @ApiForbiddenResponse({
+    description: 'Only the comment author can update this comment',
+  })
+  @ApiNotFoundResponse({ description: 'Comment not found' })
+  updateComment(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdateCommentDto,
+  ): Promise<BlogCommentItemDto> {
+    return this.blogService.updateComment(id, user.userId, dto);
   }
 
   @ApiCookieAuth()
