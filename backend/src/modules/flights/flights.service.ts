@@ -1,10 +1,12 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { ClientSession, Model, Types, isObjectIdOrHexString } from 'mongoose';
 import { Role } from '../../common/enums';
 import { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { Airline, AirlineDocument } from './schemas/airline.schema';
@@ -18,6 +20,10 @@ import {
 } from './schemas/flight-booking.schema';
 import { Flight, FlightDocument } from './schemas/flight.schema';
 import { AirlineCreate } from './create-airline.dto';
+
+function checkId(id: string) {
+  if (!isObjectIdOrHexString(id)) throw new BadRequestException('Invalid ID');
+}
 
 async function unique<T>(write: () => Promise<T>): Promise<T> {
   try {
@@ -48,6 +54,33 @@ export class FlightsService {
     readonly flightBookingModel: Model<FlightBookingDocument>,
   ) {}
 
+  private authorize(user: AuthenticatedUser, airline: Types.ObjectId) {
+    if (user.role === Role.ADMIN) return;
+    if (
+      user.role !== Role.AIRLINE_MODERATOR ||
+      user.assignedProviderType !== 'airline' ||
+      user.assignedProviderId !== airline.toString()
+    ) {
+      throw new ForbiddenException(
+        'Flight or profile belongs to another airline',
+      );
+    }
+  }
+
+  private async airline(
+    id: string,
+    user?: AuthenticatedUser,
+    session?: ClientSession,
+  ) {
+    checkId(id);
+    const airline = await this.airlineModel
+      .findById(id)
+      .session(session ?? null);
+    if (!airline) throw new NotFoundException('Airline not found');
+    if (user) this.authorize(user, airline._id);
+    return airline;
+  }
+
   private airlineView(airline: AirlineDocument) {
     return {
       id: airline._id.toString(),
@@ -77,5 +110,9 @@ export class FlightsService {
         }),
       ),
     );
+  }
+
+  async getAirline(id: string) {
+    return this.airlineView(await this.airline(id));
   }
 }
