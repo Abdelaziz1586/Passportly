@@ -23,7 +23,7 @@ export class NotificationItemDto {
   @ApiPropertyOptional({ example: '673c1f2a9c4b2d001f8a5678' })
   relatedEntityId?: string;
 
-  @ApiProperty({ example: true })
+  @ApiProperty({ example: false })
   isRead: boolean;
 
   @ApiPropertyOptional()
@@ -34,4 +34,24 @@ export class NotificationItemDto {
 
   @ApiPropertyOptional()
   updatedAt?: Date;
+}
+
+export class PaginatedNotificationsResponseDto {
+  @ApiProperty({ type: [NotificationItemDto] })
+  data: NotificationItemDto[];
+
+  @ApiProperty({ example: 3 })
+  unreadCount: number;
+
+  @ApiProperty({ example: 10 })
+  total: number;
+
+  @ApiProperty({ example: 1 })
+  page: number;
+
+  @ApiProperty({ example: 20 })
+  limit: number;
+
+  @ApiProperty({ example: 1 })
+  totalPages: number;
 }

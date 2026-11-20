@@ -7,7 +7,11 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { isValidObjectId, Model, Types } from 'mongoose';
 import { NotificationType } from '../../common/enums';
-import { NotificationItemDto } from './dto/notification-response.dto';
+import { ListNotificationsQueryDto } from './dto/list-notifications-query.dto';
+import {
+  NotificationItemDto,
+  PaginatedNotificationsResponseDto,
+} from './dto/notification-response.dto';
 import {
   Notification,
   NotificationDocument,
@@ -52,6 +56,56 @@ export class NotificationsService {
         ? new Types.ObjectId(params.relatedEntityId)
         : undefined,
     });
+  }
+
+  /**
+   * Lists paginated in-app notifications for the authenticated user along with
+   * their total unread count and optional unread-only / type filters.
+   */
+  async listMyNotifications(
+    userId: string,
+    query: ListNotificationsQueryDto,
+  ): Promise<PaginatedNotificationsResponseDto> {
+    if (!isValidObjectId(userId)) {
+      throw new BadRequestException('Invalid user ID');
+    }
+
+    const recipientId = new Types.ObjectId(userId);
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const sortBy = query.sortBy ?? 'createdAt';
+    const sortDirection = query.sortOrder === 'asc' ? 1 : -1;
+
+    const filter: Record<string, unknown> = { recipient: recipientId };
+    if (query.unreadOnly === true) {
+      filter.isRead = false;
+    }
+    if (query.type) {
+      filter.type = query.type;
+    }
+
+    const [items, total, unreadCount] = await Promise.all([
+      this.notificationModel
+        .find(filter)
+        .sort({ [sortBy]: sortDirection, _id: sortDirection })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean<LeanNotification[]>(),
+      this.notificationModel.countDocuments(filter),
+      this.notificationModel.countDocuments({
+        recipient: recipientId,
+        isRead: false,
+      }),
+    ]);
+
+    return {
+      data: items.map((item) => this.toNotificationDto(item)),
+      unreadCount,
+      total,
+      page,
+      limit,
+      totalPages: total === 0 ? 0 : Math.ceil(total / limit),
+    };
   }
 
   /**

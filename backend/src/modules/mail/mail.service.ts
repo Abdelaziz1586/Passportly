@@ -91,4 +91,38 @@ export class MailService {
       return false;
     }
   }
+
+  async sendPasswordResetEmail(params: {
+    to: string;
+    firstName: string;
+    token: string;
+    expiresInMinutes: number;
+  }): Promise<boolean> {
+    if (!this.transporter) {
+      this.logger.warn(
+        `SMTP is not configured; skipping password reset email for ${params.to}`,
+      );
+      return false;
+    }
+
+    const resetUrl = `${this.appBaseUrl}/reset-password?token=${encodeURIComponent(params.token)}`;
+    const safeFirstName = escapeHtml(params.firstName);
+
+    try {
+      await this.transporter.sendMail({
+        from: this.from,
+        to: params.to,
+        subject: 'Reset your Passportly password',
+        text: `Hi ${params.firstName},\n\nWe received a request to reset your Passportly password. Use the link below within ${params.expiresInMinutes} minutes:\n${resetUrl}\n\nIf you did not request a password reset, you can safely ignore this email.`,
+        html: `<p>Hi ${safeFirstName},</p><p>We received a request to reset your Passportly password. Click the link below within ${params.expiresInMinutes} minutes:</p><p><a href="${resetUrl}">Reset Password</a></p><p>If you did not request a password reset, you can safely ignore this email.</p>`,
+      });
+      return true;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(
+        `Failed to send password reset email to ${params.to}: ${message}`,
+      );
+      return false;
+    }
+  }
 }

@@ -4,6 +4,7 @@ import {
   NotImplementedException,
   Param,
   Patch,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -17,7 +18,11 @@ import {
 } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
-import { NotificationItemDto } from './dto/notification-response.dto';
+import { ListNotificationsQueryDto } from './dto/list-notifications-query.dto';
+import {
+  NotificationItemDto,
+  PaginatedNotificationsResponseDto,
+} from './dto/notification-response.dto';
 import { NotificationsService } from './notifications.service';
 
 @ApiTags('Notifications')
@@ -27,11 +32,21 @@ export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'List current user in-app notifications' })
-  listMine() {
-    throw new NotImplementedException(
-      'GET /api/notifications not implemented yet',
-    );
+  @ApiOperation({
+    summary: 'GEN-11: List current user in-app notifications',
+  })
+  @ApiOkResponse({
+    description: 'Paginated notifications and unread count for current user',
+    type: PaginatedNotificationsResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid query parameters',
+  })
+  listMine(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ListNotificationsQueryDto,
+  ): Promise<PaginatedNotificationsResponseDto> {
+    return this.notificationsService.listMyNotifications(user.userId, query);
   }
 
   @Patch('read-all')
