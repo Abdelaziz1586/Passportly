@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { isValidObjectId, Model, Types } from 'mongoose';
 import { NotificationType } from '../../common/enums';
@@ -101,6 +106,68 @@ export class NotificationsService {
       limit,
       totalPages: total === 0 ? 0 : Math.ceil(total / limit),
     };
+  }
+
+  /**
+   * Verifies ownership of a single notification and marks it as read.
+   */
+  async markAsRead(
+    notificationId: string,
+    userId: string,
+  ): Promise<NotificationItemDto> {
+    if (!isValidObjectId(notificationId)) {
+      throw new BadRequestException('Invalid notification ID');
+    }
+    if (!isValidObjectId(userId)) {
+      throw new BadRequestException('Invalid user ID');
+    }
+
+    const existing = await this.notificationModel
+      .findById(notificationId)
+      .lean<LeanNotification | null>();
+
+    if (!existing) {
+      throw new NotFoundException('Notification not found');
+    }
+
+    if (String(existing.recipient) !== userId) {
+      throw new ForbiddenException(
+        'You can only mark your own notifications as read',
+      );
+    }
+
+    if (existing.isRead) {
+      return this.toNotificationDto(existing);
+    }
+
+    const updated = await this.notificationModel
+      .findOneAndUpdate(
+        {
+          _id: existing._id,
+          recipient: existing.recipient,
+          isRead: false,
+        },
+        {
+          $set: {
+            isRead: true,
+            readAt: new Date(),
+          },
+        },
+        { returnDocument: 'after' },
+      )
+      .lean<LeanNotification | null>();
+
+    const finalDoc =
+      updated ??
+      (await this.notificationModel
+        .findById(existing._id)
+        .lean<LeanNotification | null>());
+
+    if (!finalDoc) {
+      throw new NotFoundException('Notification not found');
+    }
+
+    return this.toNotificationDto(finalDoc);
   }
 
   private toNotificationDto(doc: LeanNotification): NotificationItemDto {
