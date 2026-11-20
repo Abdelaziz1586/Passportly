@@ -9,7 +9,11 @@ import { Role } from '../../common/enums';
 import { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
 import { UploadsService } from '../uploads/uploads.service';
-import { CreateHotelDto, SearchHotelsDto } from './dto/hotel.dto';
+import {
+  CreateHotelDto,
+  HotelDetailsQueryDto,
+  SearchHotelsDto,
+} from './dto/hotel.dto';
 import { HotelAccessService } from './hotel-access.service';
 import {
   AvailableRoom,
@@ -73,6 +77,41 @@ export class HotelsService {
       baseCurrency: PLATFORM_CURRENCY,
       images,
     });
+  }
+
+  async getHotel(id: string, query: HotelDetailsQueryDto) {
+    const hotel = await this.access.hotel(id, true);
+    if (!!query.checkInDate !== !!query.checkOutDate)
+      throw new BadRequestException(
+        'Provide both checkInDate and checkOutDate',
+      );
+    const rooms = await this.roomModel
+      .find({ hotel: hotel._id, isActive: true })
+      .select(
+        'name roomType numberOfBeds bedConfiguration maxOccupancy maxAdults maxChildren basePricePerNight currency amenities images totalUnits',
+      )
+      .sort({ name: 1, _id: 1 })
+      .lean();
+    const summary = (await this.reviews.summaries([hotel._id])).get(
+      hotel._id.toString(),
+    )!;
+    const reviewPage = await this.reviews.list(id, { page: 1, limit: 10 });
+    const availableRooms =
+      query.checkInDate && query.checkOutDate
+        ? await this.inventory.getAvailableRooms(id, {
+            checkInDate: query.checkInDate,
+            checkOutDate: query.checkOutDate,
+            guestCount: query.guestCount ?? 1,
+          })
+        : undefined;
+    const { page, limit, skip } = pagination(query.page, query.limit);
+    return {
+      ...hotel,
+      ...summary,
+      rooms: paged(rooms.slice(skip, skip + limit), rooms.length, page, limit),
+      reviews: reviewPage,
+      ...(availableRooms ? { availableRooms } : {}),
+    };
   }
 
   private qualifyingRooms(

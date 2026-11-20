@@ -1,11 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { ClientSession, Connection, Model, Types } from 'mongoose';
 import { BookingStatus } from '../../common/enums';
+import { HotelPaginationDto } from './dto/hotel.dto';
 import { HotelAccessService } from './hotel-access.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
-import { todayUtc } from './hotel-utils';
+import { paged, pagination, todayUtc } from './hotel-utils';
 import {
   HotelBooking,
   HotelBookingDocument,
@@ -80,5 +81,81 @@ export class HotelReviewsService {
         : 0;
     }
     return result;
+  }
+
+  async list(hotelId: string, query: HotelPaginationDto) {
+    const hotel = await this.access.hotel(hotelId, true);
+    const { page, limit, skip } = pagination(query.page, query.limit);
+    if (query.sortBy && query.sortBy !== 'createdAt')
+      throw new BadRequestException('Reviews are ordered by createdAt');
+    const summary = (await this.summaries([hotel._id])).get(
+      hotelId.toLowerCase(),
+    )!;
+    const data = await this.reviews.aggregate<{
+      _id: Types.ObjectId;
+      rating: number;
+      title?: string;
+      comment: string;
+      createdAt: Date;
+      updatedAt: Date;
+      authorName: string;
+      moderatorReply?: { replyText: string; repliedAt: Date };
+    }>([
+      { $match: { hotel: hotel._id, isHidden: false } },
+      { $sort: { createdAt: -1, _id: -1 } },
+      { $skip: skip },
+      { $limit: limit },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'user',
+          foreignField: '_id',
+          as: 'author',
+        },
+      },
+      { $set: { author: { $arrayElemAt: ['$author', 0] } } },
+      {
+        $project: {
+          rating: 1,
+          title: 1,
+          comment: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          moderatorReply: {
+            $cond: [
+              { $ne: [{ $ifNull: ['$moderatorReply', null] }, null] },
+              {
+                replyText: '$moderatorReply.replyText',
+                repliedAt: '$moderatorReply.repliedAt',
+              },
+              null,
+            ],
+          },
+          authorName: {
+            $cond: [
+              {
+                $or: [
+                  { $eq: ['$author.status', 'DEACTIVATED'] },
+                  { $eq: [{ $ifNull: ['$author._id', null] }, null] },
+                ],
+              },
+              'Deleted user',
+              {
+                $trim: {
+                  input: {
+                    $concat: [
+                      { $ifNull: ['$author.firstName', ''] },
+                      ' ',
+                      { $ifNull: ['$author.lastName', ''] },
+                    ],
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    ]);
+    return { ...paged(data, summary.reviewCount, page, limit), ...summary };
   }
 }

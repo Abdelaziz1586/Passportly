@@ -2,8 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model, Types } from 'mongoose';
 import { UploadsService } from '../uploads/uploads.service';
+import { StayQueryDto } from './dto/hotel.dto';
 import { HotelAccessService } from './hotel-access.service';
-import { money } from './hotel-utils';
+import { dateRange, money, paged, pagination } from './hotel-utils';
 import {
   HotelBooking,
   HotelBookingDocument,
@@ -91,5 +92,27 @@ export class HotelInventoryService {
       });
     }
     return result;
+  }
+
+  async getAvailableRooms(hotelId: string, query: StayQueryDto) {
+    const hotel = await this.access.hotel(hotelId, true);
+    const dates = dateRange(query.checkInDate, query.checkOutDate, true);
+    const data = await this.availableRooms([hotel._id], dates);
+    data.sort(
+      (a, b) =>
+        a.averagePricePerNight - b.averagePricePerNight ||
+        a._id.toString().localeCompare(b._id.toString()),
+    );
+    const { page, limit, skip } = pagination(query.page, query.limit);
+    // Return every free room, including smaller rooms that can be selected together.
+    return {
+      hotelId,
+      checkInDate: query.checkInDate,
+      checkOutDate: query.checkOutDate,
+      nights: dates.length,
+      guestCount: query.guestCount ?? 1,
+      currency: hotel.baseCurrency,
+      ...paged(data.slice(skip, skip + limit), data.length, page, limit),
+    };
   }
 }

@@ -77,10 +77,7 @@ export class HotelsController {
   @Get(':id')
   @ApiOperation({ summary: 'HTL-02: Get hotel details' })
   getHotel(@Param('id') id: string, @Query() query: HotelDetailsQueryDto) {
-    void [id, query];
-    throw new NotImplementedException(
-      'Implemented by the subsequent SCRUM-54 PR in this stack',
-    );
+    return this.hotelsService.getHotel(id, query);
   }
 
   @ApiCookieAuth()
