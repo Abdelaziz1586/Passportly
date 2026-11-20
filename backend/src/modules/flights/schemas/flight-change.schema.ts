@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 
 export type FlightChangeDocument = HydratedDocument<FlightChange>;
 
@@ -45,10 +45,10 @@ export interface FlightChangePlan {
  */
 @Schema({ timestamps: true, collection: 'flight_changes' })
 export class FlightChange {
-  @Prop({ type: Types.ObjectId, ref: 'FlightBooking', required: true })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'FlightBooking', required: true })
   booking: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'User', required: true })
   user: Types.ObjectId;
 
   @Prop({
@@ -78,7 +78,7 @@ export class FlightChange {
   policyAcceptedAt: Date;
 
   /** The payment of the fare difference (only when the new fare is higher). */
-  @Prop({ type: Types.ObjectId, ref: 'Payment', default: null })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'Payment', default: null })
   payment?: Types.ObjectId | null;
 
   /** When the offer to pay the difference ends. */

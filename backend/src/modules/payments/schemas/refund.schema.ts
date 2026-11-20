@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 import { BookingType, RefundStatus } from '../../../common/enums';
 
 export type RefundDocument = HydratedDocument<Refund>;
@@ -8,10 +8,15 @@ export type RefundDocument = HydratedDocument<Refund>;
 export class Refund {
   // No `index: true` here: the unique index below covers this key, and Mongoose
   // silently drops a second definition on the same key.
-  @Prop({ type: Types.ObjectId, ref: 'Payment', required: true })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'Payment', required: true })
   payment: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  })
   user: Types.ObjectId;
 
   @Prop({
@@ -21,7 +26,7 @@ export class Refund {
   })
   bookingType: BookingType;
 
-  @Prop({ type: Types.ObjectId, required: true, index: true })
+  @Prop({ type: SchemaTypes.ObjectId, required: true, index: true })
   bookingId: Types.ObjectId;
 
   @Prop({ required: true, min: 0 })
@@ -32,6 +37,9 @@ export class Refund {
 
   @Prop({ trim: true, index: true })
   stripeRefundId?: string;
+
+  @Prop({ unique: true, sparse: true })
+  providerCancellationKey?: string;
 
   @Prop({
     type: String,

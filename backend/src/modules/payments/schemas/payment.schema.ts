@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 import {
   BookingType,
   PaymentPurpose,
@@ -10,7 +10,12 @@ export type PaymentDocument = HydratedDocument<Payment>;
 
 @Schema({ timestamps: true, collection: 'payments' })
 export class Payment {
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  })
   user: Types.ObjectId;
 
   @Prop({
@@ -21,10 +26,10 @@ export class Payment {
   })
   bookingType: BookingType;
 
-  @Prop({ type: Types.ObjectId, ref: 'FlightBooking', default: null })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'FlightBooking', default: null })
   flightBooking?: Types.ObjectId | null;
 
-  @Prop({ type: Types.ObjectId, ref: 'HotelBooking', default: null })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'HotelBooking', default: null })
   hotelBooking?: Types.ObjectId | null;
 
   /**
@@ -37,11 +42,11 @@ export class Payment {
   purpose?: PaymentPurpose;
 
   /** FLT-27: the flight change this payment belongs to. */
-  @Prop({ type: Types.ObjectId, ref: 'FlightChange', default: null })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'FlightChange', default: null })
   flightChange?: Types.ObjectId | null;
 
   /** FLT-27: the (confirmed) flight booking being changed. */
-  @Prop({ type: Types.ObjectId, ref: 'FlightBooking', default: null })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'FlightBooking', default: null })
   changedFlightBooking?: Types.ObjectId | null;
 
   @Prop({ required: true, min: 0 })
