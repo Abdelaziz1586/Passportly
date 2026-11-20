@@ -241,6 +241,9 @@ export class FlightSeatsService {
               },
             ],
             [`legs.${legIndex}.departureTime`]: { $gt: now },
+            // The leg this seat was chosen for must still be the one on the booking (a flight change
+            // in between replaces the leg, and its seats belong to the old flight).
+            [`legs.${legIndex}._id`]: leg._id,
           },
           { $set: sets },
           { session },

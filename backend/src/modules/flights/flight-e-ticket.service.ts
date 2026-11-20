@@ -129,7 +129,8 @@ export class FlightETicketService {
         ),
         departure: toEndpoint(from, leg.departureTime),
         arrival: toEndpoint(to, leg.arrivalTime),
-        seatNumbers: [...(leg.seatNumbers ?? [])],
+        // An airline moderator gets no seats at all: they are the traveller's choice on every leg.
+        seatNumbers: moderatorAirline ? [] : [...(leg.seatNumbers ?? [])],
       };
     });
 
@@ -140,7 +141,9 @@ export class FlightETicketService {
       tripType: booking.tripType,
       issuedAt: booking.confirmedAt ?? null,
       passengers: booking.passengers.map((passenger) =>
-        toETicketPassenger(passenger),
+        toETicketPassenger(
+          moderatorAirline ? { ...passenger, seatAssignments: [] } : passenger,
+        ),
       ),
       legs,
       totalPrice: moderatorAirline ? null : booking.totalPrice,
