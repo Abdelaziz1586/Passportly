@@ -43,6 +43,10 @@ import {
   ListAccountsQueryDto,
   PaginatedAccountsResponseDto,
 } from './dto/list-accounts-query.dto';
+import {
+  ListAdminBookingsQueryDto,
+  PaginatedAdminBookingsResponseDto,
+} from './dto/list-admin-bookings-query.dto';
 import { ReactivateAccountResponseDto } from './dto/reactivate-account-response.dto';
 import { DeactivateProviderResponseDto } from './dto/deactivate-provider-response.dto';
 import { ReactivateProviderResponseDto } from './dto/reactivate-provider-response.dto';
@@ -225,10 +229,16 @@ export class AdminController {
   @ApiOperation({
     summary: 'ACC-17: Inspect all platform flight & hotel bookings',
   })
-  listPlatformBookings() {
-    throw new NotImplementedException(
-      'GET /api/admin/bookings not implemented yet',
-    );
+  @ApiOkResponse({
+    description: 'Paginated platform flight and/or hotel bookings',
+    type: PaginatedAdminBookingsResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid filter or date range query' })
+  @ApiForbiddenResponse({ description: 'Admin role required' })
+  listPlatformBookings(
+    @Query() query: ListAdminBookingsQueryDto,
+  ): Promise<PaginatedAdminBookingsResponseDto> {
+    return this.adminService.listPlatformBookings(query);
   }
 
   @Get('reports')

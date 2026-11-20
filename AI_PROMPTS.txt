@@ -429,3 +429,16 @@ Implement SCRUM-28 (PATCH /api/admin/providers/:type/:id/reactivate): Set isActi
 How the output was used:
 Implemented ReactivateProviderResponseDto, AdminService.reactivateProvider (validating provider type/ID, restoring isActive=true and clearing deactivation fields, notifying assigned moderators via PROVIDER_REACTIVATED, and logging PROVIDER_REACTIVATED audit entry), and AdminController.reactivateProvider. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
 ================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-17 (GET /api/admin/bookings, SCRUM-29)
+
+Prompt:
+Implement SCRUM-29 (GET /api/admin/bookings): Support filtering by bookingType (flight|hotel), status, userId, date range, sorting, and pagination.
+
+How the output was used:
+Implemented ListAdminBookingsQueryDto (with date-boundary parsing, status/bookingType/userId filters, and whitelisted sortBy), AdminBookingItemDto, PaginatedAdminBookingsResponseDto, AdminService.listPlatformBookings (cross-collection query/merge-pagination across FlightBooking and HotelBooking), and AdminController.listPlatformBookings. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
