@@ -15,7 +15,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { FlightsService } from './flights.service';
-import { FlightCreate, FlightUpdate } from './create-flight.dto';
+import { CabinCreate, FlightCreate, FlightUpdate } from './create-flight.dto';
 import { FlightCancel } from './cancel-flight.dto';
 import { FlightSearch } from './flight-search.dto';
 
@@ -79,10 +79,12 @@ export class FlightsController {
   @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
   @Post(':id/cabins')
   @ApiOperation({ summary: 'FLT-04: Add cabin inventory to a flight' })
-  addCabin() {
-    throw new NotImplementedException(
-      'POST /api/flights/:id/cabins not implemented yet',
-    );
+  addCabin(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: CabinCreate,
+  ) {
+    return this.flightsService.addCabin(id, user, input);
   }
 
   @ApiCookieAuth()

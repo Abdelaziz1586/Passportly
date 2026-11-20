@@ -735,4 +735,20 @@ export class FlightsService {
       };
     });
   }
+  async addCabin(id: string, user: AuthenticatedUser, input: CabinCreate) {
+    return unique(() =>
+      this.connection.transaction(async (session) => {
+        const current = await this.flight(id, user, session);
+        const flight = await this.lockScheduledFlight(current._id, session);
+        const [cabin] = await this.cabinInventoryModel.create(
+          [this.cabinValues(flight, input)],
+          { session },
+        );
+        return this.cabinView(
+          cabin,
+          await this.airline(flight.airline.toString(), undefined, session),
+        );
+      }),
+    );
+  }
 }
