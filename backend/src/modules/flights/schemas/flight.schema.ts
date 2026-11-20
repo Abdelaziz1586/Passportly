@@ -1,21 +1,36 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 import { FlightStatus } from '../../../common/enums';
 
 export type FlightDocument = HydratedDocument<Flight>;
 
 @Schema({ timestamps: true, collection: 'flights' })
 export class Flight {
-  @Prop({ type: Types.ObjectId, ref: 'Airline', required: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'Airline',
+    required: true,
+    index: true,
+  })
   airline: Types.ObjectId;
 
   @Prop({ required: true, uppercase: true, trim: true, index: true })
   flightNumber: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'Airport', required: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'Airport',
+    required: true,
+    index: true,
+  })
   departureAirport: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'Airport', required: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'Airport',
+    required: true,
+    index: true,
+  })
   arrivalAirport: Types.ObjectId;
 
   @Prop({ required: true, index: true })
@@ -26,6 +41,12 @@ export class Flight {
 
   @Prop({ required: true, min: 1 })
   durationMinutes: number;
+
+  @Prop()
+  localDepartureDate?: string;
+
+  @Prop({ default: 0 })
+  bookingVersion: number;
 
   @Prop({ trim: true })
   aircraftType?: string;
@@ -56,3 +77,11 @@ FlightSchema.index({
   status: 1,
 });
 FlightSchema.index({ airline: 1, flightNumber: 1, departureTime: 1 });
+
+FlightSchema.index(
+  { airline: 1, flightNumber: 1, localDepartureDate: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { localDepartureDate: { $type: 'string' } },
+  },
+);
