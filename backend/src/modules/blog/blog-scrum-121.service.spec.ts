@@ -40,7 +40,10 @@ describe('BlogService (SCRUM-121 BLG-04/BLG-08 update post)', () => {
         { provide: getModelToken(Like.name), useValue: {} },
         { provide: UploadsService, useValue: { deleteImage: jest.fn() } },
         { provide: AuditLogsService, useValue: { log: jest.fn() } },
-        { provide: NotificationsService, useValue: { createNotification: jest.fn() } },
+        {
+          provide: NotificationsService,
+          useValue: { createNotification: jest.fn() },
+        },
         { provide: getModelToken(Tag.name), useValue: mockTagModel },
       ],
     }).compile();
