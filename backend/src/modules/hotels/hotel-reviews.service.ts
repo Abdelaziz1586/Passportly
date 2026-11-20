@@ -8,11 +8,12 @@ import {
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { ClientSession, Connection, Model, Types } from 'mongoose';
-import { BookingStatus, Role } from '../../common/enums';
+import { AccountStatus, BookingStatus, Role } from '../../common/enums';
 import { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import {
   CreateReviewDto,
   HotelPaginationDto,
+  ReplyReviewDto,
   UpdateReviewDto,
 } from './dto/hotel.dto';
 import { HotelAccessService } from './hotel-access.service';
@@ -256,6 +257,28 @@ export class HotelReviewsService {
     });
   }
 
+  async reply(id: string, dto: ReplyReviewDto, user: AuthenticatedUser) {
+    const review = await this.review(id);
+    await this.access.managedHotel(review.hotel.toString(), user);
+    const updated = await this.reviews
+      .findOneAndUpdate(
+        { _id: review._id, isHidden: false },
+        {
+          $set: {
+            moderatorReply: {
+              replyText: dto.replyText,
+              repliedBy: objectId(user.userId),
+              repliedAt: new Date(),
+            },
+          },
+        },
+        { returnDocument: 'after', runValidators: true },
+      )
+      .lean();
+    if (!updated) throw new NotFoundException('Visible review not found');
+    return updated;
+  }
+
   async list(hotelId: string, query: HotelPaginationDto) {
     const hotel = await this.access.hotel(hotelId, true);
     const { page, limit, skip } = pagination(query.page, query.limit);
@@ -308,7 +331,7 @@ export class HotelReviewsService {
             $cond: [
               {
                 $or: [
-                  { $eq: ['$author.status', 'DEACTIVATED'] },
+                  { $eq: ['$author.status', AccountStatus.DEACTIVATED] },
                   { $eq: [{ $ifNull: ['$author._id', null] }, null] },
                 ],
               },
