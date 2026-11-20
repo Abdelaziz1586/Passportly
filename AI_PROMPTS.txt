@@ -468,3 +468,16 @@ Implement SCRUM-31 (PATCH /api/admin/reports/:id): Update Report status/reviewed
 How the output was used:
 Imported BlogModule and ItinerariesModule into AdminModule; implemented ResolveReportDto, ResolveReportResponseDto, AdminService.resolveReport (supporting DISMISSED, CONTENT_HIDDEN, and CONTENT_DELETED across BlogPost, Comment, Itinerary, and Review with cascade cleanup and hotel rating recalculation, MODERATION_ACTION notifications to author and reporter, and REPORT_RESOLVED audit logging), and AdminController.resolveReport. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
 ================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: GEN-10 (DELETE /api/admin/content/:type/:id, SCRUM-32)
+
+Prompt:
+Implement SCRUM-32 (DELETE /api/admin/content/:type/:id): Delete or remove target content by type (blog_post, comment, itinerary, review) and id; notify content owner and record AuditLog.
+
+How the output was used:
+Imported BlogModule and ItinerariesModule into AdminModule; implemented DeleteContentResponseDto, AdminService.deleteContent (validating type/ID, deleting BlogPost/Comment/Itinerary/Review with child cleanup and hotel rating recalculation, resolving pending reports on that target, notifying the content owner via MODERATION_ACTION, and recording CONTENT_DELETED audit log), and AdminController.deleteContent. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================

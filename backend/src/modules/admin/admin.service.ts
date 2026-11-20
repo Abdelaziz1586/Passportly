@@ -86,10 +86,46 @@ import {
   ReportUserSummaryDto,
 } from './dto/list-reports-query.dto';
 import { ReactivateProviderResponseDto } from './dto/reactivate-provider-response.dto';
+import { DeleteContentResponseDto } from './dto/delete-content-response.dto';
 import {
   ResolveReportDto,
   ResolveReportResponseDto,
 } from './dto/resolve-report.dto';
+
+const CONTENT_TYPE_MAP: Record<
+  string,
+  {
+    targetType: ReportTargetType;
+    entityLabel: string;
+    slug: string;
+    missingMessage: string;
+  }
+> = {
+  blog_post: {
+    targetType: ReportTargetType.BLOG_POST,
+    entityLabel: 'BlogPost',
+    slug: 'blog_post',
+    missingMessage: 'Blog post not found',
+  },
+  comment: {
+    targetType: ReportTargetType.COMMENT,
+    entityLabel: 'Comment',
+    slug: 'comment',
+    missingMessage: 'Comment not found',
+  },
+  itinerary: {
+    targetType: ReportTargetType.ITINERARY,
+    entityLabel: 'Itinerary',
+    slug: 'itinerary',
+    missingMessage: 'Itinerary not found',
+  },
+  review: {
+    targetType: ReportTargetType.REVIEW,
+    entityLabel: 'Review',
+    slug: 'review',
+    missingMessage: 'Review not found',
+  },
+};
 import {
   AccountStatusChangeResponseDto,
   SuspendAccountDto,
@@ -1716,5 +1752,84 @@ export class AdminService {
       case ReportTargetType.REVIEW:
         return 'Review';
     }
+  }
+  /**
+   * Directly deletes inappropriate content by type and ID, cascades related
+   * records, marks pending reports as CONTENT_DELETED, notifies owner, and audit logs.
+   */
+  async deleteContent(
+    rawType: string,
+    contentId: string,
+    admin: AuthenticatedUser,
+    ipAddress?: string,
+  ): Promise<DeleteContentResponseDto> {
+    const normalizedKey = rawType.trim().toLowerCase();
+    const mapping = CONTENT_TYPE_MAP[normalizedKey];
+    if (!mapping) {
+      throw new BadRequestException(
+        'Content type must be one of: blog_post, comment, itinerary, review',
+      );
+    }
+
+    if (!isValidObjectId(contentId)) {
+      throw new BadRequestException('Invalid content ID');
+    }
+
+    const targetObjectId = new Types.ObjectId(contentId);
+    const ownerId = await this.deleteTargetContent(
+      mapping.targetType,
+      targetObjectId,
+    );
+    if (!ownerId) {
+      throw new NotFoundException(mapping.missingMessage);
+    }
+
+    const now = new Date();
+    const reportUpdate = await this.reportModel.updateMany(
+      {
+        targetType: mapping.targetType,
+        targetId: targetObjectId,
+        status: ReportStatus.PENDING,
+      },
+      {
+        $set: {
+          status: ReportStatus.CONTENT_DELETED,
+          reviewedBy: new Types.ObjectId(admin.userId),
+          reviewedAt: now,
+          resolutionNotes: 'Content deleted directly by administrator',
+        },
+      },
+    );
+
+    await this.notificationsService.createNotification({
+      recipient: ownerId,
+      type: NotificationType.MODERATION_ACTION,
+      title: 'Content Removed by Administrator',
+      message: `Your ${mapping.entityLabel} was removed by an administrator for violating platform guidelines.`,
+      relatedEntityType: mapping.entityLabel,
+      relatedEntityId: targetObjectId,
+    });
+
+    await this.auditLogsService.log({
+      actor: admin.userId,
+      actorRole: admin.role,
+      action: 'CONTENT_DELETED',
+      targetType: mapping.entityLabel,
+      targetId: contentId,
+      details: {
+        contentType: mapping.slug,
+        ownerId: String(ownerId),
+        resolvedPendingReports: reportUpdate.modifiedCount ?? 0,
+      },
+      ipAddress,
+    });
+
+    return {
+      message: `${mapping.entityLabel} deleted successfully`,
+      type: mapping.slug,
+      id: contentId,
+      ownerId: String(ownerId),
+      resolvedPendingReports: reportUpdate.modifiedCount ?? 0,
+    };
   }
 }

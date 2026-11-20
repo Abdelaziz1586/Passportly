@@ -51,6 +51,7 @@ import {
   ListReportsQueryDto,
   PaginatedReportsResponseDto,
 } from './dto/list-reports-query.dto';
+import { DeleteContentResponseDto } from './dto/delete-content-response.dto';
 import {
   ResolveReportDto,
   ResolveReportResponseDto,
@@ -290,10 +291,26 @@ export class AdminController {
 
   @Delete('content/:type/:id')
   @ApiOperation({ summary: 'GEN-10: Delete inappropriate content directly' })
-  deleteContent() {
-    throw new NotImplementedException(
-      'DELETE /api/admin/content/:type/:id not implemented yet',
-    );
+  @ApiParam({
+    name: 'type',
+    enum: ['blog_post', 'comment', 'itinerary', 'review'],
+    description: 'Target content type',
+  })
+  @ApiParam({ name: 'id', type: String, description: 'Target content ID' })
+  @ApiOkResponse({
+    description: 'Content deleted, owner notified, and audit logged',
+    type: DeleteContentResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid content type or content ID' })
+  @ApiForbiddenResponse({ description: 'Admin role required' })
+  @ApiNotFoundResponse({ description: 'Target content not found' })
+  deleteContent(
+    @Param('type') type: string,
+    @Param('id') id: string,
+    @CurrentUser() admin: AuthenticatedUser,
+    @Req() req: Request,
+  ): Promise<DeleteContentResponseDto> {
+    return this.adminService.deleteContent(type, id, admin, req.ip);
   }
 
   @Get('audit-logs')
