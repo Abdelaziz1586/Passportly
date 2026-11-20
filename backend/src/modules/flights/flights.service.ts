@@ -27,6 +27,10 @@ import {
   FlightBookingDocument,
 } from './schemas/flight-booking.schema';
 import { Flight, FlightDocument } from './schemas/flight.schema';
+import { AirlineCreate } from './create-airline.dto';
+import { BaggagePolicy } from './airline-baggage-policy.dto';
+import { CancellationPolicy } from './airline-cancellation-policy.dto';
+import { AirlineUpdate } from './update-airline.dto';
 import { CabinCreate, FlightCreate, FlightUpdate } from './create-flight.dto';
 import { airportLocalTime, flightInstant } from './flight-time';
 
@@ -106,14 +110,72 @@ export class FlightsService {
     };
   }
 
+  async createAirline(
+    user: AuthenticatedUser,
+    input: AirlineCreate,
+    logoUrl?: string,
+  ) {
+    if (user.role !== Role.ADMIN) throw new ForbiddenException();
+    return this.airlineView(
+      await unique(() =>
+        this.airlineModel.create({
+          ...input,
+          logoUrl,
+          cancellationPolicy: { tiers: [] },
+        }),
+      ),
+    );
+  }
+
+  async getAirline(id: string) {
+    return this.airlineView(await this.airline(id));
+  }
+
+  async updateAirline(
+    id: string,
+    user: AuthenticatedUser,
+    input: AirlineUpdate,
+    logoUrl?: string,
+  ) {
+    const airline = await this.airline(id, user);
+    airline.set(input);
+    if (logoUrl !== undefined) airline.logoUrl = logoUrl;
+    return this.airlineView(await unique(() => airline.save()));
+  }
+
   private async currency(value: string) {
     const currencyCode = value.toUpperCase();
-    if (!(await this.reference.countryModel.exists({ currencyCode }))) {
+    if (!(await this.reference.isCurrencySupported(currencyCode))) {
       throw new BadRequestException('Unsupported currency');
     }
     return currencyCode;
   }
 
+  async updateBaggage(
+    id: string,
+    user: AuthenticatedUser,
+    input: BaggagePolicy,
+  ) {
+    const airline = await this.airline(id, user);
+    airline.set('baggagePolicy', {
+      ...input,
+      currency: await this.currency(input.currency),
+    });
+    return this.airlineView(await airline.save());
+  }
+  async updateCancellation(
+    id: string,
+    user: AuthenticatedUser,
+    input: CancellationPolicy,
+  ) {
+    const airline = await this.airline(id, user);
+    airline.set('cancellationPolicy', {
+      tiers: [...input.tiers].sort(
+        (a, b) => a.daysBeforeDeparture - b.daysBeforeDeparture,
+      ),
+    });
+    return this.airlineView(await airline.save());
+  }
   private async airport(value: string) {
     const airport = await this.reference.airportModel
       .findOne(
@@ -220,9 +282,9 @@ export class FlightsService {
   }
 
   async createFlight(user: AuthenticatedUser, input: FlightCreate) {
-    const airline = await this.airline(input.airlineId, user);
+    const { airlineId, cabins, baseCurrency, ...fields } = input;
+    const airline = await this.airline(airlineId, user);
     const schedule = await this.schedule(input);
-    const { cabins, baseCurrency, ...fields } = input;
     const currency = await this.currency(baseCurrency ?? 'USD');
     const id = await unique(() =>
       this.connection.transaction(async (session) => {

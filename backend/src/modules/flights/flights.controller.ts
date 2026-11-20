@@ -34,6 +34,7 @@ export class FlightsController {
   @ApiCookieAuth()
   @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
   @Post()
+  @ApiOperation({ summary: 'FLT-03: Create a flight' })
   createFlight(
     @CurrentUser() user: AuthenticatedUser,
     @Body() input: FlightCreate,
