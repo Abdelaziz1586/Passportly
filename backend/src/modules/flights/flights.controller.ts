@@ -22,6 +22,7 @@ import {
   FlightUpdate,
 } from './create-flight.dto';
 import { FlightCancel } from './cancel-flight.dto';
+import { BookingsQuery } from './flight-bookings-list.dto';
 import { FlightSearch } from './flight-search.dto';
 
 @ApiTags('Flights')
@@ -111,10 +112,12 @@ export class FlightsController {
   @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
   @Get(':id/bookings')
   @ApiOperation({ summary: 'FLT-29: List bookings for a flight' })
-  getFlightBookings() {
-    throw new NotImplementedException(
-      'GET /api/flights/:id/bookings not implemented yet',
-    );
+  getFlightBookings(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: BookingsQuery,
+  ) {
+    return this.flightsService.getFlightBookings(id, user, query);
   }
 
   @ApiCookieAuth()
