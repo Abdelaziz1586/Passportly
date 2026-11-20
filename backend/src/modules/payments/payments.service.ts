@@ -10,7 +10,12 @@ import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { isValidObjectId, Model, Types } from 'mongoose';
 import Stripe from 'stripe';
-import { BookingStatus, BookingType, PaymentStatus } from '../../common/enums';
+import {
+  BookingStatus,
+  BookingType,
+  PaymentStatus,
+  Role,
+} from '../../common/enums';
 import { FlightBooking } from '../flights/schemas/flight-booking.schema';
 import { HotelBooking } from '../hotels/schemas/hotel-booking.schema';
 import { CreatePaymentDto } from './dto/create-payment.dto';
@@ -47,6 +52,20 @@ export interface PaymentIntentResponse {
   bookingType: BookingType;
   bookingId: string;
   holdExpiresAt: Date;
+}
+
+export interface PaymentResponse {
+  id: string;
+  bookingType: BookingType;
+  bookingId: string;
+  amount: number;
+  currency: string;
+  status: PaymentStatus;
+  stripePaymentIntentId: string | null;
+  failureReason: string | null;
+  paidAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 /** The booking fields payment needs, identical on flights and hotels. */
@@ -281,6 +300,28 @@ export class PaymentsService {
     return this.toIntentResponse(updated, intent, booking, bookingType);
   }
 
+  /** The owner or an admin reads a payment. Never returns card data or the client secret. */
+  async getPayment(
+    userId: string,
+    role: Role,
+    paymentId: string,
+  ): Promise<PaymentResponse> {
+    if (!isValidObjectId(paymentId)) {
+      throw new NotFoundException('Payment not found');
+    }
+    const filter: { _id: Types.ObjectId; user?: Types.ObjectId } = {
+      _id: new Types.ObjectId(paymentId),
+    };
+    if (role !== Role.ADMIN) {
+      if (!isValidObjectId(userId))
+        throw new NotFoundException('Payment not found');
+      filter.user = new Types.ObjectId(userId);
+    }
+    const payment = await this.paymentModel.findOne(filter).lean();
+    if (!payment) throw new NotFoundException('Payment not found');
+    return this.toPaymentResponse(payment as unknown as StoredPayment);
+  }
+
   /** Cancels an intent; false when Stripe says it can no longer be cancelled (paid or processing). */
   async cancelIntent(stripe: Stripe, intentId: string): Promise<boolean> {
     try {
@@ -459,6 +500,23 @@ export class PaymentsService {
       bookingType,
       bookingId: booking._id.toString(),
       holdExpiresAt: booking.holdExpiresAt as Date,
+    };
+  }
+
+  private toPaymentResponse(payment: StoredPayment): PaymentResponse {
+    const { bookingType, bookingId } = this.linkedBooking(payment);
+    return {
+      id: payment._id.toString(),
+      bookingType,
+      bookingId,
+      amount: payment.amount,
+      currency: payment.currency,
+      status: payment.status,
+      stripePaymentIntentId: payment.stripePaymentIntentId ?? null,
+      failureReason: payment.failureReason ?? null,
+      paidAt: payment.paidAt ?? null,
+      createdAt: payment.createdAt,
+      updatedAt: payment.updatedAt,
     };
   }
 }

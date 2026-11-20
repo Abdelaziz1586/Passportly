@@ -5,7 +5,12 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { Types } from 'mongoose';
-import { BookingStatus, BookingType, PaymentStatus } from '../../common/enums';
+import {
+  BookingStatus,
+  BookingType,
+  PaymentStatus,
+  Role,
+} from '../../common/enums';
 import { PaymentsService } from './payments.service';
 
 const userId = new Types.ObjectId();
@@ -610,6 +615,75 @@ describe('PaymentsService.retryPayment', () => {
 
     await expect(
       service.retryPayment(userId.toString(), 'bad'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('PaymentsService.getPayment', () => {
+  const booking = makeBooking();
+  const payment = makePayment(booking, {
+    status: PaymentStatus.SUCCEEDED,
+    paidAt: new Date('2026-11-19T10:05:00Z'),
+  });
+
+  it('returns the owner their payment without secrets', async () => {
+    const { service, paymentModel } = build({ flightBookings: [booking] });
+    paymentModel.findOne.mockReturnValue(query(payment));
+
+    const result = await service.getPayment(
+      userId.toString(),
+      Role.REGISTERED_USER,
+      payment._id.toString(),
+    );
+
+    expect(result).toEqual({
+      id: payment._id.toString(),
+      bookingType: BookingType.FLIGHT,
+      bookingId: booking._id.toString(),
+      amount: 123.45,
+      currency: 'USD',
+      status: PaymentStatus.SUCCEEDED,
+      stripePaymentIntentId: 'pi_existing',
+      failureReason: null,
+      paidAt: payment.paidAt,
+      createdAt: payment.createdAt,
+      updatedAt: payment.updatedAt,
+    });
+    const [filter] = paymentModel.findOne.mock.calls[0] as unknown as [
+      { user?: Types.ObjectId },
+    ];
+    expect(filter.user?.equals(userId)).toBe(true);
+  });
+
+  it('lets an admin read any payment (no owner filter)', async () => {
+    const { service, paymentModel } = build({ flightBookings: [booking] });
+    paymentModel.findOne.mockReturnValue(query(payment));
+
+    await service.getPayment(
+      otherUserId.toString(),
+      Role.ADMIN,
+      payment._id.toString(),
+    );
+
+    const [filter] = paymentModel.findOne.mock.calls[0] as unknown as [
+      { user?: Types.ObjectId },
+    ];
+    expect(filter.user).toBeUndefined();
+  });
+
+  it('is a 404 for another user or a malformed id', async () => {
+    const { service, paymentModel } = build();
+    paymentModel.findOne.mockReturnValue(query(null));
+
+    await expect(
+      service.getPayment(
+        otherUserId.toString(),
+        Role.REGISTERED_USER,
+        payment._id.toString(),
+      ),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(
+      service.getPayment(userId.toString(), Role.ADMIN, 'bad'),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
