@@ -1,6 +1,5 @@
 import { maxLogoBytes, UploadsService } from '../uploads/uploads.service';
 import {
-  NotImplementedException,
   Body,
   Controller,
   Get,
@@ -27,6 +26,7 @@ import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.inte
 import { FlightsService } from './flights.service';
 import { AirlineCreate } from './create-airline.dto';
 import { BaggagePolicy } from './airline-baggage-policy.dto';
+import { CancellationPolicy } from './airline-cancellation-policy.dto';
 import { AirlineUpdate } from './update-airline.dto';
 
 @ApiTags('Airlines')
@@ -117,9 +117,11 @@ export class AirlinesController {
   @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
   @Put(':id/cancellation-policy')
   @ApiOperation({ summary: 'FLT-09: Set airline cancellation policy' })
-  updateCancellationPolicy() {
-    throw new NotImplementedException(
-      'PUT /api/airlines/:id/cancellation-policy not implemented yet',
-    );
+  updateCancellationPolicy(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: CancellationPolicy,
+  ) {
+    return this.flightsService.updateCancellation(id, user, input);
   }
 }

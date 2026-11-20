@@ -22,6 +22,7 @@ import {
 import { Flight, FlightDocument } from './schemas/flight.schema';
 import { AirlineCreate } from './create-airline.dto';
 import { BaggagePolicy } from './airline-baggage-policy.dto';
+import { CancellationPolicy } from './airline-cancellation-policy.dto';
 import { AirlineUpdate } from './update-airline.dto';
 
 function checkId(id: string) {
@@ -149,6 +150,19 @@ export class FlightsService {
     airline.set('baggagePolicy', {
       ...input,
       currency: await this.currency(input.currency),
+    });
+    return this.airlineView(await airline.save());
+  }
+  async updateCancellation(
+    id: string,
+    user: AuthenticatedUser,
+    input: CancellationPolicy,
+  ) {
+    const airline = await this.airline(id, user);
+    airline.set('cancellationPolicy', {
+      tiers: [...input.tiers].sort(
+        (a, b) => a.daysBeforeDeparture - b.daysBeforeDeparture,
+      ),
     });
     return this.airlineView(await airline.save());
   }
