@@ -1,12 +1,12 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 import { BookingStatus } from '../../../common/enums';
 
 export type HotelBookingDocument = HydratedDocument<HotelBooking>;
 
 @Schema({ _id: true })
 export class BookedRoomItem {
-  @Prop({ type: Types.ObjectId, ref: 'Room', required: true })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'Room', required: true })
   room: Types.ObjectId;
 
   @Prop({ required: true, trim: true })
@@ -36,10 +36,20 @@ export class HotelBooking {
   @Prop({ required: true, unique: true, uppercase: true, trim: true })
   bookingReference: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  })
   user: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'Hotel', required: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'Hotel',
+    required: true,
+    index: true,
+  })
   hotel: Types.ObjectId;
 
   @Prop({ type: [BookedRoomItemSchema], required: true })
@@ -89,13 +99,13 @@ export class HotelBooking {
   @Prop({ type: Date })
   policyAcceptedAt?: Date;
 
-  @Prop({ type: Types.ObjectId, ref: 'User' })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'User' })
   policyAcceptedBy?: Types.ObjectId;
 
   @Prop({ type: Object })
   policySnapshot?: Record<string, unknown>;
 
-  @Prop({ type: Types.ObjectId, ref: 'Payment', default: null })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'Payment', default: null })
   payment?: Types.ObjectId | null;
 
   @Prop({ type: Date })
