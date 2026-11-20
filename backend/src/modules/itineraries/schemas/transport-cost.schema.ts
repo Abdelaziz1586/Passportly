@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 import { TransportMode } from '../../../common/enums';
 
 export type TransportCostDocument = HydratedDocument<TransportCost>;
@@ -7,20 +7,25 @@ export type TransportCostDocument = HydratedDocument<TransportCost>;
 @Schema({ timestamps: true, collection: 'transport_costs' })
 export class TransportCost {
   @Prop({
-    type: Types.ObjectId,
+    type: SchemaTypes.ObjectId,
     ref: 'Itinerary',
     required: true,
     index: true,
   })
   itinerary: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  })
   user: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'City', default: null })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'City', default: null })
   fromCity?: Types.ObjectId | null;
 
-  @Prop({ type: Types.ObjectId, ref: 'City', default: null })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'City', default: null })
   toCity?: Types.ObjectId | null;
 
   @Prop({ trim: true })
@@ -36,7 +41,7 @@ export class TransportCost {
   })
   mode: TransportMode;
 
-  @Prop({ type: Types.ObjectId, default: null })
+  @Prop({ type: SchemaTypes.ObjectId, default: null })
   departureDayId?: Types.ObjectId | null;
 
   @Prop({ required: true, min: 0 })

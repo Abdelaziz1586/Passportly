@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { UsersModule } from '../users/users.module';
 import { BlogController } from './blog.controller';
 import { BlogService } from './blog.service';
 import { BlogPost, BlogPostSchema } from './schemas/blog-post.schema';
@@ -9,6 +10,7 @@ import { Tag, TagSchema } from './schemas/tag.schema';
 
 @Module({
   imports: [
+    UsersModule,
     MongooseModule.forFeature([
       { name: BlogPost.name, schema: BlogPostSchema },
       { name: Comment.name, schema: CommentSchema },
