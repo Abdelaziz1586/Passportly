@@ -16,6 +16,10 @@ import {
   PaginatedAirportsResponseDto,
 } from './dto/list-airports-query.dto';
 import {
+  ListCitiesQueryDto,
+  PaginatedCitiesResponseDto,
+} from './dto/list-cities-query.dto';
+import {
   ListCountriesQueryDto,
   PaginatedCountriesResponseDto,
 } from './dto/list-countries-query.dto';
@@ -58,9 +62,16 @@ export class ReferenceDataController {
   }
 
   @Get('cities')
-  @ApiOperation({ summary: 'Search/list reference cities' })
-  getCities() {
-    throw new NotImplementedException('GET /api/cities not implemented yet');
+  @ApiOperation({ summary: 'REF-02: Search/list reference cities' })
+  @ApiOkResponse({
+    description: 'Paginated list of reference cities',
+    type: PaginatedCitiesResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid query parameters' })
+  getCities(
+    @Query() query: ListCitiesQueryDto,
+  ): Promise<PaginatedCitiesResponseDto> {
+    return this.referenceDataService.getCities(query);
   }
 
   @Get('attractions')
