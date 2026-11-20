@@ -3,8 +3,10 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Payment, PaymentSchema } from '../payments/schemas/payment.schema';
 import { Refund, RefundSchema } from '../payments/schemas/refund.schema';
+import { PaymentsModule } from '../payments/payments.module';
 import { HotelBookingsController } from './hotel-bookings.controller';
 import { HotelBookingViewService } from './hotel-booking-view.service';
+import { HotelCancellationService } from './hotel-cancellation.service';
 import { HotelBookingsService } from './hotel-bookings.service';
 import { HotelsController } from './hotels.controller';
 import { HotelsService } from './hotels.service';
@@ -29,6 +31,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
+    PaymentsModule,
     ReferenceDataModule,
     UploadsModule,
     AuditLogsModule,
@@ -52,6 +55,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     HotelReviewsService,
     HotelBookingsService,
     HotelBookingViewService,
+    HotelCancellationService,
   ],
   exports: [
     HotelsService,

@@ -5,7 +5,8 @@ import {
   Controller,
   Delete,
   Get,
-  NotImplementedException,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Post,
@@ -27,7 +28,10 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
+import { CancelHotelBookingDto } from './dto/cancel-hotel-booking.dto';
 import { CreateHotelBookingDto } from './dto/create-hotel-booking.dto';
+import { HotelCancellationPreviewDto } from './dto/hotel-cancellation-response.dto';
+import { CancellationResultDto } from '../flights/dto/cancellation-response.dto';
 import { HotelBookingResponseDto } from './dto/hotel-booking-response.dto';
 import {
   HotelBookingDetailsResponseDto,
@@ -37,6 +41,11 @@ import { HotelBookingIdParamDto } from './dto/hotel-booking-id-param.dto';
 import { ListHotelBookingsQueryDto } from './dto/list-hotel-bookings-query.dto';
 import { HotelBookingsService } from './hotel-bookings.service';
 import type { HotelBookingResponse } from './hotel-bookings.service';
+import { HotelCancellationService } from './hotel-cancellation.service';
+import type {
+  HotelCancellationPreview,
+  HotelCancellationResult,
+} from './hotel-cancellation.service';
 import { HotelBookingViewService } from './hotel-booking-view.service';
 import type {
   HotelBookingDetails,
@@ -59,6 +68,7 @@ export class HotelBookingsController {
     private readonly hotelsService: HotelsService,
     private readonly hotelBookingsService: HotelBookingsService,
     private readonly hotelBookingViewService: HotelBookingViewService,
+    private readonly hotelCancellationService: HotelCancellationService,
     private readonly reviews: HotelReviewsService,
   ) {}
 
@@ -144,14 +154,60 @@ export class HotelBookingsController {
   }
 
   @Roles(Role.REGISTERED_USER)
+  @Get('hotel-bookings/:id/cancellation-preview')
+  @ApiOperation({
+    summary: 'HTL-21: Preview the refund before cancelling a hotel reservation',
+    description:
+      "Shows what cancelling now would refund, without changing anything: the whole days left until the check-in date (counted to UTC midnight of that date: a check-in 10 days away at 15:00 UTC today is 9 whole days), the hotel tier that applies (from the tiers copied onto the reservation when it was made) and the refund amount on the full total. Only the owner's CONFIRMED reservation before its check-in date.",
+  })
+  @ApiOkResponse({
+    description: 'The refund the cancellation would give',
+    type: HotelCancellationPreviewDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid id' })
+  @ApiUnauthorizedResponse({ description: 'Not signed in' })
+  @ApiForbiddenResponse({ description: 'Only registered users may cancel' })
+  @ApiNotFoundResponse({ description: 'Reservation not found or not yours' })
+  @ApiConflictResponse({
+    description:
+      'Not CONFIRMED (pending, expired, completed, already cancelled) or the check-in date has come',
+  })
+  previewCancellation(
+    @Param() params: HotelBookingIdParamDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<HotelCancellationPreview> {
+    return this.hotelCancellationService.preview(user.userId, params.id);
+  }
+
+  @Roles(Role.REGISTERED_USER)
   @Post('hotel-bookings/:id/cancel')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'HTL-21: Cancel hotel booking according to hotel policy',
+    description:
+      'Cancels the owner\'s CONFIRMED reservation as a whole (partial cancellation is not supported) before its check-in date, once the traveller confirmed with { "confirm": true } (see GET /hotel-bookings/:id/cancellation-preview for the refund). The reservation becomes CANCELLED (the only transition from CONFIRMED), all its rooms are released for those dates, and a refund is created from the hotel tiers stored on the reservation on the full total and sent through the Stripe Refunds API (PAY-03); the traveller is notified. Refund 0 creates no refund record. Optional expectedRefundAmount refuses the cancellation (409) if the refund changed since the preview.',
   })
-  cancelBooking() {
-    throw new NotImplementedException(
-      'POST /api/hotel-bookings/:id/cancel not implemented yet',
-    );
+  @ApiOkResponse({
+    description: 'Cancelled; the refund and how it was computed',
+    type: CancellationResultDto,
+  })
+  @ApiBadRequestResponse({
+    description:
+      'Invalid id, confirm is not true, or an invalid reason or amount',
+  })
+  @ApiUnauthorizedResponse({ description: 'Not signed in' })
+  @ApiForbiddenResponse({ description: 'Only registered users may cancel' })
+  @ApiNotFoundResponse({ description: 'Reservation not found or not yours' })
+  @ApiConflictResponse({
+    description:
+      'Not CONFIRMED (pending, expired, completed, already cancelled), the check-in date has come, or the refund changed since the preview',
+  })
+  cancelBooking(
+    @Param() params: HotelBookingIdParamDto,
+    @Body() dto: CancelHotelBookingDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<HotelCancellationResult> {
+    return this.hotelCancellationService.cancel(user.userId, params.id, dto);
   }
 
   @Roles(Role.REGISTERED_USER)
