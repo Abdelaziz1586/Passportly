@@ -1,6 +1,6 @@
 # Hotels, rooms and reviews (SCRUM-52–SCRUM-69)
 
-This document describes the complete 18-ticket stack. This branch completes SCRUM-52 through SCRUM-66; later ticket routes remain scaffolded here. All PRs target develop and should be merged in ascending ticket order with merge commits to preserve the stack.
+This document describes the complete 18-ticket stack. This branch completes SCRUM-52 through SCRUM-67; later ticket routes remain scaffolded here. All PRs target develop and should be merged in ascending ticket order with merge commits to preserve the stack.
 
 These endpoints implement Mohamed Ahmed's 18 hotel tickets for the backend milestone. They use the existing NestJS global JWT/session and role guards, Mongoose models, exception filter, and `/api` prefix. Swagger is served at `/api/docs`.
 

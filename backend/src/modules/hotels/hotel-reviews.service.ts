@@ -10,7 +10,11 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { ClientSession, Connection, Model, Types } from 'mongoose';
 import { BookingStatus, Role } from '../../common/enums';
 import { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
-import { CreateReviewDto, HotelPaginationDto } from './dto/hotel.dto';
+import {
+  CreateReviewDto,
+  HotelPaginationDto,
+  UpdateReviewDto,
+} from './dto/hotel.dto';
 import { HotelAccessService } from './hotel-access.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import {
@@ -185,6 +189,43 @@ export class HotelReviewsService {
         throw new ConflictException('This booking already has a review');
       throw error;
     }
+  }
+
+  private async review(id: string, session?: ClientSession) {
+    const review = await this.reviews
+      .findById(objectId(id, 'reviewId'))
+      .session(session ?? null)
+      .lean();
+    if (!review) throw new NotFoundException('Review not found');
+    return review;
+  }
+
+  async updateReview(
+    id: string,
+    dto: UpdateReviewDto,
+    user: AuthenticatedUser,
+  ) {
+    if (!Object.values(dto).some((value) => value !== undefined))
+      throw new BadRequestException('Provide at least one review field');
+    objectId(id, 'reviewId');
+    return this.connection.transaction(async (session) => {
+      const review = await this.review(id, session);
+      if (
+        user.role !== Role.REGISTERED_USER ||
+        review.user.toString() !== user.userId
+      )
+        throw new ForbiddenException('You can edit only your own review');
+      await this.lockHotel(review.hotel, session);
+      const updated = await this.reviews
+        .findByIdAndUpdate(
+          review._id,
+          { $set: dto },
+          { session, returnDocument: 'after', runValidators: true },
+        )
+        .lean();
+      await this.recalculateRating(review.hotel, session);
+      return updated;
+    });
   }
 
   async list(hotelId: string, query: HotelPaginationDto) {
