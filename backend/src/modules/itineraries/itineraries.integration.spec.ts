@@ -29,6 +29,8 @@ import request from 'supertest';
 import { OPTIONAL_AUTH_KEY } from '../../common/decorators/optional-auth.decorator';
 import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
 import {
+  BookingStatus,
+  BookingType,
   BudgetCategory,
   ItineraryVisibility,
   Role,
@@ -843,6 +845,72 @@ describe('Itinerary endpoints and persistence', () => {
     expect(
       (await service.searchFlightsForItinerary(id, ownerId, {})).flights,
     ).toEqual([]);
+  });
+
+  it('SCRUM-115: attaches only owned confirmed bookings and avoids duplicate attachments', async () => {
+    const itinerary = await create();
+    const id = String(itinerary._id);
+    const booking = await service.flightsService.flightBookingModel.create({
+      bookingReference: 'TEST123',
+      user: ownerId,
+      legs: [],
+      passengerCounts: {
+        adults: 1,
+        children: 0,
+        infants: 0,
+        totalSeatsRequired: 1,
+      },
+      baseFareTotal: 20,
+      totalPrice: 20,
+      status: BookingStatus.HELD,
+    });
+    const dto = {
+      bookingType: BookingType.FLIGHT,
+      bookingId: String(booking._id),
+    };
+    await expect(
+      service.attachBooking(id, ownerId, dto),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    await service.flightsService.flightBookingModel.updateOne(
+      { _id: booking._id },
+      { status: BookingStatus.CONFIRMED },
+    );
+    await service.attachBooking(id, ownerId, dto);
+    expect(
+      (await service.attachBooking(id, ownerId, dto)).attachedFlightBookings,
+    ).toHaveLength(1);
+    await service.flightsService.flightBookingModel.updateOne(
+      { _id: booking._id },
+      { user: otherId },
+    );
+    await expect(
+      service.attachBooking(id, ownerId, dto),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('SCRUM-115: attaches confirmed hotel bookings after checking ownership', async () => {
+    const itinerary = await create();
+    const booking = await service.hotelsService.hotelBookingModel.create({
+      bookingReference: 'HOTELTEST',
+      user: ownerId,
+      hotel: new Types.ObjectId(),
+      rooms: [],
+      checkInDate: new Date('2027-06-15'),
+      checkOutDate: new Date('2027-06-16'),
+      nights: 1,
+      guestCount: 1,
+      primaryGuestName: 'Test guest',
+      primaryGuestEmail: 'guest@example.test',
+      totalPrice: 100,
+      status: BookingStatus.CONFIRMED,
+    });
+    const result = await service.attachBooking(String(itinerary._id), ownerId, {
+      bookingType: BookingType.HOTEL,
+      bookingId: String(booking._id),
+    });
+    expect(result.attachedHotelBookings.map(String)).toEqual([
+      String(booking._id),
+    ]);
   });
 
   it('HTTP routes: exercises itinerary, day, activity, budget, transport, public and contextual endpoints', async () => {

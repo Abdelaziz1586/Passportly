@@ -89,6 +89,19 @@ export class FlightsService {
     private readonly events: FlightEventsService,
   ) {}
 
+  async findConfirmedBookingForUser(
+    bookingId: string,
+    userId: string,
+  ): Promise<FlightBookingDocument | null> {
+    return this.flightBookingModel
+      .findOne({
+        _id: new Types.ObjectId(bookingId),
+        user: new Types.ObjectId(userId),
+        status: BookingStatus.CONFIRMED,
+      })
+      .exec();
+  }
+
   async searchForCityRoutes(
     routes: Array<{
       departureCityId: string;

@@ -19,6 +19,7 @@ import {
 } from 'class-validator';
 
 import {
+  BookingType,
   BudgetCategory,
   ItineraryVisibility,
   TransportMode,
@@ -490,4 +491,14 @@ export class ItineraryContextSearchQueryDto {
   @IsInt()
   @Min(1)
   endDay?: number;
+}
+
+export class AttachBookingDto {
+  @ApiProperty({ enum: BookingType })
+  @IsEnum(BookingType)
+  bookingType: BookingType;
+
+  @ApiProperty({ description: 'MongoDB ID of a confirmed booking' })
+  @IsMongoId()
+  bookingId: string;
 }

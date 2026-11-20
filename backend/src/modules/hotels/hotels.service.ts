@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { Role } from '../../common/enums';
+import { BookingStatus, Role } from '../../common/enums';
 import { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
 import { UploadsService } from '../uploads/uploads.service';
@@ -62,6 +62,19 @@ export class HotelsService {
     private readonly reviews: HotelReviewsService,
     private readonly uploads: UploadsService,
   ) {}
+
+  async findConfirmedBookingForUser(
+    bookingId: string,
+    userId: string,
+  ): Promise<HotelBookingDocument | null> {
+    return this.hotelBookingModel
+      .findOne({
+        _id: new Types.ObjectId(bookingId),
+        user: new Types.ObjectId(userId),
+        status: BookingStatus.CONFIRMED,
+      })
+      .exec();
+  }
 
   async searchForCities(cityIds: string[]): Promise<HotelDocument[]> {
     if (cityIds.length === 0) return [];

@@ -18,6 +18,8 @@ import {
 } from 'mongoose';
 import { firstValueFrom } from 'rxjs';
 import {
+  BookingStatus,
+  BookingType,
   BudgetCategory,
   ItineraryVisibility,
   Role,
@@ -33,6 +35,7 @@ import { CityDocument } from '../reference-data/schemas/city.schema';
 import { UploadsService } from '../uploads/uploads.service';
 import { CreateItineraryDto } from './dto/create-itinerary.dto';
 import {
+  AttachBookingDto,
   BudgetSummaryQueryDto,
   CreateActivityDto,
   CreateBudgetEntryDto,
@@ -948,6 +951,41 @@ export class ItinerariesService {
     });
     const flights = await this.flightsService.searchForCityRoutes(routes);
     return { itineraryId: String(itinerary._id), routes, flights };
+  }
+
+  async attachBooking(
+    id: string,
+    userId: string,
+    dto: AttachBookingDto,
+  ): Promise<ItineraryDocument> {
+    const itinerary = await this.findOwnedItinerary(id, userId);
+    const bookingId = this.objectId(dto.bookingId, 'bookingId');
+    if (dto.bookingType === BookingType.FLIGHT) {
+      const booking = await this.flightsService.findConfirmedBookingForUser(
+        String(bookingId),
+        userId,
+      );
+      if (!booking || booking.status !== BookingStatus.CONFIRMED) {
+        throw new NotFoundException('Confirmed flight booking not found');
+      }
+      const attached = itinerary.attachedFlightBookings.some(
+        (existingId) => String(existingId) === String(booking._id),
+      );
+      if (!attached) itinerary.attachedFlightBookings.push(booking._id);
+    } else {
+      const booking = await this.hotelsService.findConfirmedBookingForUser(
+        String(bookingId),
+        userId,
+      );
+      if (!booking || booking.status !== BookingStatus.CONFIRMED) {
+        throw new NotFoundException('Confirmed hotel booking not found');
+      }
+      const attached = itinerary.attachedHotelBookings.some(
+        (existingId) => String(existingId) === String(booking._id),
+      );
+      if (!attached) itinerary.attachedHotelBookings.push(booking._id);
+    }
+    return this.saveItinerary(itinerary);
   }
 
   private async getItineraryDetails(
