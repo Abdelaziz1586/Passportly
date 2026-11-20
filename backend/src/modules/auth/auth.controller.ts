@@ -4,7 +4,6 @@ import {
   Get,
   HttpCode,
   HttpStatus,
-  NotImplementedException,
   Patch,
   Post,
   Query,
@@ -28,9 +27,16 @@ import { Public } from '../../common/decorators/public.decorator';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { AuthService } from './auth.service';
 import { AuthMeResponseDto } from './dto/auth-me-response.dto';
+import { ChangePasswordResponseDto } from './dto/change-password-response.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { ForgotPasswordResponseDto } from './dto/forgot-password-response.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
 import { LoginDto } from './dto/login.dto';
+import { LogoutResponseDto } from './dto/logout-response.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ResetPasswordResponseDto } from './dto/reset-password-response.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SafeUserResponseDto } from './dto/safe-user-response.dto';
 import { VerifyEmailQueryDto } from './dto/verify-email-query.dto';
 import { VerifyEmailResponseDto } from './dto/verify-email-response.dto';
@@ -105,38 +111,80 @@ export class AuthController {
 
   @ApiCookieAuth()
   @Post('logout')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'ACC-06: Logout and revoke current session' })
-  logout(@CurrentUser() user: AuthenticatedUser) {
-    throw new NotImplementedException(
-      `POST /api/auth/logout not implemented yet (user: ${user.userId})`,
-    );
+  @ApiOkResponse({
+    description: 'Session revoked and httpOnly auth cookie cleared',
+    type: LogoutResponseDto,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Authentication required',
+  })
+  async logout(
+    @CurrentUser() user: AuthenticatedUser,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<LogoutResponseDto> {
+    const result = await this.authService.logout(user);
+    res.clearCookie(result.cookieName, result.clearCookieOptions);
+    return result.response;
   }
 
   @Public()
   @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'ACC-07 (Optional): Request password reset' })
-  forgotPassword() {
-    throw new NotImplementedException(
-      'POST /api/auth/forgot-password not implemented yet',
-    );
+  @ApiOkResponse({
+    description:
+      'Password reset request accepted (generic message returned without leaking account existence)',
+    type: ForgotPasswordResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid email format',
+  })
+  forgotPassword(
+    @Body() dto: ForgotPasswordDto,
+  ): Promise<ForgotPasswordResponseDto> {
+    return this.authService.forgotPassword(dto);
   }
 
   @Public()
   @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'ACC-07 (Optional): Reset password with token' })
-  resetPassword() {
-    throw new NotImplementedException(
-      'POST /api/auth/reset-password not implemented yet',
-    );
+  @ApiOkResponse({
+    description: 'Password reset successfully and existing sessions revoked',
+    type: ResetPasswordResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description:
+      'Missing, invalid, or expired reset token, or weak new password',
+  })
+  resetPassword(
+    @Body() dto: ResetPasswordDto,
+  ): Promise<ResetPasswordResponseDto> {
+    return this.authService.resetPassword(dto);
   }
 
   @ApiCookieAuth()
   @Patch('change-password')
   @ApiOperation({ summary: 'ACC-08: Change current user password' })
-  changePassword(@CurrentUser() user: AuthenticatedUser) {
-    throw new NotImplementedException(
-      `PATCH /api/auth/change-password not implemented yet (user: ${user.userId})`,
-    );
+  @ApiOkResponse({
+    description:
+      'Password changed successfully and mustChangePassword flag cleared',
+    type: ChangePasswordResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description:
+      'Invalid payload, weak password, or new password matches current password',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Authentication required or current password is incorrect',
+  })
+  changePassword(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: ChangePasswordDto,
+  ): Promise<ChangePasswordResponseDto> {
+    return this.authService.changePassword(user, dto);
   }
 
   @ApiCookieAuth()
