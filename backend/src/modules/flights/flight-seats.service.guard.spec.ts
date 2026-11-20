@@ -60,7 +60,7 @@ function build() {
       },
     ],
   };
-  const snapshot = structuredClone(live) as typeof live;
+  const snapshot = structuredClone(live);
   // structuredClone drops ObjectId prototypes in some runtimes: rebuild the ids from the live doc
   snapshot._id = live._id;
   snapshot.user = live.user;
