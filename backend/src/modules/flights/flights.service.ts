@@ -848,4 +848,23 @@ export class FlightsService {
       })),
     };
   }
+  async manifest(id: string, user: AuthenticatedUser) {
+    const flight = await this.flight(id, user);
+    const bookings = await this.flightBookingModel
+      .find({ 'legs.flight': flight._id, status: BookingStatus.CONFIRMED })
+      .sort({ _id: 1 })
+      .lean();
+    return bookings.flatMap((booking) => {
+      const leg = booking.legs.find((leg) => leg.flight.equals(flight._id))!;
+      return booking.passengers.map((passenger, index) => ({
+        name: [passenger.firstName, passenger.lastName].join(' '),
+        type: passenger.type,
+        cabin: leg.cabinClass,
+        seat: this.seat(booking, leg, index),
+        eTicketReference: passenger.eTicketNumber ?? null,
+        extraBaggageCount: passenger.extraBaggageCount,
+        bookingReference: booking.bookingReference,
+      }));
+    });
+  }
 }

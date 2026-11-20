@@ -1,5 +1,4 @@
 import {
-  NotImplementedException,
   Body,
   Controller,
   Get,
@@ -7,8 +6,10 @@ import {
   Patch,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
 import { ApiOperation, ApiCookieAuth, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -23,6 +24,16 @@ import {
 } from './create-flight.dto';
 import { FlightCancel } from './cancel-flight.dto';
 import { BookingsQuery } from './flight-bookings-list.dto';
+import { ManifestQuery } from './export-passengers.dto';
+
+function csvCell(value: string | number | null | undefined) {
+  const raw = String(value ?? '');
+  const safe =
+    typeof value === 'string' && /^[\s\uFEFF]*[=+@-]|^[\t\r\n]/.test(raw)
+      ? "'" + raw
+      : raw;
+  return '"' + safe.replaceAll('"', '""') + '"';
+}
 import { FlightSearch } from './flight-search.dto';
 
 @ApiTags('Flights')
@@ -124,9 +135,22 @@ export class FlightsController {
   @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
   @Get(':id/passengers/export')
   @ApiOperation({ summary: 'FLT-29: Export passenger manifest for a flight' })
-  exportPassengers() {
-    throw new NotImplementedException(
-      'GET /api/flights/:id/passengers/export not implemented yet',
+  async exportPassengers(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ManifestQuery,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const rows = await this.flightsService.manifest(id, user);
+    response.setHeader('Cache-Control', 'no-store');
+    if (query.format === 'json') return rows;
+    response.attachment('passenger-manifest.csv');
+    response.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    return (
+      [
+        'name,type,cabin,seat,eTicketReference,extraBaggageCount,bookingReference',
+        ...rows.map((row) => Object.values(row).map(csvCell).join(',')),
+      ].join('\r\n') + '\r\n'
     );
   }
 }
