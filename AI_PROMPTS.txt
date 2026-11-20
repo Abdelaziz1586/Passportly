@@ -85,6 +85,451 @@ Implemented LoginDto, LoginResponseDto, AuthService.login (email normalization, 
 
 ================================================
 Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-06 (POST /api/auth/logout)
+
+Prompt:
+Requirement: ACC-06
+Endpoint: POST /api/auth/logout
+Controller: backend/src/modules/auth/auth.controller.ts
+Allowed Roles: Authenticated (All Roles)
+Details: Mark current UserSession (by jti) as revoked (revokedAt = now) and clear the httpOnly auth cookie.
+
+How the output was used:
+Implemented LogoutResponseDto, AuthService.logout (revoking the active UserSession by jti and userId via revokedAt, and sharing cookie options with login via getBaseCookieOptions/getCookieName), and AuthController.logout (@HttpCode(HttpStatus.OK)) clearing the httpOnly auth cookie. Added unit tests in auth.service.spec.ts and auth.controller.spec.ts and verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-07 (Optional) (POST /api/auth/forgot-password, SCRUM-11)
+
+Prompt:
+Requirement: ACC-07 (Optional)
+Endpoint: POST /api/auth/forgot-password
+Controller: backend/src/modules/auth/auth.controller.ts
+Allowed Roles: Public
+Details: Generate short-lived passwordResetToken and passwordResetExpiresAt for active accounts without leaking account existence.
+
+How the output was used:
+Implemented ForgotPasswordDto, ForgotPasswordResponseDto, MailService.sendPasswordResetEmail, AuthService.forgotPassword (15-minute passwordResetToken & passwordResetExpiresAt generation for ACTIVE accounts only, generic non-leaking response for all requests), AuthController.forgotPassword (@Public(), 200 OK, Swagger metadata), and unit + HTTP integration tests in mail.service.spec.ts, auth.service.spec.ts, and auth.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-07 (Optional) (POST /api/auth/reset-password, SCRUM-12)
+
+Prompt:
+Requirement: ACC-07 (Optional)
+Endpoint: POST /api/auth/reset-password
+Controller: backend/src/modules/auth/auth.controller.ts
+Allowed Roles: Public
+Details: Validate passwordResetToken and expiry, enforce password rules, update passwordHash, and revoke existing sessions.
+
+How the output was used:
+Implemented ResetPasswordDto, ResetPasswordResponseDto, AuthService.resetPassword (validates passwordResetToken/token alias and expiry on ACTIVE accounts, enforces password complexity, hashes with bcryptjs, clears token/expiry/lockout/mustChangePassword atomically, and revokes active UserSessions), AuthController.resetPassword (@Public(), 200 OK, Swagger docs), and unit + HTTP integration tests in auth.service.spec.ts and auth.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-08 (PATCH /api/auth/change-password, SCRUM-13)
+
+Prompt:
+Requirement: ACC-08
+Endpoint: PATCH /api/auth/change-password
+Controller: backend/src/modules/auth/auth.controller.ts
+Allowed Roles: Authenticated (All Roles)
+Details: Verify current password, enforce password strength rules on new password, update passwordHash, clear mustChangePassword flag, and optionally revoke other sessions.
+
+How the output was used:
+Implemented ChangePasswordDto, ChangePasswordResponseDto, AuthService.changePassword (verifies currentPassword, enforces newPassword complexity and difference from current password, hashes with bcryptjs, clears mustChangePassword, and revokes other UserSessions unless revokeOtherSessions is false), AuthController.changePassword Swagger/validation wiring, and unit + HTTP integration tests in auth.service.spec.ts and auth.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-04, ACC-19 (GET /api/auth/me, SCRUM-14)
+
+Prompt:
+Requirement: ACC-04, ACC-19
+Endpoint: GET /api/auth/me
+Controller: backend/src/modules/auth/auth.controller.ts
+Allowed Roles: Authenticated (All Roles)
+Details: Return authenticated user details, role, status, and assignedProviderId/assignedProviderType for moderators.
+
+How the output was used:
+Implemented AuthMeResponseDto, AuthService.getMe (fetches User document, verifies ACTIVE status, maps safe profile fields + mustChangePassword + lastLoginAt without passwordHash/tokens, and includes assignedProviderId/assignedProviderType for moderators), AuthController.me Swagger/response wiring, and unit + HTTP integration tests in auth.service.spec.ts and auth.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-11 (GET /api/users/me, SCRUM-15)
+
+Prompt:
+Requirement: ACC-11
+Endpoint: GET /api/users/me
+Controller: backend/src/modules/users/users.controller.ts
+Allowed Roles: Authenticated (All Roles)
+Details: Fetch full User document for CurrentUser (excluding passwordHash and sensitive tokens) plus moderator assignment if applicable.
+
+How the output was used:
+Implemented UserProfileResponseDto, ModeratorAssignmentSummaryDto, UsersService.getMyProfile (fetches sanitized User document excluding passwordHash and verification/reset tokens, verifies ACTIVE status, and loads active ModeratorAssignment for moderator roles), UsersController.getMyProfile Swagger wiring, and unit + HTTP integration tests in users.service.spec.ts and users.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-09 (PATCH /api/users/me, SCRUM-16)
+
+Prompt:
+Requirement: ACC-09
+Endpoint: PATCH /api/users/me
+Controller: backend/src/modules/users/users.controller.ts
+Allowed Roles: Authenticated (All Roles)
+Details: Allow updating firstName, lastName, phone, avatarUrl, bio, nationality, and preferredCurrency (validate currency against Countries.csv); forbid role/status edits.
+
+How the output was used:
+Implemented UpdateProfileDto, UserProfileResponseDto, UsersModule ReferenceDataModule import, UsersService.updateMyProfile (updates only the 7 allowed profile fields, validates preferredCurrency via ReferenceDataService.isCurrencySupported, forbids role/status edits), UsersController.updateMyProfile Swagger/validation wiring, and unit + HTTP integration tests in users.service.spec.ts and users.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-12 (DELETE /api/users/me, SCRUM-17)
+
+Prompt:
+Requirement: ACC-12
+Endpoint: DELETE /api/users/me
+Controller: backend/src/modules/users/users.controller.ts
+Allowed Roles: Authenticated (REGISTERED_USER)
+Details: Set User.status = DEACTIVATED, record deactivatedAt, revoke active UserSessions, and clear httpOnly auth cookie.
+
+How the output was used:
+Implemented DeactivateAccountResponseDto, UsersModule UserSession schema registration, UsersService.deactivateMyAccount (verifies REGISTERED_USER role and ACTIVE status, updates status to DEACTIVATED with deactivatedAt, revokes all active UserSessions, returns cookie-clearing config), UsersController.deactivateMyAccount (@Roles(Role.REGISTERED_USER) and cookie clearing), and unit + HTTP integration tests in users.service.spec.ts and users.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: FLT-02 (GET /api/airports, SCRUM-18)
+
+Prompt:
+Requirement: FLT-02
+Endpoint: GET /api/airports
+Controller: backend/src/modules/reference-data/reference-data.controller.ts
+Allowed Roles: Public
+Details: Support query/search by iataCode, name, city, or countryCode with pagination; return Airport records including required IANA timezone.
+
+How the output was used:
+Implemented ListAirportsQueryDto, AirportItemDto, PaginatedAirportsResponseDto, ReferenceDataService.getAirports (filtering by iataCode, name, city name/externalId/ObjectId, countryCode, and search term with sorting and pagination), ReferenceDataController.getAirports Swagger wiring, and unit + HTTP integration tests in reference-data.service.spec.ts and reference-data.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: REF-01 (GET /api/countries, SCRUM-19)
+
+Prompt:
+Requirement: REF-01
+Endpoint: GET /api/countries
+Controller: backend/src/modules/reference-data/reference-data.controller.ts
+Allowed Roles: Public
+Details: Return seeded Countries.csv records with search/filter and pagination so frontend & validators can list supported currencies.
+
+How the output was used:
+Implemented ListCountriesQueryDto, CountryItemDto, PaginatedCountriesResponseDto, ReferenceDataService.getCountries (filtering by code, currencyCode, continent, and search term with sorting and pagination), ReferenceDataController.getCountries Swagger wiring, and unit + HTTP integration tests in reference-data.service.spec.ts and reference-data.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: REF-02 (GET /api/cities, SCRUM-20)
+
+Prompt:
+Requirement: REF-02
+Endpoint: GET /api/cities
+Controller: backend/src/modules/reference-data/reference-data.controller.ts
+Allowed Roles: Public
+Details: Filter Cities.csv records by countryCode or search query with pagination.
+
+How the output was used:
+Implemented ListCitiesQueryDto, CityItemDto, PaginatedCitiesResponseDto, ReferenceDataService.getCities (filtering by countryCode and search across name/countryCode/externalId with sorting and pagination), ReferenceDataController.getCities Swagger wiring, and unit + HTTP integration tests in reference-data.service.spec.ts and reference-data.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: REF-03 (GET /api/attractions, SCRUM-21)
+
+Prompt:
+Requirement: REF-03
+Endpoint: GET /api/attractions
+Controller: backend/src/modules/reference-data/reference-data.controller.ts
+Allowed Roles: Public
+Details: Filter Attractions.csv records by cityId/cityName, countryCode, category, or search term with pagination.
+
+How the output was used:
+Implemented ListAttractionsQueryDto, AttractionItemDto, PaginatedAttractionsResponseDto, ReferenceDataService.getAttractions (filtering by cityId ObjectId or externalId, cityName, countryCode including linked City records, category, and search term with sorting, City population, and pagination), ReferenceDataController.getAttractions Swagger wiring, and unit + HTTP integration tests in reference-data.service.spec.ts and reference-data.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: GEN-11 (GET /api/notifications, SCRUM-35)
+
+Prompt:
+Implement SCRUM-35 (GET /api/notifications): Return paginated Notification records for CurrentUser with optional unread-only filter and unread count, supporting all authenticated roles.
+
+How the output was used:
+Implemented ListNotificationsQueryDto, NotificationItemDto, PaginatedNotificationsResponseDto, NotificationsService.listMyNotifications, and NotificationsController.listMine with Swagger annotations, strict unreadOnly boolean transformation, and unit tests in notifications.service.spec.ts and notifications.controller.spec.ts. Verified with npm run lint, npm test, and tsc check.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: GEN-11 (PATCH /api/notifications/:id/read, SCRUM-36)
+
+Prompt:
+Implement SCRUM-36 (PATCH /api/notifications/:id/read): Verify Notification.recipient == CurrentUser.userId, set isRead = true and readAt = now, supporting all authenticated roles.
+
+How the output was used:
+Implemented NotificationItemDto, NotificationsService.markAsRead (with ObjectId validation, recipient ownership verification, idempotent already-read handling, and atomic update), and NotificationsController.markAsRead (placing read-all route above :id/read). Added unit tests in notifications.service.spec.ts and notifications.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: GEN-11 (PATCH /api/notifications/read-all, SCRUM-37)
+
+Prompt:
+Implement SCRUM-37 (PATCH /api/notifications/read-all): Update all unread Notification records for CurrentUser.userId to isRead = true and readAt = now, supporting all authenticated roles.
+
+How the output was used:
+Implemented MarkAllNotificationsReadResponseDto, NotificationsService.markAllAsRead (updating unread notifications scoped to CurrentUser.userId), and NotificationsController.markAllAsRead (ordered above :id/read). Added unit tests in notifications.service.spec.ts and notifications.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: GEN-09 (POST /api/reports, SCRUM-34)
+
+Prompt:
+Implement SCRUM-34 (POST /api/reports): Validate targetType (BLOG_POST, COMMENT, ITINERARY, REVIEW) and targetId existence; create Report with status PENDING.
+
+How the output was used:
+Updated ReportsModule to import BlogModule, ItinerariesModule, and HotelsModule; implemented CreateReportDto, ReportResponseDto, ReportsService.createReport (validating target existence, visibility/hidden protections, and duplicate pending report checks), and ReportsController.createReport. Added unit tests in reports.service.spec.ts and reports.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-07a (POST /api/admin/users/:id/reset-password, SCRUM-22)
+
+Prompt:
+Implement SCRUM-22 (POST /api/admin/users/:id/reset-password): Allow ADMIN to set a new temporary password for user :id, set mustChangePassword = true, revoke user sessions, create Notification & AuditLog.
+
+How the output was used:
+Added AuthService.revokeUserSessions helper, imported AuthModule into AdminModule, implemented AdminResetPasswordDto, AdminResetPasswordResponseDto, AdminService.resetUserPassword (bcrypt hashing, mustChangePassword = true, session revocation, in-app notification, ADMIN_PASSWORD_RESET audit log), and AdminController.resetUserPassword. Added unit tests in auth.service.spec.ts, admin.service.spec.ts, and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-13 (POST /api/admin/moderators, SCRUM-23)
+
+Prompt:
+Implement SCRUM-23 (POST /api/admin/moderators): Create User with AIRLINE_MODERATOR or HOTEL_MODERATOR role and create unique ModeratorAssignment linking to exactly one Airline or Hotel; record AuditLog.
+
+How the output was used:
+Implemented CreateModeratorDto, ModeratorResponseDto, AdminService.createModerator (email uniqueness check, provider verification, bcrypt password hashing, rollback-safe ModeratorAssignment creation, MODERATOR_CREATED audit log), and AdminController.createModerator. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-14 (GET /api/admin/accounts, SCRUM-24)
+
+Prompt:
+Implement SCRUM-24 (GET /api/admin/accounts): Support filtering by role, status, search (email/name), sorting, and pagination; include moderator provider assignment info.
+
+How the output was used:
+Implemented ListAccountsQueryDto, AccountAssignmentInfoDto, AdminAccountItemDto, PaginatedAccountsResponseDto, AdminService.listAccounts (safe projection excluding passwordHash/tokens, regex-escaped search, batched ModeratorAssignment lookup with provider info, sorting, and pagination), and AdminController.listAccounts. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-15, ACC-16 (PATCH /api/admin/accounts/:id/suspend, SCRUM-25)
+
+Prompt:
+Implement SCRUM-25 (PATCH /api/admin/accounts/:id/suspend): Set AccountStatus.SUSPENDED, suspendedAt, suspendedReason; revoke active UserSessions; prevent suspending self; notify user & write AuditLog.
+
+How the output was used:
+Added AuthService.revokeUserSessions helper, imported AuthModule into AdminModule, implemented SuspendAccountDto, AccountStatusChangeResponseDto, AdminService.suspendAccount (self-suspension guard, status update, session revocation, ACCOUNT_SUSPENDED notification, ACCOUNT_SUSPENDED audit log), and AdminController.suspendAccount. Added unit tests in auth.service.spec.ts, admin.service.spec.ts, and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-15, ACC-16 (PATCH /api/admin/accounts/:id/reactivate, SCRUM-26)
+
+Prompt:
+Implement SCRUM-26 (PATCH /api/admin/accounts/:id/reactivate): Restore AccountStatus.ACTIVE, clear lockout/suspension flags, send in-app Notification, and write AuditLog.
+
+How the output was used:
+Implemented ReactivateAccountResponseDto, AdminService.reactivateAccount (restoring AccountStatus.ACTIVE, clearing failedLoginAttempts/lockoutUntil/suspendedAt/suspendedReason/deactivatedAt, sending ACCOUNT_REACTIVATED notification, and writing ACCOUNT_REACTIVATED audit log), and AdminController.reactivateAccount. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-15 (PATCH /api/admin/providers/:type/:id/deactivate, SCRUM-27)
+
+Prompt:
+Implement SCRUM-27 (PATCH /api/admin/providers/:type/:id/deactivate): Set isActive = false on Airline or Hotel (:type = airline|hotel). Keep existing CONFIRMED bookings valid; hide from search/new bookings; notify affected parties & write AuditLog.
+
+How the output was used:
+Implemented DeactivateProviderResponseDto, AdminService.deactivateProvider (validating provider type/ID, setting isActive=false with deactivatedAt/deactivatedBy on Airline or Hotel while leaving existing CONFIRMED bookings untouched and moderator account status independent, notifying assigned moderators and affected travelers, and writing PROVIDER_DEACTIVATED audit log), and AdminController.deactivateProvider. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-15 (PATCH /api/admin/providers/:type/:id/reactivate, SCRUM-28)
+
+Prompt:
+Implement SCRUM-28 (PATCH /api/admin/providers/:type/:id/reactivate): Set isActive = true on Airline or Hotel (:type = airline|hotel), send in-app Notification to assigned moderator, and write AuditLog.
+
+How the output was used:
+Implemented ReactivateProviderResponseDto, AdminService.reactivateProvider (validating provider type/ID, restoring isActive=true and clearing deactivation fields, notifying assigned moderators via PROVIDER_REACTIVATED, and logging PROVIDER_REACTIVATED audit entry), and AdminController.reactivateProvider. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-17 (GET /api/admin/bookings, SCRUM-29)
+
+Prompt:
+Implement SCRUM-29 (GET /api/admin/bookings): Support filtering by bookingType (flight|hotel), status, userId, date range, sorting, and pagination.
+
+How the output was used:
+Implemented ListAdminBookingsQueryDto (with date-boundary parsing, status/bookingType/userId filters, and whitelisted sortBy), AdminBookingItemDto, PaginatedAdminBookingsResponseDto, AdminService.listPlatformBookings (cross-collection query/merge-pagination across FlightBooking and HotelBooking), and AdminController.listPlatformBookings. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: GEN-09, GEN-10 (GET /api/admin/reports, SCRUM-30)
+
+Prompt:
+Implement SCRUM-30 (GET /api/admin/reports): Filter reports by status (PENDING, DISMISSED, CONTENT_HIDDEN, CONTENT_DELETED) and targetType with pagination and reporter info.
+
+How the output was used:
+Implemented ListReportsQueryDto, ReportUserSummaryDto, AdminReportItemDto, PaginatedReportsResponseDto, AdminService.listReports (filtering by status and targetType, sorting, paginating, and populating reporter and reviewedBy info), and AdminController.listReports. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: GEN-10 (PATCH /api/admin/reports/:id, SCRUM-31)
+
+Prompt:
+Implement SCRUM-31 (PATCH /api/admin/reports/:id): Update Report status/reviewedBy/reviewedAt/resolutionNotes; if CONTENT_HIDDEN or CONTENT_DELETED, update/delete target BlogPost/Comment/Itinerary/Review, notify author & reporter, and log AuditLog.
+
+How the output was used:
+Imported BlogModule and ItinerariesModule into AdminModule; implemented ResolveReportDto, ResolveReportResponseDto, AdminService.resolveReport (supporting DISMISSED, CONTENT_HIDDEN, and CONTENT_DELETED across BlogPost, Comment, Itinerary, and Review with cascade cleanup and hotel rating recalculation, MODERATION_ACTION notifications to author and reporter, and REPORT_RESOLVED audit logging), and AdminController.resolveReport. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: GEN-10 (DELETE /api/admin/content/:type/:id, SCRUM-32)
+
+Prompt:
+Implement SCRUM-32 (DELETE /api/admin/content/:type/:id): Delete or remove target content by type (blog_post, comment, itinerary, review) and id; notify content owner and record AuditLog.
+
+How the output was used:
+Imported BlogModule and ItinerariesModule into AdminModule; implemented DeleteContentResponseDto, AdminService.deleteContent (validating type/ID, deleting BlogPost/Comment/Itinerary/Review with child cleanup and hotel rating recalculation, resolving pending reports on that target, notifying the content owner via MODERATION_ACTION, and recording CONTENT_DELETED audit log), and AdminController.deleteContent. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: GEN-07 (GET /api/admin/audit-logs, SCRUM-33)
+
+Prompt:
+Implement SCRUM-33 (GET /api/admin/audit-logs): Filter AuditLog records by actor, action, targetType, and date range with sorting and pagination.
+
+How the output was used:
+Implemented ListAuditLogsQueryDto, AuditLogActorSummaryDto, AuditLogItemDto, PaginatedAuditLogsResponseDto, AdminService.listAuditLogs (filtering by actor, action, targetType, and inclusive createdAt range with sorting, pagination, and actor population), and AdminController.listAuditLogs. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Fady
+Tool: Codex
+Related Requirement: SCRUM-38
+Prompt:
+Implement the approved Passportly flight plan and separate each ticket into its own pull request.
+How the output was used:
+Implemented and verified the ticket on an independent branch from develop.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Fady
+Tool: Codex
+Related Requirement: SCRUM-39
+Prompt:
+Implement the approved Passportly flight plan and separate each ticket into its own pull request.
+How the output was used:
+Implemented and verified the ticket on an independent branch from develop.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Fady
+Tool: Codex
+Related Requirement: SCRUM-40
+Prompt:
+Implement the approved Passportly flight plan and separate each ticket into its own pull request.
+How the output was used:
+Implemented and verified the ticket on an independent branch from develop.
+================================================
+
+================================================
+Date: 2026-11-19
 Student: Mohamed Fady
 Tool: Codex
 Related Requirement: SCRUM-41

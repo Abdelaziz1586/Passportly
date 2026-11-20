@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -19,10 +20,30 @@ import {
   FlightBookingDocument,
 } from './schemas/flight-booking.schema';
 import { Flight, FlightDocument } from './schemas/flight.schema';
+import { AirlineCreate } from './create-airline.dto';
 import { BaggagePolicy } from './airline-baggage-policy.dto';
+import { AirlineUpdate } from './update-airline.dto';
 
 function checkId(id: string) {
   if (!isObjectIdOrHexString(id)) throw new BadRequestException('Invalid ID');
+}
+
+async function unique<T>(write: () => Promise<T>): Promise<T> {
+  try {
+    return await write();
+  } catch (error: unknown) {
+    if (
+      typeof error === 'object' &&
+      error &&
+      'code' in error &&
+      error.code === 11000
+    ) {
+      throw new ConflictException(
+        'A record with this code, flight date or cabin already exists',
+      );
+    }
+    throw error;
+  }
 }
 
 @Injectable()
@@ -78,9 +99,42 @@ export class FlightsService {
     };
   }
 
+  async createAirline(
+    user: AuthenticatedUser,
+    input: AirlineCreate,
+    logoUrl?: string,
+  ) {
+    if (user.role !== Role.ADMIN) throw new ForbiddenException();
+    return this.airlineView(
+      await unique(() =>
+        this.airlineModel.create({
+          ...input,
+          logoUrl,
+          cancellationPolicy: { tiers: [] },
+        }),
+      ),
+    );
+  }
+
+  async getAirline(id: string) {
+    return this.airlineView(await this.airline(id));
+  }
+
+  async updateAirline(
+    id: string,
+    user: AuthenticatedUser,
+    input: AirlineUpdate,
+    logoUrl?: string,
+  ) {
+    const airline = await this.airline(id, user);
+    airline.set(input);
+    if (logoUrl !== undefined) airline.logoUrl = logoUrl;
+    return this.airlineView(await unique(() => airline.save()));
+  }
+
   private async currency(value: string) {
     const currencyCode = value.toUpperCase();
-    if (!(await this.reference.countryModel.exists({ currencyCode }))) {
+    if (!(await this.reference.isCurrencySupported(currencyCode))) {
       throw new BadRequestException('Unsupported currency');
     }
     return currencyCode;
