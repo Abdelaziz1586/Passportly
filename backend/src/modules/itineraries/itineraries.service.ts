@@ -2,7 +2,9 @@ import { HttpService } from '@nestjs/axios';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
@@ -13,7 +15,8 @@ import {
   Types,
   isValidObjectId,
 } from 'mongoose';
-import { ItineraryVisibility } from '../../common/enums';
+import { ItineraryVisibility, Role } from '../../common/enums';
+import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
 import { CreateItineraryDto } from './dto/create-itinerary.dto';
 import { ListItinerariesQueryDto } from './dto/itinerary-endpoints.dto';
@@ -104,6 +107,66 @@ export class ItinerariesService {
       items,
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     };
+  }
+
+  async getItinerary(
+    id: string,
+    user: AuthenticatedUser,
+  ): Promise<Record<string, unknown>> {
+    const itinerary = await this.findItineraryById(id);
+    this.assertOwner(itinerary, user.userId, user.role === Role.ADMIN);
+    return this.getItineraryDetails(itinerary);
+  }
+
+  private async getItineraryDetails(
+    itinerary: ItineraryDocument,
+  ): Promise<Record<string, unknown>> {
+    const [activities, budgetEntries, transportCosts] = await Promise.all([
+      this.activityModel
+        .find({ itinerary: itinerary._id })
+        .sort({ dayId: 1, orderIndex: 1 })
+        .exec(),
+      this.budgetEntryModel
+        .find({ itinerary: itinerary._id })
+        .sort({ dayId: 1, createdAt: 1 })
+        .exec(),
+      this.transportCostModel
+        .find({ itinerary: itinerary._id })
+        .sort({ createdAt: 1 })
+        .exec(),
+    ]);
+    const plain = itinerary.toObject();
+    const days = [...plain.days]
+      .sort((first, second) => first.dayNumber - second.dayNumber)
+      .map((day) => ({
+        ...day,
+        activities: activities.filter(
+          (activity) => String(activity.dayId) === String(day._id),
+        ),
+        budgetEntries: budgetEntries.filter(
+          (entry) => String(entry.dayId) === String(day._id),
+        ),
+      }));
+    return { ...plain, days, transportCosts };
+  }
+
+  private async findItineraryById(id: string): Promise<ItineraryDocument> {
+    const itinerary = await this.itineraryModel
+      .findById(this.objectId(id, 'id'))
+      .exec();
+    if (!itinerary) throw new NotFoundException('Itinerary not found');
+    return itinerary;
+  }
+
+  private assertOwner(
+    itinerary: ItineraryDocument,
+    userId: string,
+    allowAdmin = false,
+  ): void {
+    if (allowAdmin) return;
+    if (String(itinerary.user) !== userId) {
+      throw new ForbiddenException('You do not own this itinerary');
+    }
   }
 
   private async validateCountryIds(
