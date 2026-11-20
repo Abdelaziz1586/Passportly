@@ -1,29 +1,66 @@
 import {
+  NotImplementedException,
+  Body,
   Controller,
   Delete,
   Get,
-  NotImplementedException,
+  Param,
   Patch,
   Post,
   Put,
+  Query,
+  UploadedFiles,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBody,
+  ApiConsumes,
+  ApiCookieAuth,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
+import { FilesInterceptor } from '@nestjs/platform-express';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import { HotelsService } from './hotels.service';
+import { HotelInventoryService } from './hotel-inventory.service';
+import { HotelReviewsService } from './hotel-reviews.service';
+import {
+  AvailabilityFieldsDto,
+  CreateHotelDto,
+  CreateRoomDto,
+  DateRangeDto,
+  HotelDetailsQueryDto,
+  HotelPaginationDto,
+  HotelPoliciesDto,
+  HotelReservationsQueryDto,
+  SearchHotelsDto,
+  StayQueryDto,
+  UpdateHotelDto,
+  UpdateRoomDto,
+} from './dto/hotel.dto';
 
 @ApiTags('Hotels & Rooms')
 @Controller('hotels')
 export class HotelsController {
-  constructor(private readonly hotelsService: HotelsService) {}
+  constructor(
+    private readonly hotelsService: HotelsService,
+    private readonly inventory: HotelInventoryService,
+    private readonly reviews: HotelReviewsService,
+  ) {}
 
   @ApiCookieAuth()
-  @Roles(Role.ADMIN, Role.HOTEL_MODERATOR)
+  @Roles(Role.ADMIN)
   @Post()
   @ApiOperation({ summary: 'HTL-01: Create hotel profile' })
-  createHotel() {
-    throw new NotImplementedException('POST /api/hotels not implemented yet');
+  createHotel(
+    @Body() dto: CreateHotelDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.hotelsService.createHotel(dto, user);
   }
 
   @Public()
@@ -32,18 +69,20 @@ export class HotelsController {
     summary:
       'HTL-11, HTL-12: Search hotels by destination, dates, and guest count',
   })
-  searchHotels() {
+  searchHotels(@Query() query: SearchHotelsDto) {
+    void [query];
     throw new NotImplementedException(
-      'GET /api/hotels/search not implemented yet',
+      'Implemented by the subsequent SCRUM-53 PR in this stack',
     );
   }
 
   @Public()
   @Get(':id')
   @ApiOperation({ summary: 'HTL-02: Get hotel details' })
-  getHotel() {
+  getHotel(@Param('id') id: string, @Query() query: HotelDetailsQueryDto) {
+    void [id, query];
     throw new NotImplementedException(
-      'GET /api/hotels/:id not implemented yet',
+      'Implemented by the subsequent SCRUM-54 PR in this stack',
     );
   }
 
@@ -51,9 +90,14 @@ export class HotelsController {
   @Roles(Role.ADMIN, Role.HOTEL_MODERATOR)
   @Patch(':id')
   @ApiOperation({ summary: 'HTL-01: Update hotel profile' })
-  updateHotel() {
+  updateHotel(
+    @Param('id') id: string,
+    @Body() dto: UpdateHotelDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    void [id, dto, user];
     throw new NotImplementedException(
-      'PATCH /api/hotels/:id not implemented yet',
+      'Implemented by the subsequent SCRUM-55 PR in this stack',
     );
   }
 
@@ -61,9 +105,14 @@ export class HotelsController {
   @Roles(Role.ADMIN, Role.HOTEL_MODERATOR)
   @Post(':id/rooms')
   @ApiOperation({ summary: 'HTL-03: Create room type/unit in hotel' })
-  createRoom() {
+  createRoom(
+    @Param('id') id: string,
+    @Body() dto: CreateRoomDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    void [id, dto, user];
     throw new NotImplementedException(
-      'POST /api/hotels/:id/rooms not implemented yet',
+      'Implemented by the subsequent SCRUM-56 PR in this stack',
     );
   }
 
@@ -71,9 +120,15 @@ export class HotelsController {
   @Roles(Role.ADMIN, Role.HOTEL_MODERATOR)
   @Patch(':id/rooms/:roomId')
   @ApiOperation({ summary: 'HTL-05: Update room details or pricing' })
-  updateRoom() {
+  updateRoom(
+    @Param('id') id: string,
+    @Param('roomId') roomId: string,
+    @Body() dto: UpdateRoomDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    void [id, roomId, dto, user];
     throw new NotImplementedException(
-      'PATCH /api/hotels/:id/rooms/:roomId not implemented yet',
+      'Implemented by the subsequent SCRUM-57 PR in this stack',
     );
   }
 
@@ -81,18 +136,24 @@ export class HotelsController {
   @Roles(Role.ADMIN, Role.HOTEL_MODERATOR)
   @Delete(':id/rooms/:roomId')
   @ApiOperation({ summary: 'HTL-06: Delete or deactivate room' })
-  deleteRoom() {
+  deleteRoom(
+    @Param('id') id: string,
+    @Param('roomId') roomId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    void [id, roomId, user];
     throw new NotImplementedException(
-      'DELETE /api/hotels/:id/rooms/:roomId not implemented yet',
+      'Implemented by the subsequent SCRUM-58 PR in this stack',
     );
   }
 
   @Public()
   @Get(':id/rooms/available')
   @ApiOperation({ summary: 'HTL-15: List available rooms for stay dates' })
-  getAvailableRooms() {
+  getAvailableRooms(@Param('id') id: string, @Query() query: StayQueryDto) {
+    void [id, query];
     throw new NotImplementedException(
-      'GET /api/hotels/:id/rooms/available not implemented yet',
+      'Implemented by the subsequent SCRUM-59 PR in this stack',
     );
   }
 
@@ -102,9 +163,15 @@ export class HotelsController {
   @ApiOperation({
     summary: 'HTL-04: Set room availability and pricing for date range',
   })
-  setRoomAvailability() {
+  setRoomAvailability(
+    @Param('id') id: string,
+    @Param('roomId') roomId: string,
+    @Body() dto: AvailabilityFieldsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    void [id, roomId, dto, user];
     throw new NotImplementedException(
-      'POST /api/hotels/:id/rooms/:roomId/availability not implemented yet',
+      'Implemented by the subsequent SCRUM-60 PR in this stack',
     );
   }
 
@@ -114,18 +181,80 @@ export class HotelsController {
   @ApiOperation({
     summary: 'HTL-05, HTL-06: Block/unblock or update room availability',
   })
-  updateRoomAvailability() {
+  updateRoomAvailability(
+    @Param('id') id: string,
+    @Param('roomId') roomId: string,
+    @Body() dto: AvailabilityFieldsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    void [id, roomId, dto, user];
     throw new NotImplementedException(
-      'PATCH /api/hotels/:id/rooms/:roomId/availability not implemented yet',
+      'Implemented by the subsequent SCRUM-61 PR in this stack',
     );
   }
 
   @Public()
   @Get(':id/availability')
   @ApiOperation({ summary: 'HTL-08: Get hotel availability calendar/summary' })
-  getHotelAvailability() {
+  getHotelAvailability(@Param('id') id: string, @Query() query: DateRangeDto) {
+    void [id, query];
     throw new NotImplementedException(
-      'GET /api/hotels/:id/availability not implemented yet',
+      'Implemented by the subsequent SCRUM-62 PR in this stack',
+    );
+  }
+
+  @ApiCookieAuth()
+  @Roles(Role.ADMIN, Role.HOTEL_MODERATOR)
+  @Get(':id/availability/management')
+  @ApiOperation({
+    summary:
+      'HTL-08: Assigned moderator calendar with private reservation references',
+  })
+  getManagementCalendar(
+    @Param('id') id: string,
+    @Query() query: DateRangeDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    void [id, query, user];
+    throw new NotImplementedException(
+      'Implemented by the subsequent SCRUM-62 PR in this stack',
+    );
+  }
+
+  @ApiCookieAuth()
+  @Roles(Role.ADMIN, Role.HOTEL_MODERATOR)
+  @Post(':id/images')
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['images'],
+      properties: {
+        images: {
+          type: 'array',
+          maxItems: 5,
+          items: { type: 'string', format: 'binary' },
+        },
+      },
+    },
+  })
+  @UseInterceptors(
+    FilesInterceptor('images', 5, {
+      limits: { fileSize: 5 * 1024 * 1024, files: 5 },
+    }),
+  )
+  @ApiOperation({
+    summary:
+      'HTL-01, GEN-08: Upload up to five server-stored JPG/PNG hotel photos',
+  })
+  uploadImages(
+    @Param('id') id: string,
+    @UploadedFiles() files: Express.Multer.File[],
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    void [id, files, user];
+    throw new NotImplementedException(
+      'Implemented by the subsequent SCRUM-55 PR in this stack',
     );
   }
 
@@ -136,9 +265,14 @@ export class HotelsController {
     summary:
       'HTL-09, HTL-10: Update hotel check-in/out & cancellation policies',
   })
-  updatePolicies() {
+  updatePolicies(
+    @Param('id') id: string,
+    @Body() dto: HotelPoliciesDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    void [id, dto, user];
     throw new NotImplementedException(
-      'PUT /api/hotels/:id/policies not implemented yet',
+      'Implemented by the subsequent SCRUM-63 PR in this stack',
     );
   }
 
@@ -146,18 +280,24 @@ export class HotelsController {
   @Roles(Role.ADMIN, Role.HOTEL_MODERATOR)
   @Get(':id/reservations')
   @ApiOperation({ summary: 'HTL-22: List reservations for a hotel' })
-  getHotelReservations() {
+  getHotelReservations(
+    @Param('id') id: string,
+    @Query() query: HotelReservationsQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    void [id, query, user];
     throw new NotImplementedException(
-      'GET /api/hotels/:id/reservations not implemented yet',
+      'Implemented by the subsequent SCRUM-64 PR in this stack',
     );
   }
 
   @Public()
   @Get(':id/reviews')
   @ApiOperation({ summary: 'HTL-24: List reviews for a hotel' })
-  getHotelReviews() {
+  getHotelReviews(@Param('id') id: string, @Query() query: HotelPaginationDto) {
+    void [id, query];
     throw new NotImplementedException(
-      'GET /api/hotels/:id/reviews not implemented yet',
+      'Implemented by the subsequent SCRUM-65 PR in this stack',
     );
   }
 }

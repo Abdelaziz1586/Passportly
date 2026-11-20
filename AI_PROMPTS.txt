@@ -648,3 +648,17 @@ Implement the approved Passportly flight plan and separate each ticket into its 
 How the output was used:
 Implemented and verified the ticket on an independent branch from develop.
 ================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Ahmed
+Tool: OpenAI Codex
+Related Requirement: SCRUM-52; HTL-01
+
+Prompt:
+"finish all of those tickets and make sure everything is perfectly done and push the branches on github then open a pr for each one of them to the develop branch"
+The user supplied the Passportly repository, project-description PDF and Jira screenshots. The linked official workbook was read for acceptance details.
+
+How the output was used:
+Admin-only creation with seeded city/country matching, derived location metadata, image limits and platform currency validation. Added shared validated DTOs, ownership/date helpers, module wiring, the missing server upload module, dependent ObjectId schema corrections and an isolated MongoDB/JWT integration harness. Shared calendar-quote and visible-review helpers are introduced before dependent detail/search routes; later PRs add their own endpoint/service methods and enable their ticket test groups. Reviewed the implementation against the ticket and workbook; branch lint, build, unit/integration and health e2e checks are recorded in its PR. No team Atlas credentials or .env files were read. Changes outside these assigned hotel tickets retain team ownership.
+================================================

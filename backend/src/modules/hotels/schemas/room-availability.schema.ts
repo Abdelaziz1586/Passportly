@@ -1,14 +1,24 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
 
 export type RoomAvailabilityDocument = HydratedDocument<RoomAvailability>;
 
 @Schema({ timestamps: true, collection: 'room_availabilities' })
 export class RoomAvailability {
-  @Prop({ type: Types.ObjectId, ref: 'Hotel', required: true, index: true })
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'Hotel',
+    required: true,
+    index: true,
+  })
   hotel: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'Room', required: true, index: true })
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'Room',
+    required: true,
+    index: true,
+  })
   room: Types.ObjectId;
 
   /**
