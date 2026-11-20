@@ -126,10 +126,7 @@ export class HotelsController {
     @Param('roomId') roomId: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    void [id, roomId, user];
-    throw new NotImplementedException(
-      'Implemented by the subsequent SCRUM-58 PR in this stack',
-    );
+    return this.inventory.deleteRoom(id, roomId, user);
   }
 
   @Public()

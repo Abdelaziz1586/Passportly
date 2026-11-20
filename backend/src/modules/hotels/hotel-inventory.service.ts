@@ -217,6 +217,40 @@ export class HotelInventoryService {
     }
   }
 
+  async deleteRoom(hotelId: string, roomId: string, user: AuthenticatedUser) {
+    await this.access.managedHotel(hotelId, user);
+    objectId(roomId, 'roomId');
+    return this.connection.transaction(async (session) => {
+      const room = await this.access.room(hotelId, roomId, session);
+      await this.assertNoReservations(roomId, todayUtc(), undefined, session);
+      const used = await this.bookings
+        .exists({ 'rooms.room': room._id })
+        .session(session);
+      const historicalAllocation = await this.availability
+        .exists({
+          room: room._id,
+          $or: [{ bookedUnits: { $gt: 0 } }, { heldUnits: { $gt: 0 } }],
+        })
+        .session(session);
+      if (used || historicalAllocation) {
+        await this.availability.updateMany(
+          { room: room._id, date: { $gte: todayUtc() } },
+          { $set: { isBlocked: true, blockReason: 'Room deactivated' } },
+          { session },
+        );
+        await this.rooms.updateOne(
+          { _id: room._id },
+          { $set: { isActive: false } },
+          { session },
+        );
+        return { roomId, deleted: false, deactivated: true };
+      }
+      await this.availability.deleteMany({ room: room._id }, { session });
+      await this.rooms.deleteOne({ _id: room._id }, { session });
+      return { roomId, deleted: true, deactivated: false };
+    });
+  }
+
   /** Missing calendar rows are unavailable; overrides are summed once per stay night. */
   async availableRooms(
     hotelIds: Types.ObjectId[],
