@@ -1,18 +1,51 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { Express } from 'express';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
-import { extname, join, resolve } from 'node:path';
+import { basename, join, resolve, sep } from 'node:path';
 import { MediaItem } from '../../common/schemas/media-item.schema';
 
 export const maxLogoBytes = 5 * 1024 * 1024;
 
-const ALLOWED_IMAGE_MIME_TYPES = new Set([
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-  'image/gif',
-]);
+interface ImageSignature {
+  mimeType: string;
+  extension: string;
+  matches: (buffer: Buffer) => boolean;
+}
+
+const SUPPORTED_IMAGE_SIGNATURES: ImageSignature[] = [
+  {
+    mimeType: 'image/png',
+    extension: '.png',
+    matches: (buf) =>
+      buf.length >= 8 &&
+      buf.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex')),
+  },
+  {
+    mimeType: 'image/jpeg',
+    extension: '.jpg',
+    matches: (buf) =>
+      buf.length >= 3 &&
+      buf.subarray(0, 3).equals(Buffer.from('ffd8ff', 'hex')),
+  },
+  {
+    mimeType: 'image/gif',
+    extension: '.gif',
+    matches: (buf) =>
+      buf.length >= 6 &&
+      (buf.subarray(0, 6).toString('ascii') === 'GIF87a' ||
+        buf.subarray(0, 6).toString('ascii') === 'GIF89a'),
+  },
+  {
+    mimeType: 'image/webp',
+    extension: '.webp',
+    matches: (buf) =>
+      buf.length >= 12 &&
+      buf.subarray(0, 4).toString('ascii') === 'RIFF' &&
+      buf.subarray(8, 12).toString('ascii') === 'WEBP',
+  },
+];
 
 @Injectable()
 export class UploadsService {
@@ -29,39 +62,135 @@ export class UploadsService {
     );
   }
 
-  validateImageFile(file: Express.Multer.File): void {
+  validateImageFile(file: Express.Multer.File): ImageSignature {
+    if (!file || !Buffer.isBuffer(file.buffer) || file.buffer.length === 0) {
+      throw new BadRequestException('Image file is required');
+    }
+    const maxBytes = this.configService.get<number>(
+      'uploads.maxImageSizeBytes',
+      this.maxImageSizeBytes,
+    );
+    const sizeBytes = file.size ?? file.buffer.length;
+    if (sizeBytes > maxBytes) {
+      throw new BadRequestException(
+        `Image size exceeds the maximum allowed limit of ${maxBytes} bytes`,
+      );
+    }
+
+    const normalizedMime = file.mimetype?.toLowerCase().trim();
+    const canonicalMime =
+      normalizedMime === 'image/jpg' ? 'image/jpeg' : normalizedMime;
+    const matchedSignature = SUPPORTED_IMAGE_SIGNATURES.find(
+      (sig) => sig.mimeType === canonicalMime && sig.matches(file.buffer),
+    );
+    if (!matchedSignature) {
+      throw new BadRequestException(
+        'Only valid JPEG, PNG, GIF, or WebP images are allowed',
+      );
+    }
+    return matchedSignature;
+  }
+
+  async saveImage(
+    file: Express.Multer.File | undefined,
+    subDir?: string,
+  ): Promise<MediaItem> {
     if (!file) {
       throw new BadRequestException('Image file is required');
     }
-    if (!ALLOWED_IMAGE_MIME_TYPES.has(file.mimetype)) {
-      throw new BadRequestException(
-        'Unsupported image type. Allowed types: JPEG, PNG, WEBP, GIF',
-      );
+    const signature = this.validateImageFile(file);
+    const sizeBytes = file.size ?? file.buffer.length;
+    const filename = `${randomUUID()}${signature.extension}`;
+
+    const baseDir = resolve(
+      this.configService.get<string>('uploads.dir', this.uploadDir),
+    );
+    if (subDir) {
+      const safeSubDir = subDir.replace(/[^a-zA-Z0-9_-]/g, '') || 'general';
+      const targetDir = resolve(baseDir, safeSubDir);
+      if (!targetDir.startsWith(`${baseDir}${sep}`) && targetDir !== baseDir) {
+        throw new BadRequestException('Invalid upload directory');
+      }
+      await mkdir(targetDir, { recursive: true });
+      await writeFile(join(targetDir, filename), file.buffer, { flag: 'wx' });
+      return {
+        url: `/uploads/${safeSubDir}/${filename}`,
+        filename,
+        mimeType: signature.mimeType,
+        sizeBytes,
+        uploadedAt: new Date(),
+      };
     }
-    if (file.size > this.maxImageSizeBytes) {
-      throw new BadRequestException(
-        `Image exceeds maximum allowed size of ${this.maxImageSizeBytes} bytes`,
-      );
+
+    await mkdir(baseDir, { recursive: true });
+    await writeFile(join(baseDir, filename), file.buffer, { flag: 'wx' });
+    return {
+      url: `/uploads/${filename}`,
+      filename,
+      mimeType: signature.mimeType,
+      sizeBytes,
+      uploadedAt: new Date(),
+    };
+  }
+
+  async copyImage(image: MediaItem): Promise<MediaItem> {
+    this.assertFilename(image.filename);
+    const baseDir = resolve(
+      this.configService.get<string>('uploads.dir', this.uploadDir),
+    );
+    const buffer = await readFile(join(baseDir, image.filename));
+    return this.saveImage({
+      buffer,
+      size: buffer.length,
+      mimetype: image.mimeType,
+    } as Express.Multer.File);
+  }
+
+  private assertFilename(filename: string): void {
+    if (!/^[0-9a-f-]{36}\.(jpg|png|gif|webp)$/i.test(filename)) {
+      throw new BadRequestException('Invalid uploaded image filename');
     }
   }
 
-  async saveImage(file: Express.Multer.File, subfolder: string) {
-    this.validateImageFile(file);
-    const targetDir = join(this.uploadDir, subfolder);
-    await mkdir(targetDir, { recursive: true });
+  async removeImage(filename: string): Promise<void> {
+    this.assertFilename(filename);
+    const baseDir = resolve(
+      this.configService.get<string>('uploads.dir', this.uploadDir),
+    );
+    try {
+      await unlink(join(baseDir, filename));
+    } catch (error: unknown) {
+      if (
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'ENOENT'
+      ) {
+        return;
+      }
+      throw error;
+    }
+  }
 
-    const ext = extname(file.originalname) || '.jpg';
-    const filename = `${randomUUID()}${ext}`;
-    const fullPath = join(targetDir, filename);
-    await writeFile(fullPath, file.buffer);
-
-    return {
-      url: `/uploads/${subfolder}/${filename}`,
-      filename,
-      mimeType: file.mimetype,
-      sizeBytes: file.size,
-      uploadedAt: new Date(),
-    };
+  async deleteImage(imageUrl: string): Promise<void> {
+    if (!imageUrl || !imageUrl.startsWith('/uploads/')) {
+      return;
+    }
+    const relative = imageUrl.slice('/uploads/'.length);
+    const segments = relative.split('/').filter(Boolean);
+    if (segments.length === 0 || segments.length > 2) {
+      return;
+    }
+    const safeSegments = segments.map((seg, idx) =>
+      idx === segments.length - 1 ? basename(seg) : seg,
+    );
+    const baseDir = resolve(
+      this.configService.get<string>('uploads.dir', this.uploadDir),
+    );
+    const targetPath = resolve(baseDir, ...safeSegments);
+    if (!targetPath.startsWith(`${baseDir}${sep}`)) {
+      return;
+    }
+    await unlink(targetPath).catch(() => undefined);
   }
 
   private imageType(buffer: Buffer): 'image/jpeg' | 'image/png' {

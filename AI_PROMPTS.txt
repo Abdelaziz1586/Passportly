@@ -1083,3 +1083,16 @@ Implement PATCH /api/flight-bookings/:id/change-flight: the owner changes one or
 How the output was used:
 The generated refund-engine extension, change service, payment hooks, DTOs, controller and tests were integrated; a fresh reviewer found races between concurrent changes and cancellations (fixed with state guards), a missing airline recheck at the swap, and a leftover old unique index (dropped at start), and the result was checked with lint, build, unit tests, 89 live checks and a Swagger "Try it out" run.
 ================================================
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-89 (ITN-01)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Create a private itinerary. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Restored the uploads module already imported by AppModule but omitted from Git by an ignore rule, and added isolated database test infrastructure. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
