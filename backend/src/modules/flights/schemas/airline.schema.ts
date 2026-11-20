@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 
 export type AirlineDocument = HydratedDocument<Airline>;
 
@@ -23,6 +23,9 @@ export class AirlineBaggagePolicy {
   @Prop({ type: Number, default: 50, min: 0 })
   extraBagFee: number;
 
+  @Prop({ type: Number, min: 0 })
+  maxExtraBagsPerPassenger?: number;
+
   @Prop({ type: Number, default: 15, min: 0 })
   overweightFeePerKg: number;
 
@@ -40,6 +43,14 @@ export const AirlineBaggagePolicySchema =
 export class AirlineCancellationPolicy {
   @Prop({ default: true })
   allowCancellation: boolean;
+
+  @Prop({
+    type: [
+      { _id: false, daysBeforeDeparture: Number, refundPercentage: Number },
+    ],
+    default: undefined,
+  })
+  tiers?: { daysBeforeDeparture: number; refundPercentage: number }[];
 
   @Prop({ type: Number, default: 24, min: 0 })
   freeCancellationHoursBeforeDeparture: number;
@@ -81,7 +92,7 @@ export class Airline {
   @Prop({ trim: true })
   description?: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'Country' })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'Country' })
   country?: Types.ObjectId;
 
   @Prop({ trim: true })
@@ -99,7 +110,7 @@ export class Airline {
   @Prop({ type: Date })
   deactivatedAt?: Date;
 
-  @Prop({ type: Types.ObjectId, ref: 'User' })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'User' })
   deactivatedBy?: Types.ObjectId;
 
   @Prop({ type: AirlineBaggagePolicySchema, default: () => ({}) })
