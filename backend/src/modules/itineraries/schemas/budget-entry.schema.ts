@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
+import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 import { BudgetCategory } from '../../../common/enums';
 
 export type BudgetEntryDocument = HydratedDocument<BudgetEntry>;
@@ -7,18 +7,18 @@ export type BudgetEntryDocument = HydratedDocument<BudgetEntry>;
 @Schema({ timestamps: true, collection: 'budget_entries' })
 export class BudgetEntry {
   @Prop({
-    type: MongooseSchema.Types.ObjectId,
+    type: SchemaTypes.ObjectId,
     ref: 'Itinerary',
     required: true,
     index: true,
   })
   itinerary: Types.ObjectId;
 
-  @Prop({ type: MongooseSchema.Types.ObjectId, required: true, index: true })
+  @Prop({ type: SchemaTypes.ObjectId, required: true, index: true })
   dayId: Types.ObjectId;
 
   @Prop({
-    type: MongooseSchema.Types.ObjectId,
+    type: SchemaTypes.ObjectId,
     ref: 'User',
     required: true,
     index: true,
