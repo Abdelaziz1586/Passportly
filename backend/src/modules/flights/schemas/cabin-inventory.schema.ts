@@ -1,12 +1,17 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 import { CabinClass } from '../../../common/enums';
 
 export type CabinInventoryDocument = HydratedDocument<CabinInventory>;
 
 @Schema({ timestamps: true, collection: 'cabin_inventories' })
 export class CabinInventory {
-  @Prop({ type: Types.ObjectId, ref: 'Flight', required: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'Flight',
+    required: true,
+    index: true,
+  })
   flight: Types.ObjectId;
 
   @Prop({
