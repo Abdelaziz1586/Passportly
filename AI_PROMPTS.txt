@@ -1509,4 +1509,12 @@ Implement SCRUM-120 [BLG-02] GET /api/posts/:id - Get blog post details & commen
 
 How the output was used:
 Added OptionalJwtAuthGuard for optional authenticated author draft access on @Public() route, BlogCommentItemDto and BlogPostDetailResponseDto, UsersModule import in BlogModule, BlogService.getPost enforcing visibility and non-hidden comment filtering, BlogController.getPost Swagger wiring, and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
+
+Related Requirement: BLG-04, BLG-08 (SCRUM-121, PATCH /api/posts/:id)
+
+Prompt:
+Implement SCRUM-121 [BLG-04, BLG-08] PATCH /api/posts/:id - Update own blog post or tags enforcing author ownership, syncing Tag usageCounts, and setting publishedAt on first publish.
+
+How the output was used:
+Added UpdatePostDto, BlogService.updatePost with author ownership verification, diff-based Tag usageCount synchronization, and first-publish publishedAt handling, BlogController.updatePost with Swagger/role decorators, and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
 ================================================

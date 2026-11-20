@@ -36,6 +36,7 @@ import {
 import { CreatePostDto } from './dto/create-post.dto';
 import { ListMyPostsQueryDto } from './dto/list-my-posts-query.dto';
 import { ListPostsQueryDto } from './dto/list-posts-query.dto';
+import { UpdatePostDto } from './dto/update-post.dto';
 import { OptionalJwtAuthGuard } from './guards/optional-jwt-auth.guard';
 
 @ApiTags('Blog & Community')
@@ -125,10 +126,23 @@ export class BlogController {
   @Roles(Role.REGISTERED_USER)
   @Patch('posts/:id')
   @ApiOperation({ summary: 'BLG-04, BLG-08: Update own blog post or tags' })
-  updatePost() {
-    throw new NotImplementedException(
-      'PATCH /api/posts/:id not implemented yet',
-    );
+  @ApiParam({ name: 'id', description: 'Blog post MongoDB ObjectId' })
+  @ApiOkResponse({
+    description: 'Blog post updated successfully',
+    type: BlogPostItemDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid post ID or update payload' })
+  @ApiUnauthorizedResponse({ description: 'Authentication required' })
+  @ApiForbiddenResponse({
+    description: 'Only the post author can update this blog post',
+  })
+  @ApiNotFoundResponse({ description: 'Blog post not found' })
+  updatePost(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdatePostDto,
+  ): Promise<BlogPostItemDto> {
+    return this.blogService.updatePost(id, user.userId, dto);
   }
 
   @ApiCookieAuth()
