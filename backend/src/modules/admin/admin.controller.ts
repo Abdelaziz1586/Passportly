@@ -28,7 +28,7 @@ import {
 import type { Request } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { Role } from '../../common/enums';
+import { ProviderType, Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { AdminService } from './admin.service';
 import {
@@ -44,6 +44,7 @@ import {
   PaginatedAccountsResponseDto,
 } from './dto/list-accounts-query.dto';
 import { ReactivateAccountResponseDto } from './dto/reactivate-account-response.dto';
+import { DeactivateProviderResponseDto } from './dto/deactivate-provider-response.dto';
 import {
   AccountStatusChangeResponseDto,
   SuspendAccountDto,
@@ -166,10 +167,30 @@ export class AdminController {
   @ApiOperation({
     summary: 'ACC-15: Deactivate airline or hotel provider (hides from search)',
   })
-  deactivateProvider() {
-    throw new NotImplementedException(
-      'PATCH /api/admin/providers/:type/:id/deactivate not implemented yet',
-    );
+  @ApiParam({
+    name: 'type',
+    enum: ProviderType,
+    description: 'Provider type (airline or hotel)',
+  })
+  @ApiParam({ name: 'id', type: String, description: 'Provider ID' })
+  @ApiOkResponse({
+    description:
+      'Provider deactivated while keeping existing confirmed bookings valid',
+    type: DeactivateProviderResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid provider type or provider ID',
+  })
+  @ApiConflictResponse({ description: 'Provider is already deactivated' })
+  @ApiForbiddenResponse({ description: 'Admin role required' })
+  @ApiNotFoundResponse({ description: 'Provider not found' })
+  deactivateProvider(
+    @Param('type') type: string,
+    @Param('id') id: string,
+    @CurrentUser() admin: AuthenticatedUser,
+    @Req() req: Request,
+  ): Promise<DeactivateProviderResponseDto> {
+    return this.adminService.deactivateProvider(type, id, admin, req.ip);
   }
 
   @Patch('providers/:type/:id/reactivate')
