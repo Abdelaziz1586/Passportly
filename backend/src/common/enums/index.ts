@@ -19,6 +19,7 @@ export enum ProviderType {
 export enum FlightStatus {
   SCHEDULED = 'SCHEDULED',
   DELAYED = 'DELAYED',
+  DEPARTED = 'DEPARTED',
   CANCELLED = 'CANCELLED',
   COMPLETED = 'COMPLETED',
 }
@@ -64,6 +65,12 @@ export enum PaymentStatus {
   CANCELLED = 'CANCELLED',
   REFUNDED = 'REFUNDED',
   PARTIALLY_REFUNDED = 'PARTIALLY_REFUNDED',
+}
+
+/** What a payment pays for: a new booking, or the fare difference of a flight change (FLT-27). */
+export enum PaymentPurpose {
+  BOOKING = 'BOOKING',
+  FLIGHT_CHANGE = 'FLIGHT_CHANGE',
 }
 
 export enum RefundStatus {
