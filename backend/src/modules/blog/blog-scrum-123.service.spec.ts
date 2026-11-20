@@ -33,9 +33,15 @@ describe('BlogService (SCRUM-123 BLG-05 add comment)', () => {
         { provide: getModelToken(BlogPost.name), useValue: mockBlogPostModel },
         { provide: getModelToken(Comment.name), useValue: mockCommentModel },
         { provide: getModelToken(Like.name), useValue: {} },
-        { provide: UploadsService, useValue: { deleteImage: jest.fn(), saveImage: jest.fn() } },
+        {
+          provide: UploadsService,
+          useValue: { deleteImage: jest.fn(), saveImage: jest.fn() },
+        },
         { provide: AuditLogsService, useValue: { log: jest.fn() } },
-        { provide: NotificationsService, useValue: { createNotification: jest.fn() } },
+        {
+          provide: NotificationsService,
+          useValue: { createNotification: jest.fn() },
+        },
         { provide: getModelToken(Tag.name), useValue: {} },
       ],
     }).compile();
