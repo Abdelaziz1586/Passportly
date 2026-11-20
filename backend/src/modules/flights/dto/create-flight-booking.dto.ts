@@ -10,7 +10,7 @@ import {
   IsMongoId,
   IsNotEmpty,
   IsNumber,
-  IsOptional,
+  ValidateIf,
   IsPositive,
   IsString,
   Matches,
@@ -114,7 +114,7 @@ export class PassengerDetailsDto {
     description:
       'Extra checked bags beyond the airline allowance, charged on every leg (fee = price per extra bag x bags). Infants cannot add bags.',
   })
-  @IsOptional()
+  @ValidateIf((_object, value: unknown) => value !== undefined)
   @IsInt()
   @Min(0)
   @Max(EXTRA_BAGS_SANITY_BOUND)
@@ -125,7 +125,7 @@ export class PassengerDetailsDto {
     description:
       'Weight in kg of each extra bag. When given it must not exceed the cabin maximum weight per bag on any leg, and extraBaggageCount must be above 0.',
   })
-  @IsOptional()
+  @ValidateIf((_object, value: unknown) => value !== undefined)
   @IsNumber({ maxDecimalPlaces: 2 })
   @IsPositive()
   extraBaggageWeightKg?: number;
