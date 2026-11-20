@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -11,15 +12,30 @@ import { InjectModel } from '@nestjs/mongoose';
 import * as bcrypt from 'bcryptjs';
 import { randomBytes, randomUUID } from 'crypto';
 import type { CookieOptions } from 'express';
-import { Model } from 'mongoose';
+import { isValidObjectId, Model, Types } from 'mongoose';
 import { AccountStatus, Role } from '../../common/enums';
-import type { JwtPayload } from '../../common/interfaces/jwt-payload.interface';
+import type {
+  AuthenticatedUser,
+  JwtPayload,
+} from '../../common/interfaces/jwt-payload.interface';
 import { MailService } from '../mail/mail.service';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
+import {
+  ModeratorAssignment,
+  ModeratorAssignmentDocument,
+} from '../users/schemas/moderator-assignment.schema';
 import { User, UserDocument } from '../users/schemas/user.schema';
+import { AuthMeResponseDto } from './dto/auth-me-response.dto';
+import { ChangePasswordResponseDto } from './dto/change-password-response.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { ForgotPasswordResponseDto } from './dto/forgot-password-response.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
 import { LoginDto } from './dto/login.dto';
+import { LogoutResponseDto } from './dto/logout-response.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ResetPasswordResponseDto } from './dto/reset-password-response.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SafeUserResponseDto } from './dto/safe-user-response.dto';
 import { VerifyEmailQueryDto } from './dto/verify-email-query.dto';
 import { VerifyEmailResponseDto } from './dto/verify-email-response.dto';
@@ -43,6 +59,12 @@ export interface LoginResult {
   accessToken: string;
   cookieName: string;
   cookieOptions: CookieOptions;
+}
+
+export interface LogoutResult {
+  response: LogoutResponseDto;
+  cookieName: string;
+  clearCookieOptions: CookieOptions;
 }
 
 function isMongoDuplicateKeyError(error: unknown): boolean {
@@ -89,6 +111,9 @@ export class AuthService {
   private static readonly BCRYPT_SALT_ROUNDS = 12;
   private static readonly MAX_FAILED_LOGIN_ATTEMPTS = 5;
   private static readonly LOCKOUT_DURATION_MS = 15 * 60 * 1000;
+  private static readonly PASSWORD_RESET_TTL_MINUTES = 15;
+  private static readonly PASSWORD_RESET_TTL_MS =
+    AuthService.PASSWORD_RESET_TTL_MINUTES * 60 * 1000;
 
   constructor(
     @InjectModel(User.name) readonly userModel: Model<UserDocument>,
@@ -98,6 +123,9 @@ export class AuthService {
     readonly configService: ConfigService,
     private readonly referenceDataService: ReferenceDataService,
     private readonly mailService: MailService,
+    @Optional()
+    @InjectModel(ModeratorAssignment.name)
+    private readonly assignmentModel?: Model<ModeratorAssignmentDocument>,
   ) {}
 
   /**
@@ -315,21 +343,11 @@ export class AuthService {
       ...(context.ipAddress ? { ipAddress: context.ipAddress } : {}),
     });
 
-    const cookieName = this.configService.get<string>(
-      'jwt.cookieName',
-      'access_token',
-    );
-    const cookieSecure = this.configService.get<boolean>(
-      'jwt.cookieSecure',
-      false,
-    );
+    const cookieName = this.getCookieName();
     const maxAge = Math.max(0, expiresAt.getTime() - Date.now());
 
     const cookieOptions: CookieOptions = {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: cookieSecure,
-      path: '/',
+      ...this.getBaseCookieOptions(),
       maxAge,
       expires: expiresAt,
     };
@@ -344,6 +362,298 @@ export class AuthService {
       cookieName,
       cookieOptions,
     };
+  }
+
+  /**
+   * Verifies the caller's current password, enforces new password strength and
+   * difference, updates passwordHash, clears mustChangePassword, and optionally
+   * revokes all other active sessions.
+   */
+  async changePassword(
+    authUser: AuthenticatedUser,
+    dto: ChangePasswordDto,
+  ): Promise<ChangePasswordResponseDto> {
+    if (!isValidObjectId(authUser.userId)) {
+      throw new UnauthorizedException('Invalid authenticated user');
+    }
+
+    const user = await this.userModel
+      .findById(authUser.userId)
+      .select('+passwordHash');
+
+    if (!user) {
+      throw new UnauthorizedException('Account not found');
+    }
+
+    if (user.status !== AccountStatus.ACTIVE) {
+      throw new ForbiddenException(`Account is ${user.status.toLowerCase()}`);
+    }
+
+    const currentMatches = await bcrypt.compare(
+      dto.currentPassword,
+      user.passwordHash,
+    );
+    if (!currentMatches) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+
+    if (dto.newPassword === dto.currentPassword) {
+      throw new BadRequestException(
+        'New password must be different from current password',
+      );
+    }
+
+    const passwordHash = await bcrypt.hash(
+      dto.newPassword,
+      AuthService.BCRYPT_SALT_ROUNDS,
+    );
+
+    await this.userModel.findByIdAndUpdate(
+      user._id,
+      {
+        $set: {
+          passwordHash,
+          mustChangePassword: false,
+        },
+      },
+      { returnDocument: 'after' },
+    );
+
+    let revokedOtherSessionsCount = 0;
+    if (dto.revokeOtherSessions !== false) {
+      const revokeResult = await this.sessionModel.updateMany(
+        {
+          user: user._id,
+          jti: { $ne: authUser.jti },
+          revokedAt: null,
+        },
+        { $set: { revokedAt: new Date() } },
+      );
+      revokedOtherSessionsCount = revokeResult.modifiedCount ?? 0;
+    }
+
+    return {
+      message: 'Password changed successfully',
+      mustChangePassword: false,
+      revokedOtherSessionsCount,
+    };
+  }
+
+  /**
+   * Validates a single-use passwordResetToken and its expiry, updates the user's
+   * passwordHash, clears lockout/mustChangePassword flags, and revokes all active sessions.
+   */
+  async resetPassword(
+    dto: ResetPasswordDto,
+  ): Promise<ResetPasswordResponseDto> {
+    const resetToken = (dto.passwordResetToken ?? dto.token)?.trim();
+    if (!resetToken) {
+      throw new BadRequestException('passwordResetToken is required');
+    }
+
+    const now = new Date();
+    const user = await this.userModel
+      .findOne({ passwordResetToken: resetToken })
+      .select('+passwordResetExpiresAt status');
+
+    if (
+      !user ||
+      !user.passwordResetExpiresAt ||
+      user.passwordResetExpiresAt <= now
+    ) {
+      throw new BadRequestException('Invalid or expired password reset token');
+    }
+
+    if (user.status !== AccountStatus.ACTIVE) {
+      throw new BadRequestException('Account is not active');
+    }
+
+    const passwordHash = await bcrypt.hash(
+      dto.newPassword,
+      AuthService.BCRYPT_SALT_ROUNDS,
+    );
+
+    const updated = await this.userModel.findOneAndUpdate(
+      {
+        _id: user._id,
+        passwordResetToken: resetToken,
+        passwordResetExpiresAt: { $gt: now },
+      },
+      {
+        $set: {
+          passwordHash,
+          mustChangePassword: false,
+          failedLoginAttempts: 0,
+          lockoutUntil: null,
+        },
+        $unset: {
+          passwordResetToken: 1,
+          passwordResetExpiresAt: 1,
+        },
+      },
+      { returnDocument: 'after' },
+    );
+
+    if (!updated) {
+      throw new BadRequestException('Invalid or expired password reset token');
+    }
+
+    await this.sessionModel.updateMany(
+      { user: user._id, revokedAt: null },
+      { $set: { revokedAt: now } },
+    );
+
+    return {
+      message:
+        'Password reset successfully. Please log in with your new password.',
+    };
+  }
+
+  /**
+   * Generates a short-lived passwordResetToken and passwordResetExpiresAt for
+   * active accounts without leaking whether an account exists.
+   */
+  async forgotPassword(
+    dto: ForgotPasswordDto,
+  ): Promise<ForgotPasswordResponseDto> {
+    const email = dto.email.trim().toLowerCase();
+    const user = await this.userModel
+      .findOne({ email })
+      .select('email firstName status');
+
+    if (user && user.status === AccountStatus.ACTIVE) {
+      const passwordResetToken = randomBytes(32).toString('hex');
+      const passwordResetExpiresAt = new Date(
+        Date.now() + AuthService.PASSWORD_RESET_TTL_MS,
+      );
+
+      await this.userModel.findByIdAndUpdate(user._id, {
+        $set: {
+          passwordResetToken,
+          passwordResetExpiresAt,
+        },
+      });
+
+      await this.mailService.sendPasswordResetEmail({
+        to: user.email,
+        firstName: user.firstName,
+        token: passwordResetToken,
+        expiresInMinutes: AuthService.PASSWORD_RESET_TTL_MINUTES,
+      });
+    }
+
+    return {
+      message:
+        'If an active account exists with that email, a password reset link has been sent.',
+    };
+  }
+
+  /**
+   * Revokes the caller's active UserSession by jti and returns cookie-clearing
+   * options matching the auth cookie configuration.
+   */
+  async logout(user: AuthenticatedUser): Promise<LogoutResult> {
+    await this.sessionModel.updateOne(
+      { jti: user.jti, user: user.userId, revokedAt: null },
+      { $set: { revokedAt: new Date() } },
+    );
+
+    return {
+      response: { message: 'Logged out successfully' },
+      cookieName: this.getCookieName(),
+      clearCookieOptions: this.getBaseCookieOptions(),
+    };
+  }
+
+  private getCookieName(): string {
+    return this.configService.get<string>('jwt.cookieName', 'access_token');
+  }
+
+  private getBaseCookieOptions(): CookieOptions {
+    const cookieSecure = this.configService.get<boolean>(
+      'jwt.cookieSecure',
+      false,
+    );
+    return {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: cookieSecure,
+      path: '/',
+    };
+  }
+
+  /**
+   * Returns authenticated user details, role, account status, and assigned
+   * provider context for airline/hotel moderators without exposing sensitive fields.
+   */
+  async getMe(authUser: AuthenticatedUser): Promise<AuthMeResponseDto> {
+    if (!isValidObjectId(authUser.userId)) {
+      throw new UnauthorizedException('Invalid authenticated user');
+    }
+
+    const user = await this.userModel.findById(authUser.userId);
+    if (!user) {
+      throw new UnauthorizedException('Account not found');
+    }
+
+    if (user.status !== AccountStatus.ACTIVE) {
+      throw new ForbiddenException(`Account is ${user.status.toLowerCase()}`);
+    }
+
+    const baseResponse: AuthMeResponseDto = {
+      ...this.toSafeUser(user),
+      mustChangePassword: Boolean(user.mustChangePassword),
+      ...(user.lastLoginAt !== undefined
+        ? { lastLoginAt: user.lastLoginAt }
+        : {}),
+    };
+
+    if (
+      user.role === Role.AIRLINE_MODERATOR ||
+      user.role === Role.HOTEL_MODERATOR
+    ) {
+      let assignedProviderId = authUser.assignedProviderId;
+      let assignedProviderType = authUser.assignedProviderType;
+
+      if (!assignedProviderId && this.assignmentModel) {
+        const assignment = await this.assignmentModel
+          .findOne({ moderator: user._id, isActive: true })
+          .lean();
+        if (assignment) {
+          assignedProviderType = assignment.providerType;
+          assignedProviderId = assignment.airline
+            ? String(assignment.airline)
+            : assignment.hotel
+              ? String(assignment.hotel)
+              : undefined;
+        }
+      }
+
+      if (assignedProviderId !== undefined) {
+        baseResponse.assignedProviderId = assignedProviderId;
+      }
+      if (assignedProviderType !== undefined) {
+        baseResponse.assignedProviderType = assignedProviderType;
+      }
+    }
+
+    return baseResponse;
+  }
+
+  /**
+   * Revokes all active sessions for the given user account.
+   */
+  async revokeUserSessions(userId: string | Types.ObjectId): Promise<number> {
+    const result = await this.sessionModel.updateMany(
+      {
+        user: new Types.ObjectId(userId),
+        revokedAt: null,
+      },
+      {
+        $set: { revokedAt: new Date() },
+      },
+    );
+    return result.modifiedCount ?? 0;
   }
 
   /**

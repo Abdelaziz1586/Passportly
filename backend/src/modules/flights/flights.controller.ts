@@ -1,5 +1,5 @@
 import {
-  NotImplementedException,
+  Body,
   Controller,
   Get,
   Param,
@@ -16,6 +16,14 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { FlightsService } from './flights.service';
+import {
+  CabinCreate,
+  CabinUpdate,
+  FlightCreate,
+  FlightUpdate,
+} from './create-flight.dto';
+import { FlightCancel } from './cancel-flight.dto';
+import { BookingsQuery } from './flight-bookings-list.dto';
 import { ManifestQuery } from './export-passengers.dto';
 
 function csvCell(value: string | number | null | undefined) {
@@ -26,6 +34,7 @@ function csvCell(value: string | number | null | undefined) {
       : raw;
   return '"' + safe.replaceAll('"', '""') + '"';
 }
+import { FlightSearch } from './flight-search.dto';
 
 @ApiTags('Flights')
 @Controller('flights')
@@ -37,57 +46,62 @@ export class FlightsController {
   @ApiOperation({
     summary: 'FLT-11, FLT-12, FLT-15: Search one-way & round-trip flights',
   })
-  searchFlights() {
-    throw new NotImplementedException(
-      'GET /api/flights/search not implemented yet',
-    );
+  searchFlights(@Query() query: FlightSearch) {
+    return this.flightsService.searchFlights(query);
   }
 
   @ApiCookieAuth()
   @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
   @Post()
   @ApiOperation({ summary: 'FLT-03: Create a flight' })
-  createFlight() {
-    throw new NotImplementedException('POST /api/flights not implemented yet');
+  createFlight(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: FlightCreate,
+  ) {
+    return this.flightsService.createFlight(user, input);
   }
 
   @Public()
   @Get(':id')
   @ApiOperation({ summary: 'FLT-17: Get flight details & cabin availability' })
-  getFlight() {
-    throw new NotImplementedException(
-      'GET /api/flights/:id not implemented yet',
-    );
+  getFlight(@Param('id') id: string) {
+    return this.flightsService.getFlight(id);
   }
 
   @ApiCookieAuth()
   @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
   @Patch(':id')
   @ApiOperation({ summary: 'FLT-05: Update flight schedule or details' })
-  updateFlight() {
-    throw new NotImplementedException(
-      'PATCH /api/flights/:id not implemented yet',
-    );
+  updateFlight(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: FlightUpdate,
+  ) {
+    return this.flightsService.updateFlight(id, user, input);
   }
 
   @ApiCookieAuth()
   @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
   @Post(':id/cancel')
   @ApiOperation({ summary: 'FLT-06: Cancel a flight' })
-  cancelFlight() {
-    throw new NotImplementedException(
-      'POST /api/flights/:id/cancel not implemented yet',
-    );
+  cancelFlight(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: FlightCancel,
+  ) {
+    return this.flightsService.cancelFlight(id, user, input);
   }
 
   @ApiCookieAuth()
   @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
   @Post(':id/cabins')
   @ApiOperation({ summary: 'FLT-04: Add cabin inventory to a flight' })
-  addCabin() {
-    throw new NotImplementedException(
-      'POST /api/flights/:id/cabins not implemented yet',
-    );
+  addCabin(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: CabinCreate,
+  ) {
+    return this.flightsService.addCabin(id, user, input);
   }
 
   @ApiCookieAuth()
@@ -96,25 +110,31 @@ export class FlightsController {
   @ApiOperation({
     summary: 'FLT-04, FLT-05: Update cabin inventory or pricing',
   })
-  updateCabin() {
-    throw new NotImplementedException(
-      'PATCH /api/flights/:id/cabins/:cabinId not implemented yet',
-    );
+  updateCabin(
+    @Param('id') id: string,
+    @Param('cabinId') cabinId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: CabinUpdate,
+  ) {
+    return this.flightsService.updateCabin(id, cabinId, user, input);
   }
 
   @ApiCookieAuth()
   @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
   @Get(':id/bookings')
   @ApiOperation({ summary: 'FLT-29: List bookings for a flight' })
-  getFlightBookings() {
-    throw new NotImplementedException(
-      'GET /api/flights/:id/bookings not implemented yet',
-    );
+  getFlightBookings(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: BookingsQuery,
+  ) {
+    return this.flightsService.getFlightBookings(id, user, query);
   }
 
   @ApiCookieAuth()
   @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
   @Get(':id/passengers/export')
+  @ApiOperation({ summary: 'FLT-29: Export passenger manifest for a flight' })
   async exportPassengers(
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
