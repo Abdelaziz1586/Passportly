@@ -19,6 +19,7 @@ export enum ProviderType {
 export enum FlightStatus {
   SCHEDULED = 'SCHEDULED',
   DELAYED = 'DELAYED',
+  DEPARTED = 'DEPARTED',
   CANCELLED = 'CANCELLED',
   COMPLETED = 'COMPLETED',
 }
