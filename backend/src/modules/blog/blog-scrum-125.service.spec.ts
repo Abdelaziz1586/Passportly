@@ -17,6 +17,7 @@ import { BlogPost } from './schemas/blog-post.schema';
 import { Comment } from './schemas/comment.schema';
 import { Like } from './schemas/like.schema';
 import { User } from '../users/schemas/user.schema';
+import { Itinerary } from '../itineraries/schemas/itinerary.schema';
 import { Tag } from './schemas/tag.schema';
 
 describe('BlogService (SCRUM-125 BLG-07 delete comment)', () => {
@@ -58,6 +59,7 @@ describe('BlogService (SCRUM-125 BLG-07 delete comment)', () => {
           useValue: { createNotification: jest.fn() },
         },
         { provide: getModelToken(User.name), useValue: {} },
+        { provide: getModelToken(Itinerary.name), useValue: {} },
         { provide: getModelToken(Tag.name), useValue: {} },
         { provide: AuditLogsService, useValue: mockAuditLogsService },
         { provide: NotificationsService, useValue: mockNotificationsService },

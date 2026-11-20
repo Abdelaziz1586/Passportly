@@ -11,6 +11,7 @@ import { BlogService } from './blog.service';
 import { BlogPost } from './schemas/blog-post.schema';
 import { Comment } from './schemas/comment.schema';
 import { Like } from './schemas/like.schema';
+import { Itinerary } from '../itineraries/schemas/itinerary.schema';
 import { Tag } from './schemas/tag.schema';
 
 describe('BlogService (SCRUM-131 BLG-12 author profile & posts)', () => {
@@ -53,6 +54,7 @@ describe('BlogService (SCRUM-131 BLG-12 author profile & posts)', () => {
           provide: NotificationsService,
           useValue: { createNotification: jest.fn() },
         },
+        { provide: getModelToken(Itinerary.name), useValue: {} },
         { provide: getModelToken(Tag.name), useValue: {} },
         { provide: getModelToken(User.name), useValue: mockUserModel },
       ],

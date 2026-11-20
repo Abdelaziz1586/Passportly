@@ -9,12 +9,17 @@ import { InjectModel } from '@nestjs/mongoose';
 import { isValidObjectId, Model, Types } from 'mongoose';
 import {
   AccountStatus,
+  ItineraryVisibility,
   NotificationType,
   PostStatus,
   Role,
 } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import {
+  Itinerary,
+  ItineraryDocument,
+} from '../itineraries/schemas/itinerary.schema';
 import { NotificationsService } from '../notifications/notifications.service';
 import { UploadsService } from '../uploads/uploads.service';
 import { User, UserDocument } from '../users/schemas/user.schema';
@@ -44,6 +49,7 @@ import {
   TagPostsResponseDto,
   UploadPostImageResponseDto,
 } from './dto/blog-post-response.dto';
+import { AttachItineraryDto } from './dto/attach-itinerary.dto';
 import { AuthorPostsQueryDto } from './dto/author-posts-query.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { CreatePostDto } from './dto/create-post.dto';
@@ -93,6 +99,8 @@ export class BlogService {
     @InjectModel(Like.name) readonly likeModel: Model<LikeDocument>,
     @InjectModel(Tag.name) readonly tagModel: Model<TagDocument>,
     @InjectModel(User.name) readonly userModel: Model<UserDocument>,
+    @InjectModel(Itinerary.name)
+    readonly itineraryModel: Model<ItineraryDocument>,
     private readonly uploadsService: UploadsService,
     private readonly auditLogsService: AuditLogsService,
     private readonly notificationsService: NotificationsService,
@@ -1051,5 +1059,67 @@ export class BlogService {
         totalPages: total === 0 ? 0 : Math.ceil(total / limit),
       },
     };
+  }
+  /**
+   * Enforces post author ownership, verifies the target itinerary exists and
+   * is public/accessible (or detaches if null), and updates BlogPost.attachedItinerary.
+   */
+  async attachItinerary(
+    postId: string,
+    userId: string,
+    dto: AttachItineraryDto,
+  ): Promise<BlogPostItemDto> {
+    if (!isValidObjectId(postId)) {
+      throw new BadRequestException('Invalid blog post ID');
+    }
+
+    const post = await this.blogPostModel.findById(postId).lean();
+    if (!post) {
+      throw new NotFoundException('Blog post not found');
+    }
+
+    if (String(post.author) !== userId) {
+      throw new ForbiddenException(
+        'You can only attach itineraries to your own blog posts',
+      );
+    }
+
+    let nextItineraryId: Types.ObjectId | null = null;
+
+    if (dto.itineraryId !== null) {
+      const itinerary = await this.itineraryModel
+        .findById(dto.itineraryId)
+        .lean();
+      if (!itinerary || itinerary.isHidden) {
+        throw new NotFoundException('Itinerary not found');
+      }
+
+      if (itinerary.visibility !== ItineraryVisibility.PUBLIC) {
+        if (String(itinerary.user) !== userId) {
+          throw new ForbiddenException(
+            'You do not have access to this private itinerary',
+          );
+        }
+        throw new BadRequestException(
+          'Only public itineraries can be attached to a blog post',
+        );
+      }
+
+      nextItineraryId = itinerary._id;
+    }
+
+    const updated = await this.blogPostModel
+      .findOneAndUpdate(
+        { _id: post._id, author: new Types.ObjectId(userId) },
+        { $set: { attachedItinerary: nextItineraryId } },
+        { returnDocument: 'after' },
+      )
+      .lean<LeanBlogPostLike | null>();
+
+    if (!updated) {
+      throw new NotFoundException('Blog post not found');
+    }
+
+    return formatBlogPost(updated);
   }
 }

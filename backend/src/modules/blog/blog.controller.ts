@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  NotImplementedException,
   Param,
   Patch,
   Post,
@@ -36,6 +35,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { BlogService } from './blog.service';
+import { AttachItineraryDto } from './dto/attach-itinerary.dto';
 import {
   AuthorProfileResponseDto,
   BlogCommentItemDto,
@@ -407,9 +407,26 @@ export class BlogController {
   @Roles(Role.REGISTERED_USER)
   @Patch('posts/:id/itinerary')
   @ApiOperation({ summary: 'BLG-13 (Optional): Attach itinerary to blog post' })
-  attachItinerary() {
-    throw new NotImplementedException(
-      'PATCH /api/posts/:id/itinerary not implemented yet',
-    );
+  @ApiParam({ name: 'id', description: 'Blog post MongoDB ObjectId' })
+  @ApiOkResponse({
+    description: 'Public itinerary attached (or detached) on blog post',
+    type: BlogPostItemDto,
+  })
+  @ApiBadRequestResponse({
+    description:
+      'Invalid blog post ID, invalid itinerary ID, or non-public itinerary',
+  })
+  @ApiUnauthorizedResponse({ description: 'Authentication required' })
+  @ApiForbiddenResponse({
+    description:
+      'Only the post author can update this post or itinerary is private',
+  })
+  @ApiNotFoundResponse({ description: 'Blog post or itinerary not found' })
+  attachItinerary(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: AttachItineraryDto,
+  ): Promise<BlogPostItemDto> {
+    return this.blogService.attachItinerary(id, user.userId, dto);
   }
 }

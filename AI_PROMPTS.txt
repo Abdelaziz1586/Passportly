@@ -1597,4 +1597,12 @@ Implement SCRUM-131 [BLG-12] GET /api/authors/:id - View public author profile (
 
 How the output was used:
 Added AuthorPostsQueryDto, PublicAuthorProfileDto, and AuthorProfileResponseDto, imported UsersModule in BlogModule, implemented BlogService.getAuthorPage enforcing ACTIVE account check and safe public field projection alongside published non-hidden posts, wired BlogController.getAuthorPage with @Public() and Swagger annotations, and added unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
+
+Related Requirement: BLG-13 (SCRUM-132, PATCH /api/posts/:id/itinerary)
+
+Prompt:
+Implement SCRUM-132 [BLG-13] PATCH /api/posts/:id/itinerary - Attach public itinerary to blog post enforcing post ownership and verifying itinerary exists and is accessible/public.
+
+How the output was used:
+Added AttachItineraryDto supporting ObjectId or null detach, imported ItinerariesModule in BlogModule, implemented BlogService.attachItinerary verifying post authorship and public non-hidden itinerary access, wired BlogController.attachItinerary with Swagger/role decorators, and added unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
 ================================================
