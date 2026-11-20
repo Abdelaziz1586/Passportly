@@ -219,6 +219,40 @@ export class ItinerariesService {
     );
   }
 
+  async deleteDay(id: string, dayId: string, userId: string) {
+    await this.itineraryModel.db.transaction(async (session) => {
+      const itinerary = await this.itineraryModel
+        .findById(this.objectId(id, 'id'))
+        .session(session)
+        .exec();
+      if (!itinerary) throw new NotFoundException('Itinerary not found');
+      this.assertOwner(itinerary, userId);
+      const day = this.findDay(itinerary, dayId);
+      await this.activityModel
+        .deleteMany({ itinerary: itinerary._id, dayId: day._id })
+        .session(session)
+        .exec();
+      await this.budgetEntryModel
+        .deleteMany({ itinerary: itinerary._id, dayId: day._id })
+        .session(session)
+        .exec();
+      await this.transportCostModel
+        .updateMany(
+          { itinerary: itinerary._id, departureDayId: day._id },
+          { $set: { departureDayId: null } },
+        )
+        .session(session)
+        .exec();
+      const dayIndex = itinerary.days.findIndex(
+        (currentDay) => String(currentDay._id) === String(day._id),
+      );
+      itinerary.days.splice(dayIndex, 1);
+      this.recalculateDayDates(itinerary);
+      await this.saveItinerary(itinerary, session);
+    });
+    return { deleted: true, dayId };
+  }
+
   private async getItineraryDetails(
     itinerary: ItineraryDocument,
   ): Promise<Record<string, unknown>> {

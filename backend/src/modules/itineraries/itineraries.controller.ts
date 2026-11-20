@@ -156,10 +156,12 @@ export class ItinerariesController {
   @ApiOperation({
     summary: 'ITN-07: Delete itinerary day & renumber remaining days',
   })
-  deleteDay() {
-    throw new NotImplementedException(
-      'DELETE /api/itineraries/:id/days/:dayId not implemented yet',
-    );
+  deleteDay(
+    @Param('id') id: string,
+    @Param('dayId') dayId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.deleteDay(id, dayId, user.userId);
   }
 
   @ApiCookieAuth()
