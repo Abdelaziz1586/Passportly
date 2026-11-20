@@ -2,6 +2,7 @@ import { HotelAdminAuditInterceptor } from './hotel-admin-audit.interceptor';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { HotelBookingsController } from './hotel-bookings.controller';
+import { HotelBookingViewService } from './hotel-booking-view.service';
 import { HotelBookingsService } from './hotel-bookings.service';
 import { HotelsController } from './hotels.controller';
 import { HotelsService } from './hotels.service';
@@ -46,6 +47,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     HotelInventoryService,
     HotelReviewsService,
     HotelBookingsService,
+    HotelBookingViewService,
   ],
   exports: [
     HotelsService,

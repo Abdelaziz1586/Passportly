@@ -9,6 +9,7 @@ import {
   Patch,
   Post,
   Param,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -17,6 +18,7 @@ import {
   ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
+  ApiOkResponse,
   ApiOperation,
   ApiTags,
   ApiUnauthorizedResponse,
@@ -27,8 +29,12 @@ import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { CreateHotelBookingDto } from './dto/create-hotel-booking.dto';
 import { HotelBookingResponseDto } from './dto/hotel-booking-response.dto';
+import { HotelBookingListResponseDto } from './dto/hotel-booking-view-response.dto';
+import { ListHotelBookingsQueryDto } from './dto/list-hotel-bookings-query.dto';
 import { HotelBookingsService } from './hotel-bookings.service';
 import type { HotelBookingResponse } from './hotel-bookings.service';
+import { HotelBookingViewService } from './hotel-booking-view.service';
+import type { HotelBookingListResponse } from './hotel-booking-view';
 import { HotelsService } from './hotels.service';
 import {
   CreateReviewDto,
@@ -45,6 +51,7 @@ export class HotelBookingsController {
   constructor(
     private readonly hotelsService: HotelsService,
     private readonly hotelBookingsService: HotelBookingsService,
+    private readonly hotelBookingViewService: HotelBookingViewService,
     private readonly reviews: HotelReviewsService,
   ) {}
 
@@ -80,11 +87,28 @@ export class HotelBookingsController {
 
   @Roles(Role.REGISTERED_USER, Role.ADMIN)
   @Get('hotel-bookings')
-  @ApiOperation({ summary: 'HTL-20: List current user hotel bookings' })
-  listBookings() {
-    throw new NotImplementedException(
-      'GET /api/hotel-bookings not implemented yet',
-    );
+  @ApiOperation({
+    summary: 'HTL-20: List current user hotel bookings',
+    description:
+      "Paginated list of the signed-in user's own reservations (admins also see only their own), with reference, hotel, rooms, dates, guests, total and status. `group` shows Upcoming (awaiting payment or confirmed, stay not over), Past (completed or expired) or Cancelled; `status` filters by one or more statuses (repeat or comma-separate); both narrow each other. Sort by createdAt, checkInDate or totalPrice. Statuses are as they are now: a hold that ran out is EXPIRED, a confirmed stay whose check-out date passed is COMPLETED.",
+  })
+  @ApiOkResponse({
+    description: 'One page of reservations and the pagination meta',
+    type: HotelBookingListResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description:
+      'Invalid page, limit (1-50), status, group, sortBy or sortOrder, or an unknown query parameter',
+  })
+  @ApiUnauthorizedResponse({ description: 'Not signed in' })
+  @ApiForbiddenResponse({
+    description: 'Only registered users and admins may list reservations',
+  })
+  listBookings(
+    @Query() query: ListHotelBookingsQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<HotelBookingListResponse> {
+    return this.hotelBookingViewService.listBookings(user.userId, query);
   }
 
   @Roles(Role.REGISTERED_USER, Role.ADMIN, Role.HOTEL_MODERATOR)

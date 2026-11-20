@@ -131,4 +131,7 @@ export class HotelBooking {
 
 export const HotelBookingSchema = SchemaFactory.createForClass(HotelBooking);
 HotelBookingSchema.index({ status: 1, holdExpiresAt: 1 });
+// HTL-20 listing: one user's reservations, newest first / by check-in.
+HotelBookingSchema.index({ user: 1, createdAt: -1 });
+HotelBookingSchema.index({ user: 1, checkInDate: -1 });
 HotelBookingSchema.index({ hotel: 1, checkInDate: 1, checkOutDate: 1 });
