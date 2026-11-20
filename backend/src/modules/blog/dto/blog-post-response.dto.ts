@@ -148,3 +148,11 @@ export class DeleteCommentResponseDto {
   @ApiProperty({ example: '673c1f2a9c4b2d001f8a3333' })
   postId: string;
 }
+
+export class DeleteBlogPostResponseDto {
+  @ApiProperty({ example: 'Blog post deleted successfully' })
+  message: string;
+
+  @ApiProperty({ example: '673c1f2a9c4b2d001f8a2222' })
+  id: string;
+}
