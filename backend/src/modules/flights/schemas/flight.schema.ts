@@ -42,6 +42,12 @@ export class Flight {
   @Prop({ required: true, min: 1 })
   durationMinutes: number;
 
+  @Prop()
+  localDepartureDate?: string;
+
+  @Prop({ default: 0 })
+  bookingVersion: number;
+
   @Prop({ trim: true })
   aircraftType?: string;
 
@@ -71,3 +77,11 @@ FlightSchema.index({
   status: 1,
 });
 FlightSchema.index({ airline: 1, flightNumber: 1, departureTime: 1 });
+
+FlightSchema.index(
+  { airline: 1, flightNumber: 1, localDepartureDate: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { localDepartureDate: { $type: 'string' } },
+  },
+);
