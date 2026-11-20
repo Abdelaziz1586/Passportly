@@ -83,11 +83,1425 @@ How the output was used:
 Implemented LoginDto, LoginResponseDto, AuthService.login (email normalization, bcrypt password check, 5-attempt / 15-minute failed-login lockout, AccountStatus.ACTIVE enforcement, UserSession creation with jti and JWT-aligned expiresAt, httpOnly cookie configuration), and AuthController.login wiring with @Public() and Swagger annotations. Added unit tests in auth.service.spec.ts and auth.controller.spec.ts and verified with npm run lint, npm run build, and npm test.
 ================================================
 
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-06 (POST /api/auth/logout)
+
+Prompt:
+Requirement: ACC-06
+Endpoint: POST /api/auth/logout
+Controller: backend/src/modules/auth/auth.controller.ts
+Allowed Roles: Authenticated (All Roles)
+Details: Mark current UserSession (by jti) as revoked (revokedAt = now) and clear the httpOnly auth cookie.
+
+How the output was used:
+Implemented LogoutResponseDto, AuthService.logout (revoking the active UserSession by jti and userId via revokedAt, and sharing cookie options with login via getBaseCookieOptions/getCookieName), and AuthController.logout (@HttpCode(HttpStatus.OK)) clearing the httpOnly auth cookie. Added unit tests in auth.service.spec.ts and auth.controller.spec.ts and verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-07 (Optional) (POST /api/auth/forgot-password, SCRUM-11)
+
+Prompt:
+Requirement: ACC-07 (Optional)
+Endpoint: POST /api/auth/forgot-password
+Controller: backend/src/modules/auth/auth.controller.ts
+Allowed Roles: Public
+Details: Generate short-lived passwordResetToken and passwordResetExpiresAt for active accounts without leaking account existence.
+
+How the output was used:
+Implemented ForgotPasswordDto, ForgotPasswordResponseDto, MailService.sendPasswordResetEmail, AuthService.forgotPassword (15-minute passwordResetToken & passwordResetExpiresAt generation for ACTIVE accounts only, generic non-leaking response for all requests), AuthController.forgotPassword (@Public(), 200 OK, Swagger metadata), and unit + HTTP integration tests in mail.service.spec.ts, auth.service.spec.ts, and auth.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-07 (Optional) (POST /api/auth/reset-password, SCRUM-12)
+
+Prompt:
+Requirement: ACC-07 (Optional)
+Endpoint: POST /api/auth/reset-password
+Controller: backend/src/modules/auth/auth.controller.ts
+Allowed Roles: Public
+Details: Validate passwordResetToken and expiry, enforce password rules, update passwordHash, and revoke existing sessions.
+
+How the output was used:
+Implemented ResetPasswordDto, ResetPasswordResponseDto, AuthService.resetPassword (validates passwordResetToken/token alias and expiry on ACTIVE accounts, enforces password complexity, hashes with bcryptjs, clears token/expiry/lockout/mustChangePassword atomically, and revokes active UserSessions), AuthController.resetPassword (@Public(), 200 OK, Swagger docs), and unit + HTTP integration tests in auth.service.spec.ts and auth.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-08 (PATCH /api/auth/change-password, SCRUM-13)
+
+Prompt:
+Requirement: ACC-08
+Endpoint: PATCH /api/auth/change-password
+Controller: backend/src/modules/auth/auth.controller.ts
+Allowed Roles: Authenticated (All Roles)
+Details: Verify current password, enforce password strength rules on new password, update passwordHash, clear mustChangePassword flag, and optionally revoke other sessions.
+
+How the output was used:
+Implemented ChangePasswordDto, ChangePasswordResponseDto, AuthService.changePassword (verifies currentPassword, enforces newPassword complexity and difference from current password, hashes with bcryptjs, clears mustChangePassword, and revokes other UserSessions unless revokeOtherSessions is false), AuthController.changePassword Swagger/validation wiring, and unit + HTTP integration tests in auth.service.spec.ts and auth.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-04, ACC-19 (GET /api/auth/me, SCRUM-14)
+
+Prompt:
+Requirement: ACC-04, ACC-19
+Endpoint: GET /api/auth/me
+Controller: backend/src/modules/auth/auth.controller.ts
+Allowed Roles: Authenticated (All Roles)
+Details: Return authenticated user details, role, status, and assignedProviderId/assignedProviderType for moderators.
+
+How the output was used:
+Implemented AuthMeResponseDto, AuthService.getMe (fetches User document, verifies ACTIVE status, maps safe profile fields + mustChangePassword + lastLoginAt without passwordHash/tokens, and includes assignedProviderId/assignedProviderType for moderators), AuthController.me Swagger/response wiring, and unit + HTTP integration tests in auth.service.spec.ts and auth.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-11 (GET /api/users/me, SCRUM-15)
+
+Prompt:
+Requirement: ACC-11
+Endpoint: GET /api/users/me
+Controller: backend/src/modules/users/users.controller.ts
+Allowed Roles: Authenticated (All Roles)
+Details: Fetch full User document for CurrentUser (excluding passwordHash and sensitive tokens) plus moderator assignment if applicable.
+
+How the output was used:
+Implemented UserProfileResponseDto, ModeratorAssignmentSummaryDto, UsersService.getMyProfile (fetches sanitized User document excluding passwordHash and verification/reset tokens, verifies ACTIVE status, and loads active ModeratorAssignment for moderator roles), UsersController.getMyProfile Swagger wiring, and unit + HTTP integration tests in users.service.spec.ts and users.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-09 (PATCH /api/users/me, SCRUM-16)
+
+Prompt:
+Requirement: ACC-09
+Endpoint: PATCH /api/users/me
+Controller: backend/src/modules/users/users.controller.ts
+Allowed Roles: Authenticated (All Roles)
+Details: Allow updating firstName, lastName, phone, avatarUrl, bio, nationality, and preferredCurrency (validate currency against Countries.csv); forbid role/status edits.
+
+How the output was used:
+Implemented UpdateProfileDto, UserProfileResponseDto, UsersModule ReferenceDataModule import, UsersService.updateMyProfile (updates only the 7 allowed profile fields, validates preferredCurrency via ReferenceDataService.isCurrencySupported, forbids role/status edits), UsersController.updateMyProfile Swagger/validation wiring, and unit + HTTP integration tests in users.service.spec.ts and users.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-12 (DELETE /api/users/me, SCRUM-17)
+
+Prompt:
+Requirement: ACC-12
+Endpoint: DELETE /api/users/me
+Controller: backend/src/modules/users/users.controller.ts
+Allowed Roles: Authenticated (REGISTERED_USER)
+Details: Set User.status = DEACTIVATED, record deactivatedAt, revoke active UserSessions, and clear httpOnly auth cookie.
+
+How the output was used:
+Implemented DeactivateAccountResponseDto, UsersModule UserSession schema registration, UsersService.deactivateMyAccount (verifies REGISTERED_USER role and ACTIVE status, updates status to DEACTIVATED with deactivatedAt, revokes all active UserSessions, returns cookie-clearing config), UsersController.deactivateMyAccount (@Roles(Role.REGISTERED_USER) and cookie clearing), and unit + HTTP integration tests in users.service.spec.ts and users.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: FLT-02 (GET /api/airports, SCRUM-18)
+
+Prompt:
+Requirement: FLT-02
+Endpoint: GET /api/airports
+Controller: backend/src/modules/reference-data/reference-data.controller.ts
+Allowed Roles: Public
+Details: Support query/search by iataCode, name, city, or countryCode with pagination; return Airport records including required IANA timezone.
+
+How the output was used:
+Implemented ListAirportsQueryDto, AirportItemDto, PaginatedAirportsResponseDto, ReferenceDataService.getAirports (filtering by iataCode, name, city name/externalId/ObjectId, countryCode, and search term with sorting and pagination), ReferenceDataController.getAirports Swagger wiring, and unit + HTTP integration tests in reference-data.service.spec.ts and reference-data.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: REF-01 (GET /api/countries, SCRUM-19)
+
+Prompt:
+Requirement: REF-01
+Endpoint: GET /api/countries
+Controller: backend/src/modules/reference-data/reference-data.controller.ts
+Allowed Roles: Public
+Details: Return seeded Countries.csv records with search/filter and pagination so frontend & validators can list supported currencies.
+
+How the output was used:
+Implemented ListCountriesQueryDto, CountryItemDto, PaginatedCountriesResponseDto, ReferenceDataService.getCountries (filtering by code, currencyCode, continent, and search term with sorting and pagination), ReferenceDataController.getCountries Swagger wiring, and unit + HTTP integration tests in reference-data.service.spec.ts and reference-data.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: REF-02 (GET /api/cities, SCRUM-20)
+
+Prompt:
+Requirement: REF-02
+Endpoint: GET /api/cities
+Controller: backend/src/modules/reference-data/reference-data.controller.ts
+Allowed Roles: Public
+Details: Filter Cities.csv records by countryCode or search query with pagination.
+
+How the output was used:
+Implemented ListCitiesQueryDto, CityItemDto, PaginatedCitiesResponseDto, ReferenceDataService.getCities (filtering by countryCode and search across name/countryCode/externalId with sorting and pagination), ReferenceDataController.getCities Swagger wiring, and unit + HTTP integration tests in reference-data.service.spec.ts and reference-data.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: REF-03 (GET /api/attractions, SCRUM-21)
+
+Prompt:
+Requirement: REF-03
+Endpoint: GET /api/attractions
+Controller: backend/src/modules/reference-data/reference-data.controller.ts
+Allowed Roles: Public
+Details: Filter Attractions.csv records by cityId/cityName, countryCode, category, or search term with pagination.
+
+How the output was used:
+Implemented ListAttractionsQueryDto, AttractionItemDto, PaginatedAttractionsResponseDto, ReferenceDataService.getAttractions (filtering by cityId ObjectId or externalId, cityName, countryCode including linked City records, category, and search term with sorting, City population, and pagination), ReferenceDataController.getAttractions Swagger wiring, and unit + HTTP integration tests in reference-data.service.spec.ts and reference-data.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: GEN-11 (GET /api/notifications, SCRUM-35)
+
+Prompt:
+Implement SCRUM-35 (GET /api/notifications): Return paginated Notification records for CurrentUser with optional unread-only filter and unread count, supporting all authenticated roles.
+
+How the output was used:
+Implemented ListNotificationsQueryDto, NotificationItemDto, PaginatedNotificationsResponseDto, NotificationsService.listMyNotifications, and NotificationsController.listMine with Swagger annotations, strict unreadOnly boolean transformation, and unit tests in notifications.service.spec.ts and notifications.controller.spec.ts. Verified with npm run lint, npm test, and tsc check.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: GEN-11 (PATCH /api/notifications/:id/read, SCRUM-36)
+
+Prompt:
+Implement SCRUM-36 (PATCH /api/notifications/:id/read): Verify Notification.recipient == CurrentUser.userId, set isRead = true and readAt = now, supporting all authenticated roles.
+
+How the output was used:
+Implemented NotificationItemDto, NotificationsService.markAsRead (with ObjectId validation, recipient ownership verification, idempotent already-read handling, and atomic update), and NotificationsController.markAsRead (placing read-all route above :id/read). Added unit tests in notifications.service.spec.ts and notifications.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: GEN-11 (PATCH /api/notifications/read-all, SCRUM-37)
+
+Prompt:
+Implement SCRUM-37 (PATCH /api/notifications/read-all): Update all unread Notification records for CurrentUser.userId to isRead = true and readAt = now, supporting all authenticated roles.
+
+How the output was used:
+Implemented MarkAllNotificationsReadResponseDto, NotificationsService.markAllAsRead (updating unread notifications scoped to CurrentUser.userId), and NotificationsController.markAllAsRead (ordered above :id/read). Added unit tests in notifications.service.spec.ts and notifications.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: GEN-09 (POST /api/reports, SCRUM-34)
+
+Prompt:
+Implement SCRUM-34 (POST /api/reports): Validate targetType (BLOG_POST, COMMENT, ITINERARY, REVIEW) and targetId existence; create Report with status PENDING.
+
+How the output was used:
+Updated ReportsModule to import BlogModule, ItinerariesModule, and HotelsModule; implemented CreateReportDto, ReportResponseDto, ReportsService.createReport (validating target existence, visibility/hidden protections, and duplicate pending report checks), and ReportsController.createReport. Added unit tests in reports.service.spec.ts and reports.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-07a (POST /api/admin/users/:id/reset-password, SCRUM-22)
+
+Prompt:
+Implement SCRUM-22 (POST /api/admin/users/:id/reset-password): Allow ADMIN to set a new temporary password for user :id, set mustChangePassword = true, revoke user sessions, create Notification & AuditLog.
+
+How the output was used:
+Added AuthService.revokeUserSessions helper, imported AuthModule into AdminModule, implemented AdminResetPasswordDto, AdminResetPasswordResponseDto, AdminService.resetUserPassword (bcrypt hashing, mustChangePassword = true, session revocation, in-app notification, ADMIN_PASSWORD_RESET audit log), and AdminController.resetUserPassword. Added unit tests in auth.service.spec.ts, admin.service.spec.ts, and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-13 (POST /api/admin/moderators, SCRUM-23)
+
+Prompt:
+Implement SCRUM-23 (POST /api/admin/moderators): Create User with AIRLINE_MODERATOR or HOTEL_MODERATOR role and create unique ModeratorAssignment linking to exactly one Airline or Hotel; record AuditLog.
+
+How the output was used:
+Implemented CreateModeratorDto, ModeratorResponseDto, AdminService.createModerator (email uniqueness check, provider verification, bcrypt password hashing, rollback-safe ModeratorAssignment creation, MODERATOR_CREATED audit log), and AdminController.createModerator. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-14 (GET /api/admin/accounts, SCRUM-24)
+
+Prompt:
+Implement SCRUM-24 (GET /api/admin/accounts): Support filtering by role, status, search (email/name), sorting, and pagination; include moderator provider assignment info.
+
+How the output was used:
+Implemented ListAccountsQueryDto, AccountAssignmentInfoDto, AdminAccountItemDto, PaginatedAccountsResponseDto, AdminService.listAccounts (safe projection excluding passwordHash/tokens, regex-escaped search, batched ModeratorAssignment lookup with provider info, sorting, and pagination), and AdminController.listAccounts. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-15, ACC-16 (PATCH /api/admin/accounts/:id/suspend, SCRUM-25)
+
+Prompt:
+Implement SCRUM-25 (PATCH /api/admin/accounts/:id/suspend): Set AccountStatus.SUSPENDED, suspendedAt, suspendedReason; revoke active UserSessions; prevent suspending self; notify user & write AuditLog.
+
+How the output was used:
+Added AuthService.revokeUserSessions helper, imported AuthModule into AdminModule, implemented SuspendAccountDto, AccountStatusChangeResponseDto, AdminService.suspendAccount (self-suspension guard, status update, session revocation, ACCOUNT_SUSPENDED notification, ACCOUNT_SUSPENDED audit log), and AdminController.suspendAccount. Added unit tests in auth.service.spec.ts, admin.service.spec.ts, and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-15, ACC-16 (PATCH /api/admin/accounts/:id/reactivate, SCRUM-26)
+
+Prompt:
+Implement SCRUM-26 (PATCH /api/admin/accounts/:id/reactivate): Restore AccountStatus.ACTIVE, clear lockout/suspension flags, send in-app Notification, and write AuditLog.
+
+How the output was used:
+Implemented ReactivateAccountResponseDto, AdminService.reactivateAccount (restoring AccountStatus.ACTIVE, clearing failedLoginAttempts/lockoutUntil/suspendedAt/suspendedReason/deactivatedAt, sending ACCOUNT_REACTIVATED notification, and writing ACCOUNT_REACTIVATED audit log), and AdminController.reactivateAccount. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-15 (PATCH /api/admin/providers/:type/:id/deactivate, SCRUM-27)
+
+Prompt:
+Implement SCRUM-27 (PATCH /api/admin/providers/:type/:id/deactivate): Set isActive = false on Airline or Hotel (:type = airline|hotel). Keep existing CONFIRMED bookings valid; hide from search/new bookings; notify affected parties & write AuditLog.
+
+How the output was used:
+Implemented DeactivateProviderResponseDto, AdminService.deactivateProvider (validating provider type/ID, setting isActive=false with deactivatedAt/deactivatedBy on Airline or Hotel while leaving existing CONFIRMED bookings untouched and moderator account status independent, notifying assigned moderators and affected travelers, and writing PROVIDER_DEACTIVATED audit log), and AdminController.deactivateProvider. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-15 (PATCH /api/admin/providers/:type/:id/reactivate, SCRUM-28)
+
+Prompt:
+Implement SCRUM-28 (PATCH /api/admin/providers/:type/:id/reactivate): Set isActive = true on Airline or Hotel (:type = airline|hotel), send in-app Notification to assigned moderator, and write AuditLog.
+
+How the output was used:
+Implemented ReactivateProviderResponseDto, AdminService.reactivateProvider (validating provider type/ID, restoring isActive=true and clearing deactivation fields, notifying assigned moderators via PROVIDER_REACTIVATED, and logging PROVIDER_REACTIVATED audit entry), and AdminController.reactivateProvider. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-17 (GET /api/admin/bookings, SCRUM-29)
+
+Prompt:
+Implement SCRUM-29 (GET /api/admin/bookings): Support filtering by bookingType (flight|hotel), status, userId, date range, sorting, and pagination.
+
+How the output was used:
+Implemented ListAdminBookingsQueryDto (with date-boundary parsing, status/bookingType/userId filters, and whitelisted sortBy), AdminBookingItemDto, PaginatedAdminBookingsResponseDto, AdminService.listPlatformBookings (cross-collection query/merge-pagination across FlightBooking and HotelBooking), and AdminController.listPlatformBookings. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: GEN-09, GEN-10 (GET /api/admin/reports, SCRUM-30)
+
+Prompt:
+Implement SCRUM-30 (GET /api/admin/reports): Filter reports by status (PENDING, DISMISSED, CONTENT_HIDDEN, CONTENT_DELETED) and targetType with pagination and reporter info.
+
+How the output was used:
+Implemented ListReportsQueryDto, ReportUserSummaryDto, AdminReportItemDto, PaginatedReportsResponseDto, AdminService.listReports (filtering by status and targetType, sorting, paginating, and populating reporter and reviewedBy info), and AdminController.listReports. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: GEN-10 (PATCH /api/admin/reports/:id, SCRUM-31)
+
+Prompt:
+Implement SCRUM-31 (PATCH /api/admin/reports/:id): Update Report status/reviewedBy/reviewedAt/resolutionNotes; if CONTENT_HIDDEN or CONTENT_DELETED, update/delete target BlogPost/Comment/Itinerary/Review, notify author & reporter, and log AuditLog.
+
+How the output was used:
+Imported BlogModule and ItinerariesModule into AdminModule; implemented ResolveReportDto, ResolveReportResponseDto, AdminService.resolveReport (supporting DISMISSED, CONTENT_HIDDEN, and CONTENT_DELETED across BlogPost, Comment, Itinerary, and Review with cascade cleanup and hotel rating recalculation, MODERATION_ACTION notifications to author and reporter, and REPORT_RESOLVED audit logging), and AdminController.resolveReport. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: GEN-10 (DELETE /api/admin/content/:type/:id, SCRUM-32)
+
+Prompt:
+Implement SCRUM-32 (DELETE /api/admin/content/:type/:id): Delete or remove target content by type (blog_post, comment, itinerary, review) and id; notify content owner and record AuditLog.
+
+How the output was used:
+Imported BlogModule and ItinerariesModule into AdminModule; implemented DeleteContentResponseDto, AdminService.deleteContent (validating type/ID, deleting BlogPost/Comment/Itinerary/Review with child cleanup and hotel rating recalculation, resolving pending reports on that target, notifying the content owner via MODERATION_ACTION, and recording CONTENT_DELETED audit log), and AdminController.deleteContent. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: GEN-07 (GET /api/admin/audit-logs, SCRUM-33)
+
+Prompt:
+Implement SCRUM-33 (GET /api/admin/audit-logs): Filter AuditLog records by actor, action, targetType, and date range with sorting and pagination.
+
+How the output was used:
+Implemented ListAuditLogsQueryDto, AuditLogActorSummaryDto, AuditLogItemDto, PaginatedAuditLogsResponseDto, AdminService.listAuditLogs (filtering by actor, action, targetType, and inclusive createdAt range with sorting, pagination, and actor population), and AdminController.listAuditLogs. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Fady
+Tool: Codex
+Related Requirement: SCRUM-38
+Prompt:
+Implement the approved Passportly flight plan and separate each ticket into its own pull request.
+How the output was used:
+Implemented and verified the ticket on an independent branch from develop.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Fady
+Tool: Codex
+Related Requirement: SCRUM-39
+Prompt:
+Implement the approved Passportly flight plan and separate each ticket into its own pull request.
+How the output was used:
+Implemented and verified the ticket on an independent branch from develop.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Fady
+Tool: Codex
+Related Requirement: SCRUM-40
+Prompt:
+Implement the approved Passportly flight plan and separate each ticket into its own pull request.
+How the output was used:
+Implemented and verified the ticket on an independent branch from develop.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Fady
+Tool: Codex
+Related Requirement: SCRUM-41
+Prompt:
+Implement the approved Passportly flight plan and separate each ticket into its own pull request.
+How the output was used:
+Implemented and verified the ticket on an independent branch from develop.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Fady
+Tool: Codex
+Related Requirement: SCRUM-42
+Prompt:
+Implement the approved Passportly flight plan and separate each ticket into its own pull request.
+How the output was used:
+Implemented and verified the ticket on an independent branch from develop.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Fady
+Tool: Codex
+Related Requirement: SCRUM-43
+Prompt:
+Implement the approved Passportly flight plan and separate each ticket into its own pull request.
+How the output was used:
+Implemented and verified the ticket on an independent branch from develop.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Fady
+Tool: Codex
+Related Requirement: SCRUM-44
+Prompt:
+Implement the approved Passportly flight plan and separate each ticket into its own pull request.
+How the output was used:
+Implemented and verified the ticket on an independent branch from develop.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Fady
+Tool: Codex
+Related Requirement: SCRUM-45
+Prompt:
+Implement the approved Passportly flight plan and separate each ticket into its own pull request.
+How the output was used:
+Implemented and verified the ticket on an independent branch from develop.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Fady
+Tool: Codex
+Related Requirement: SCRUM-46
+Prompt:
+Implement the approved Passportly flight plan and separate each ticket into its own pull request.
+How the output was used:
+Implemented and verified the ticket on an independent branch from develop.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Fady
+Tool: Codex
+Related Requirement: SCRUM-47
+Prompt:
+Implement the approved Passportly flight plan and separate each ticket into its own pull request.
+How the output was used:
+Implemented and verified the ticket on an independent branch from develop.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Fady
+Tool: Codex
+Related Requirement: SCRUM-48
+Prompt:
+Implement the approved Passportly flight plan and separate each ticket into its own pull request.
+How the output was used:
+Implemented and verified the ticket on an independent branch from develop.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Fady
+Tool: Codex
+Related Requirement: SCRUM-49
+Prompt:
+Implement the approved Passportly flight plan and separate each ticket into its own pull request.
+How the output was used:
+Implemented and verified the ticket on an independent branch from develop.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Fady
+Tool: Codex
+Related Requirement: SCRUM-50
+Prompt:
+Implement the approved Passportly flight plan and separate each ticket into its own pull request.
+How the output was used:
+Implemented and verified the ticket on an independent branch from develop.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Fady
+Tool: Codex
+Related Requirement: SCRUM-51
+Prompt:
+Implement the approved Passportly flight plan and separate each ticket into its own pull request.
+How the output was used:
+Implemented and verified the ticket on an independent branch from develop.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Ahmed
+Tool: OpenAI Codex
+Related Requirement: SCRUM-52; HTL-01
+
+Prompt:
+"finish all of those tickets and make sure everything is perfectly done and push the branches on github then open a pr for each one of them to the develop branch"
+The user supplied the Passportly repository, project-description PDF and Jira screenshots. The linked official workbook was read for acceptance details.
+
+How the output was used:
+Admin-only creation with seeded city/country matching, derived location metadata, image limits and platform currency validation. Added shared validated DTOs, ownership/date helpers, module wiring, the missing server upload module, dependent ObjectId schema corrections and an isolated MongoDB/JWT integration harness. Shared calendar-quote and visible-review helpers are introduced before dependent detail/search routes; later PRs add their own endpoint/service methods and enable their ticket test groups. Reviewed the implementation against the ticket and workbook; branch lint, build, unit/integration and health e2e checks are recorded in its PR. No team Atlas credentials or .env files were read. Changes outside these assigned hotel tickets retain team ownership.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Ahmed
+Tool: OpenAI Codex
+Related Requirement: SCRUM-53; HTL-11, HTL-12
+
+Prompt:
+"finish all of those tickets and make sure everything is perfectly done and push the branches on github then open a pr for each one of them to the develop branch"
+The user supplied the Passportly repository, project-description PDF and Jira screenshots. The linked official workbook was read for acceptance details.
+
+How the output was used:
+Public active-hotel search with complete-stay availability, combined capacity across requested rooms, inclusive nightly price/rating/amenity/star filters, sorting and pagination. Reviewed the implementation against the ticket and workbook; branch lint, build, unit/integration and health e2e checks are recorded in its PR. No team Atlas credentials or .env files were read. Changes outside these assigned hotel tickets retain team ownership.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Ahmed
+Tool: OpenAI Codex
+Related Requirement: SCRUM-54; HTL-02
+
+Prompt:
+"finish all of those tickets and make sure everything is perfectly done and push the branches on github then open a pr for each one of them to the develop branch"
+The user supplied the Passportly repository, project-description PDF and Jira screenshots. The linked official workbook was read for acceptance details.
+
+How the output was used:
+Public active-hotel details include policies, visible review statistics and paginated room/review summaries, plus computed available-room quotes when both stay dates are supplied. Reviewed the implementation against the ticket and workbook; branch lint, build, unit/integration and health e2e checks are recorded in its PR. No team Atlas credentials or .env files were read. Changes outside these assigned hotel tickets retain team ownership.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Ahmed
+Tool: OpenAI Codex
+Related Requirement: SCRUM-55; HTL-01
+
+Prompt:
+"finish all of those tickets and make sure everything is perfectly done and push the branches on github then open a pr for each one of them to the develop branch"
+The user supplied the Passportly repository, project-description PDF and Jira screenshots. The linked official workbook was read for acceptance details.
+
+How the output was used:
+Assigned-provider/admin profile updates validate reference locations and reject mass assignment. Server-stored JPG/PNG uploads enforce signatures, MIME agreement, five-image and 5 MB limits. Reviewed the implementation against the ticket and workbook; branch lint, build, unit/integration and health e2e checks are recorded in its PR. No team Atlas credentials or .env files were read. Changes outside these assigned hotel tickets retain team ownership.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Ahmed
+Tool: OpenAI Codex
+Related Requirement: SCRUM-56; HTL-03
+
+Prompt:
+"finish all of those tickets and make sure everything is perfectly done and push the branches on github then open a pr for each one of them to the develop branch"
+The user supplied the Passportly repository, project-description PDF and Jira screenshots. The linked official workbook was read for acceptance details.
+
+How the output was used:
+Validate unique room names, bed counts, occupancy, positive nightly prices and unit capacity; reject cross-hotel moderator access. Reviewed the implementation against the ticket and workbook; branch lint, build, unit/integration and health e2e checks are recorded in its PR. No team Atlas credentials or .env files were read. Changes outside these assigned hotel tickets retain team ownership.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Ahmed
+Tool: OpenAI Codex
+Related Requirement: SCRUM-57; HTL-05
+
+Prompt:
+"finish all of those tickets and make sure everything is perfectly done and push the branches on github then open a pr for each one of them to the develop branch"
+The user supplied the Passportly repository, project-description PDF and Jira screenshots. The linked official workbook was read for acceptance details.
+
+How the output was used:
+Enforce hotel and room ownership, preserve booking prices, protect allocated unit counts and reject unsafe deactivation. Reviewed the implementation against the ticket and workbook; branch lint, build, unit/integration and health e2e checks are recorded in its PR. No team Atlas credentials or .env files were read. Changes outside these assigned hotel tickets retain team ownership.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Ahmed
+Tool: OpenAI Codex
+Related Requirement: SCRUM-58; HTL-06
+
+Prompt:
+"finish all of those tickets and make sure everything is perfectly done and push the branches on github then open a pr for each one of them to the develop branch"
+The user supplied the Passportly repository, project-description PDF and Jira screenshots. The linked official workbook was read for acceptance details.
+
+How the output was used:
+Reject future confirmed reservations and payment holds. Previously reserved rooms are deactivated; only never-reserved rooms and their calendar rows are removed. Reviewed the implementation against the ticket and workbook; branch lint, build, unit/integration and health e2e checks are recorded in its PR. No team Atlas credentials or .env files were read. Changes outside these assigned hotel tickets retain team ownership.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Ahmed
+Tool: OpenAI Codex
+Related Requirement: SCRUM-59; HTL-15
+
+Prompt:
+"finish all of those tickets and make sure everything is perfectly done and push the branches on github then open a pr for each one of them to the develop branch"
+The user supplied the Passportly repository, project-description PDF and Jira screenshots. The linked official workbook was read for acceptance details.
+
+How the output was used:
+Return paginated free rooms with minimum remaining units, nightly prices, average price and total stay price; exclude checkout and missing/blocked nights. Reviewed the implementation against the ticket and workbook; branch lint, build, unit/integration and health e2e checks are recorded in its PR. No team Atlas credentials or .env files were read. Changes outside these assigned hotel tickets retain team ownership.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Ahmed
+Tool: OpenAI Codex
+Related Requirement: SCRUM-60; HTL-04
+
+Prompt:
+"finish all of those tickets and make sure everything is perfectly done and push the branches on github then open a pr for each one of them to the develop branch"
+The user supplied the Passportly repository, project-description PDF and Jira screenshots. The linked official workbook was read for acceptance details.
+
+How the output was used:
+Normalize dates to UTC midnight and initialize the complete half-open date range in one transaction. Unique room/date keys prevent concurrent overlap and allocation counters are never reset. Reviewed the implementation against the ticket and workbook; branch lint, build, unit/integration and health e2e checks are recorded in its PR. No team Atlas credentials or .env files were read. Changes outside these assigned hotel tickets retain team ownership.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Ahmed
+Tool: OpenAI Codex
+Related Requirement: SCRUM-61; HTL-05, HTL-06
+
+Prompt:
+"finish all of those tickets and make sure everything is perfectly done and push the branches on github then open a pr for each one of them to the develop branch"
+The user supplied the Passportly repository, project-description PDF and Jira screenshots. The linked official workbook was read for acceptance details.
+
+How the output was used:
+Atomically edit initialized nights, clear price overrides and block/unblock dates. Reject totals below booked plus held units and blocked ranges overlapping confirmed reservations or active holds. Reviewed the implementation against the ticket and workbook; branch lint, build, unit/integration and health e2e checks are recorded in its PR. No team Atlas credentials or .env files were read. Changes outside these assigned hotel tickets retain team ownership.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Ahmed
+Tool: OpenAI Codex
+Related Requirement: SCRUM-62; HTL-08
+
+Prompt:
+"finish all of those tickets and make sure everything is perfectly done and push the branches on github then open a pr for each one of them to the develop branch"
+The user supplied the Passportly repository, project-description PDF and Jira screenshots. The linked official workbook was read for acceptance details.
+
+How the output was used:
+Provide per-room nightly status, remaining inventory and prices. A separate assigned-staff route adds private reservation references and maintenance notes. Reviewed the implementation against the ticket and workbook; branch lint, build, unit/integration and health e2e checks are recorded in its PR. No team Atlas credentials or .env files were read. Changes outside these assigned hotel tickets retain team ownership.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Ahmed
+Tool: OpenAI Codex
+Related Requirement: SCRUM-63; HTL-09, HTL-10
+
+Prompt:
+"finish all of those tickets and make sure everything is perfectly done and push the branches on github then open a pr for each one of them to the develop branch"
+The user supplied the Passportly repository, project-description PDF and Jira screenshots. The linked official workbook was read for acceptance details.
+
+How the output was used:
+Validate 24-hour times, unique nonnegative cancellation thresholds, refund percentages and house rules; preserve existing booking policy snapshots. Reviewed the implementation against the ticket and workbook; branch lint, build, unit/integration and health e2e checks are recorded in its PR. No team Atlas credentials or .env files were read. Changes outside these assigned hotel tickets retain team ownership.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Ahmed
+Tool: OpenAI Codex
+Related Requirement: SCRUM-64; HTL-22
+
+Prompt:
+"finish all of those tickets and make sure everything is perfectly done and push the branches on github then open a pr for each one of them to the develop branch"
+The user supplied the Passportly repository, project-description PDF and Jira screenshots. The linked official workbook was read for acceptance details.
+
+How the output was used:
+Staff-only hotel-scoped reservations support overlapping stay-date/status filters, allowlisted sorting and pagination without payment secrets or arbitrary policy snapshots. Reviewed the implementation against the ticket and workbook; branch lint, build, unit/integration and health e2e checks are recorded in its PR. No team Atlas credentials or .env files were read. Changes outside these assigned hotel tickets retain team ownership.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Ahmed
+Tool: OpenAI Codex
+Related Requirement: SCRUM-65; HTL-24
+
+Prompt:
+"finish all of those tickets and make sure everything is perfectly done and push the branches on github then open a pr for each one of them to the develop branch"
+The user supplied the Passportly repository, project-description PDF and Jira screenshots. The linked official workbook was read for acceptance details.
+
+How the output was used:
+Newest-first paginated reviews include current visible-review counts, average and rating breakdown; sanitize author/reply fields and label deactivated authors Deleted user. Reviewed the implementation against the ticket and workbook; branch lint, build, unit/integration and health e2e checks are recorded in its PR. No team Atlas credentials or .env files were read. Changes outside these assigned hotel tickets retain team ownership.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Ahmed
+Tool: OpenAI Codex
+Related Requirement: SCRUM-66; HTL-23
+
+Prompt:
+"finish all of those tickets and make sure everything is perfectly done and push the branches on github then open a pr for each one of them to the develop branch"
+The user supplied the Passportly repository, project-description PDF and Jira screenshots. The linked official workbook was read for acceptance details.
+
+How the output was used:
+Validate paid completed-stay eligibility and ownership; allow rating-only reviews. A unique booking key and transactional hotel lock protect concurrent review uniqueness and rating aggregates. Reviewed the implementation against the ticket and workbook; branch lint, build, unit/integration and health e2e checks are recorded in its PR. No team Atlas credentials or .env files were read. Changes outside these assigned hotel tickets retain team ownership.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Ahmed
+Tool: OpenAI Codex
+Related Requirement: SCRUM-67; HTL-23
+
+Prompt:
+"finish all of those tickets and make sure everything is perfectly done and push the branches on github then open a pr for each one of them to the develop branch"
+The user supplied the Passportly repository, project-description PDF and Jira screenshots. The linked official workbook was read for acceptance details.
+
+How the output was used:
+Only registered authors may edit validated rating/title/comment fields; hidden reviews stay excluded and aggregate updates share the transaction. Reviewed the implementation against the ticket and workbook; branch lint, build, unit/integration and health e2e checks are recorded in its PR. No team Atlas credentials or .env files were read. Changes outside these assigned hotel tickets retain team ownership.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Ahmed
+Tool: OpenAI Codex
+Related Requirement: SCRUM-68; HTL-23
+
+Prompt:
+"finish all of those tickets and make sure everything is perfectly done and push the branches on github then open a pr for each one of them to the develop branch"
+The user supplied the Passportly repository, project-description PDF and Jira screenshots. The linked official workbook was read for acceptance details.
+
+How the output was used:
+Enforce author/admin access, recompute hotel counts/average and record admin moderation in the same transaction. Reviewed the implementation against the ticket and workbook; branch lint, build, unit/integration and health e2e checks are recorded in its PR. No team Atlas credentials or .env files were read. Changes outside these assigned hotel tickets retain team ownership.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Mohamed Ahmed
+Tool: OpenAI Codex
+Related Requirement: SCRUM-69; HTL-26
+
+Prompt:
+"finish all of those tickets and make sure everything is perfectly done and push the branches on github then open a pr for each one of them to the develop branch"
+The user supplied the Passportly repository, project-description PDF and Jira screenshots. The linked official workbook was read for acceptance details.
+
+How the output was used:
+Assigned hotel moderators/admins may set an embedded text/author/timestamp reply on visible reviews; public responses expose only reply text and time. Reviewed the implementation against the ticket and workbook; branch lint, build, unit/integration and health e2e checks are recorded in its PR. No team Atlas credentials or .env files were read. Changes outside these assigned hotel tickets retain team ownership.
+================================================
+
+================================================
+Date: 2026-11-20
+Student: Mohamed Ahmed
+Tool: OpenAI Codex
+Related Requirement: GEN-07, GEN-13; final SCRUM-52 through SCRUM-69 integration review
+
+Prompt:
+"finish all of those tickets and make sure everything is perfectly done and push the branches on github then open a pr for each one of them to the develop branch"
+
+How the output was used:
+Final self-review added audit coverage for successful administrative hotel mutations, bounded pagination to prevent invalid oversized MongoDB skips, reused the shared account status enum, strengthened the capacity-race response assertion, and verified Swagger UI and OpenAPI serving over HTTP. Reran lint, build, every unit/integration test and the health e2e test before publishing the final ticket branch.
+================================================
+
+================================================
+Date: 2026-11-18
+Student: Abdelrahman Ahmed
+Tool: Claude (Claude Code / Claude Sonnet 5.5)
+Related Requirement: FLT-22
+
+Prompt:
+[Attached: Software Project I Winter 2026 Project Description PDF and the repository]
+Implement FLT-22 (POST /api/flight-bookings/hold): use an atomic MongoDB update/transaction on CabinInventory (availableSeats >= seatsRequired) to decrement availableSeats and increment heldSeats, set holdExpiresAt and create a HELD FlightBooking, and add an @Cron expiry job that releases expired holds.
+
+How the output was used:
+Reviewed and used the generated HoldSeatsDto, FlightBookingsService (transactional conditional seat decrement across all legs, HELD booking creation, idempotent hold-expiry cron with BOOKING_HOLD_EXPIRED notifications) and controller wiring, plus a Jest suite covering overselling, round trips and expiry. Verified with npm run lint, npm run build and npm test.
+================================================
+
+================================================
+Date: 2026-11-18
+Student: Abdulrahman Ahmed
+Branch: feature/SCRUM-70-FLT-22-flight-seat-hold
+Tool: Claude (claude.ai chat, Claude Sonnet 5.5) for the implementation; Claude Code (terminal) for review and live testing
+Related Requirement: FLT-22
+Prompt:
+Implement POST /api/flight-bookings/hold for the NestJS/MongoDB backend: atomically reserve seats only if enough remain, create a booking, release the seats when the hold expires, and stay safe under concurrent requests. I then asked Claude Code to review it, test it live against a throw-away MongoDB database, and fix any bug it found.
+How the output was used:
+The generated service, DTO, controller wiring and unit tests were integrated into the flights module. Live testing found a response bug (a session object leaked into the response), which was fixed. After comparing with the official requirements sheet, the hold duration (10 minutes), the booking status and the passenger rules were corrected on the SCRUM-71 branch.
+================================================
+Date: 2026-11-19
+Student: Abdulrahman Ahmed
+Branch: feature/SCRUM-71-FLT-19-create-flight-booking
+Tool: Claude Code (terminal, Claude Sonnet 5.5) and Claude (claude.ai chat) for checking against the requirements sheet
+Related Requirement: FLT-19, FLT-21, FLT-08, GEN-11 (corrections to FLT-22)
+Prompt:
+Implement POST /api/flight-bookings: passenger details (name, date of birth, passport/ID), optional extra baggage per passenger, price totals, a policy snapshot, and a booking summary before payment. Then compare the implementation with the official requirements sheet and fix every assumed rule: 10-minute hold, passenger type validated against date of birth, infants pay 10% and take no seat, the airline maximum of extra bags, and the booking status lifecycle.
+How the output was used:
+The generated code and tests were integrated, then run (lint, build, unit tests, live and concurrency tests on a throw-away database). Rules that had been assumed were replaced with the ones from the official requirements sheet.
+================================================
+================================================
+Date: 2026-11-19
+Student: Abdulrahman Ahmed
+Branch: feature/SCRUM-72-FLT-25-list-flight-bookings (stacked on feature/SCRUM-71-FLT-19-create-flight-booking)
+Tool: Claude Code (terminal, Claude Sonnet 5.5)
+Related Requirement: FLT-25 (GET /api/flight-bookings)
+Prompt:
+Implement GET /api/flight-bookings: list only the current user's flight bookings (owner from the JWT, never the query) with page/limit, status filter (single or several GEN-11 statuses), a whitelisted sort, and a { data, meta } response. A past-due PENDING_PAYMENT hold must not be listed as pending, reusing the FLT-22 expiry. Then write unit tests and run live checks against a throw-away database with two users, and report anything that blocks testing.
+How the output was used:
+The generated DTOs, service method, controller wiring, schema indexes and tests were integrated and checked with lint, build, unit tests and a live run on a throw-away database (65 live checks). The live run hit the known JwtStrategy 401 (session user stored as ObjectId, queried as a string); that was not changed here and was reported instead, and the live checks used a scratch copy of the build with that one lookup cast.
+================================================
+================================================
+Date: 2026-11-19
+Student: Abdulrahman Ahmed
+Branch: feature/SCRUM-82-PAY-02-booking-policies (stacked on feature/SCRUM-72-FLT-25-list-flight-bookings)
+Tool: Claude Code (terminal, Claude Sonnet 5.5)
+Related Requirement: PAY-02 (GET /api/bookings/:type/:id/policies, POST /api/bookings/:type/:id/accept-policies), FLT-09 (tiers in the policy snapshot)
+Prompt:
+Implement PAY-02: show the provider policies of a flight or hotel booking before payment (airline baggage and cancellation tiers, hotel check-in/check-out times and cancellation tiers) and record policy acceptance with a server timestamp and the accepting user, only for the owner, only while the PENDING_PAYMENT hold is running. Copy the refund tiers into the flight policy snapshot so later refunds use the booking-time policy. Then write unit tests and run live checks on a throw-away database plus the Swagger page in a browser.
+How the output was used:
+The generated service, DTOs, controller wiring, hotel snapshot helper and tests were integrated and checked with lint, build, unit tests, 52 live checks and a Swagger "Try it out" run. A live/unit check found that the global implicit conversion turned the strings "no" and "false" into true for the acceptance checkbox, so the DTO now keeps the raw value and only a real boolean true is accepted.
+================================================
+================================================
+Date: 2026-11-19
+Student: Abdulrahman Ahmed
+Branch: feature/SCRUM-84-PAY-01-stripe-payments (stacked on feature/SCRUM-82-PAY-02-booking-policies)
+Tool: Claude Code (terminal, Claude Sonnet 5.5)
+Related Requirement: PAY-01 (POST /api/payments, POST /api/payments/:id/retry, GET /api/payments/:id, POST /api/payments/webhook), GEN-11
+Prompt:
+Implement PAY-01 with Stripe in test mode: create a PaymentIntent for a PENDING_PAYMENT flight booking or hotel reservation inside its hold (amount from the server-side booking total, policies must be accepted first), retry after a failed attempt until the hold expires, read a payment, and a webhook that verifies the Stripe signature on the raw body and is the only thing that moves a booking to CONFIRMED. The webhook must be idempotent, handle payment_intent.succeeded, payment_failed, canceled and charge.refunded, turn held seats or room units into booked ones, create e-ticket numbers and notify. When a hold expires the PaymentIntent must be cancelled. Then write unit tests and run live checks against Stripe test mode with self-signed webhook payloads on a throw-away database.
+How the output was used:
+The generated services, DTOs, controller wiring, schema indexes and tests were integrated and checked with lint, build, unit tests, 97 live checks and a Swagger "Try it out" run. The live run found that the unique partial indexes ("one live payment per booking") were silently dropped by Mongoose because the same fields also had index: true; this was fixed and the live run now asserts the indexes exist and that five concurrent payment requests create exactly one payment. A separate review then found that a payment completing after the hold ended kept the customer's money; the webhook now refunds it in full through the Stripe Refunds API, only a payment completed inside the hold confirms a booking, and the expiry job runs per payment hold and reconciles paid intents whose webhook never arrived.
+================================================
+================================================
+Date: 2026-11-19
+Student: Abdulrahman Ahmed
+Branch: feature/SCRUM-76-FLT-23-flight-e-ticket (stacked on feature/SCRUM-84-PAY-01-stripe-payments)
+Tool: Claude Code (terminal, Claude Sonnet 5.5)
+Related Requirement: FLT-23 (GET /api/flight-bookings/:id/e-ticket), GEN-06
+Prompt:
+Implement GET /api/flight-bookings/:id/e-ticket for a CONFIRMED booking: the booking reference (PNR), each passenger's e-ticket number, every flight with departure and arrival in UTC and in the airport's own IANA time zone, masked passport numbers, and a downloadable PDF with ?format=pdf. Readable by the owner, admins and the moderator of the operating airline only; everyone else gets 404. Then write unit tests and run live checks (real hold, Stripe test payment and signed webhook, then the ticket) plus the Swagger page in a browser.
+How the output was used:
+The generated service, shared booking access helper, dependency-free PDF builder, DTOs, controller wiring and tests were integrated and checked with lint, build, unit tests, 30 live checks, a PDFKit open of the generated file and a Swagger "Try it out" run for both formats.
+================================================
+================================================
+Date: 2026-11-19
+Student: Abdulrahman Ahmed
+Branch: feature/SCRUM-73-FLT-25-get-flight-booking (stacked on feature/SCRUM-76-FLT-23-flight-e-ticket)
+Tool: Claude Code (terminal, Claude Sonnet 5.5)
+Related Requirement: FLT-25 (GET /api/flight-bookings/:id)
+Prompt:
+Implement GET /api/flight-bookings/:id: the full details of one booking with legs (flight number, airline, cabin, UTC times, seats), passengers (passport masked, e-ticket numbers), prices, policies, status and timestamps, and a payment summary without card data. Readable by the owner, an admin, or the moderator of an operating airline; everyone else gets 404. An airline moderator only gets the manifest of their own legs, no prices, payment or personal details. A lapsed hold must be reported as EXPIRED. Then write unit tests and run live checks plus the Swagger page in a browser.
+How the output was used:
+The generated view service, mapper, response DTOs, controller wiring and tests were integrated and checked with lint, build, unit tests, 25 live checks and a Swagger "Try it out" run.
+================================================
+================================================
+Date: 2026-11-19
+Student: Abdulrahman Ahmed
+Branch: feature/SCRUM-88-PAY-03-refunds (stacked on feature/SCRUM-73-FLT-25-get-flight-booking)
+Tool: Claude Code (terminal, Claude Sonnet 5.5)
+Related Requirement: PAY-03 (GET /api/refunds/:id), FLT-09 / HTL-10 refund tier rule, GEN-01
+Prompt:
+Implement PAY-03: a refund engine that issues refunds through the Stripe Refunds API (recorded first as PENDING inside the cancellation transaction, then sent with an idempotency key, with a job that re-sends refunds that never reached Stripe), a pure tier calculator (the tier with the highest threshold not above the days remaining, otherwise 0%), GET /api/refunds/:id for the owner or an admin showing amount, status (Pending, Refunded, Failed), policyCalculationNotes and processedAt, Stripe event handling (charge.refunded, refund.updated, refund.failed), a refund summary on the booking details and an in-app notification. Replace the refund code of the payment-after-hold case with the same engine. Then write unit tests and run live checks against Stripe test mode plus the Swagger page in a browser.
+How the output was used:
+The generated service, calculator, schema indexes, DTOs, controller wiring and tests were integrated and checked with lint, build, unit tests, 38 live checks (real Stripe test-mode refunds, a job-sent partial refund, failed and settled refunds) and a Swagger "Try it out" run.
+================================================
+================================================
+Date: 2026-11-19
+Student: Abdulrahman Ahmed
+Branch: feature/SCRUM-74-FLT-26-cancel-flight-booking (stacked on feature/SCRUM-88-PAY-03-refunds)
+Tool: Claude Code (terminal, Claude Sonnet 5.5)
+Related Requirement: FLT-26 (POST /api/flight-bookings/:id/cancel), FLT-09, FLT-12, PAY-03, GEN-03, GEN-11
+Prompt:
+Implement POST /api/flight-bookings/:id/cancel: the owner cancels a CONFIRMED booking any time before the outbound departure (blocked after), after seeing the refund and confirming. The refund comes from the airline tiers copied onto the booking when it was made (highest threshold not above the whole days left, from the outbound flight even for a round trip, on the whole total). Confirmed becomes Cancelled (the only transition), the seats go back to every leg's cabin, a refund is created inside the same transaction and sent through the Stripe Refunds API after the commit, and the traveller is notified. Also a preview endpoint so the refund is shown before confirming. Then write unit tests and run live checks against Stripe test mode, including five concurrent cancels, plus the Swagger page in a browser.
+How the output was used:
+The generated service, DTOs, controller wiring and tests were integrated and checked with lint, build, unit tests, 56 live checks (tiers, round trip, zero refund, after departure, concurrency, real Stripe refunds) and a Swagger "Try it out" run for the preview and the cancellation.
+================================================
+================================================
+Date: 2026-11-19
+Student: Abdulrahman Ahmed
+Branch: feature/SCRUM-78-HTL-16-hotel-booking-hold (stacked on feature/SCRUM-74-FLT-26-cancel-flight-booking)
+Tool: Claude Code (terminal, Claude Sonnet 5.5)
+Related Requirement: HTL-16, HTL-18 (POST /api/hotel-bookings), GEN-11
+Prompt:
+Implement POST /api/hotel-bookings: one reservation for one or more rooms of the same hotel and dates, with the adults and children (ages 0-17) of each room (at least one adult, no room above its maximum occupancy), check-out after check-in and check-in not in the past. All rooms and all stay nights (UTC midnight) are held in one MongoDB transaction with a conditional update per night (not blocked, booked + held + 1 <= total); if any room or night is unavailable the whole request is rejected and nothing is held. The reservation is Pending Payment for 10 minutes and then Expired, which releases the rooms (hold-expiry job and a notification). The total is the sum over rooms of nights x that room's price at booking time, the hotel policies are copied onto the reservation. Then write unit tests and run live checks (real transaction rollback, concurrency, payment and webhook confirmation, expiry job) plus the Swagger page in a browser.
+How the output was used:
+The generated service, DTOs, date helpers, controller wiring, schema fields and tests were integrated and checked with lint, build, unit tests, 60 live checks and a Swagger "Try it out" run.
+================================================
+================================================
+Date: 2026-11-19
+Student: Abdulrahman Ahmed
+Branch: feature/SCRUM-79-HTL-20-list-get-hotel-bookings (stacked on feature/SCRUM-78-HTL-16-hotel-booking-hold)
+Tool: Claude Code (terminal, Claude Sonnet 5.5)
+Related Requirement: HTL-20 (GET /api/hotel-bookings, GET /api/hotel-bookings/:id), GEN-11, HTL-23 (Completed rule), PAY-03 (refund on the details)
+Prompt:
+Implement GET /api/hotel-bookings (the signed-in user's own reservations, paginated, filterable by status and by group Upcoming / Past / Cancelled, sortable, owner from the JWT) and GET /api/hotel-bookings/:id (owner, admin or the moderator of that hotel; details with rooms, guests, policies, payment summary and refund status; a moderator only sees the stay facts). Statuses are reported as they are now: a lapsed hold is Expired (and expired through the same code as the job when listing), a confirmed stay whose check-out date has passed is Completed. Then write unit tests and run live checks plus the Swagger page in a browser.
+How the output was used:
+The generated query DTO, status/group helpers, view service, response DTOs, controller wiring and tests were integrated and checked with lint, build, unit tests, 56 live checks and a Swagger "Try it out" run for the list and the details.
+================================================
+================================================
+Date: 2026-11-19
+Student: Abdulrahman Ahmed
+Branch: feature/SCRUM-81-HTL-21-cancel-hotel-booking (stacked on feature/SCRUM-79-HTL-20-list-get-hotel-bookings)
+Tool: Claude Code (terminal, Claude Sonnet 5.5)
+Related Requirement: HTL-21 (POST /api/hotel-bookings/:id/cancel), HTL-10, PAY-03, GEN-03, GEN-11
+Prompt:
+Implement POST /api/hotel-bookings/:id/cancel: the owner cancels a Confirmed reservation as a whole before the check-in date after seeing the refund and confirming. The refund comes from the hotel tiers copied onto the reservation (highest threshold not above the whole days to check-in, otherwise 0%) on the full total. Confirmed becomes Cancelled (the only transition), every room is released for the stay nights in the same transaction (booked units back, never below zero), a refund is created in the same transaction and sent through the Stripe Refunds API after the commit, and the traveller is notified. Use the effective status (nothing stores Completed). Also a preview endpoint and an optional expectedRefundAmount guard. Then write unit tests and run live checks against Stripe test mode (five concurrent cancels, every tier, zero refund, started stay, finished stay) plus the Swagger page in a browser.
+How the output was used:
+The generated service, DTOs, controller wiring and tests were integrated and checked with lint, build, unit tests, 48 live checks and a Swagger "Try it out" run for the preview and the cancellation.
+================================================
+================================================
+================================================
+Date: 2026-11-20
+Student: Abdulrahman Ahmed
+Branch: feature/SCRUM-77-FLT-28-seat-selection (stacked on feature/SCRUM-81-HTL-21-cancel-hotel-booking)
+Tool: Claude Code (terminal, Claude Sonnet 5.5)
+Related Requirement: FLT-28 (PATCH /api/flight-bookings/:id/seat, optional bonus), FLT-11, GEN-11
+Prompt:
+Implement PATCH /api/flight-bookings/:id/seat: the owner selects or changes the seat of one non-infant passenger on one leg. The seat map is derived from the cabin capacity (rows of A-F, labels like 12C, cabins laid out front to back), the seat must be in the passenger's own cabin, the leg must not have departed, and the booking must be Confirmed or a live hold with passenger details. One passenger per seat on a flight is enforced by a unique index, so concurrent requests for the same seat give exactly one success and the others 409. Changing a seat frees the old one; a cancelled or expired booking frees its seats; seats cost nothing. Also a seat-map read endpoint so the traveller can see which seats are taken. Then write unit tests and run live checks (races, cancel/expiry release, round trip, departed leg) plus the Swagger page in a browser.
+How the output was used:
+The generated seat-map helper, claim schema, service, controller, DTOs and tests were integrated, a fresh reviewer found a window where a late payment could confirm a booking whose seat had been given away (fixed), and the result was checked with lint, build, unit tests, 59 live checks and a Swagger "Try it out" run.
+================================================
+================================================
+================================================
+Date: 2026-11-20
+Student: Abdulrahman Ahmed
+Branch: feature/SCRUM-75-FLT-27-change-flight (stacked on feature/SCRUM-77-FLT-28-seat-selection)
+Tool: Claude Code (terminal, Claude Sonnet 5.5)
+Related Requirement: FLT-27 (PATCH /api/flight-bookings/:id/change-flight, optional bonus), FLT-26, FLT-22, PAY-01, PAY-03, GEN-11
+Prompt:
+Implement PATCH /api/flight-bookings/:id/change-flight: the owner changes one or both legs of a Confirmed flight booking to other flights of the same route and cabin before the first flight departs; the booking stays Confirmed (no new status). The fare difference is computed on the server with the booking rules (infants 10%, extra bags). Equal: swap at once. Lower: swap at once and refund the difference through the Stripe Refunds API. Higher: create a PaymentIntent for the difference; the booking keeps its old flights and seats until the signed webhook confirms the payment, then the legs and seats are swapped atomically; if the new flight has no seats left by then, refund the difference in full and notify the user. Extend the refund engine so one payment can have several refunds (total capped at the amount paid) without changing any existing behaviour, and let a later cancellation refund by policy on what is still refundable. Also a preview endpoint. Then write unit tests and run live checks against Stripe test mode (higher, lower and equal fares, no seats at webhook time, seat race, cancel after a change, round trips, concurrent changes, cancel racing a paid change) plus the Swagger page in a browser.
+How the output was used:
+The generated refund-engine extension, change service, payment hooks, DTOs, controller and tests were integrated; a fresh reviewer found races between concurrent changes and cancellations (fixed with state guards), a missing airline recheck at the swap, and a leftover old unique index (dropped at start), and the result was checked with lint, build, unit tests, 89 live checks and a Swagger "Try it out" run.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-89 (ITN-01)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Create a private itinerary. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Restored the uploads module already imported by AppModule but omitted from Git by an ignore rule, and added isolated database test infrastructure. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-90 (ITN-03)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+List current user itineraries. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-91 (ITN-03)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Read itinerary details with ownership checks. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-92 (ITN-01)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Update itinerary metadata and visibility. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-93 (ITN-01)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Delete an itinerary and child records. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-94 (ITN-05)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Append an itinerary day. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-95 (ITN-05)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Update itinerary day metadata. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-96 (ITN-07)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Delete a day and recalculate numbering and dates. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-97 (ITN-08)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Reorder itinerary days and dates. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-98 (ITN-10)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Add an activity to an itinerary day. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-99 (ITN-10)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Update an owned itinerary activity. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-100 (ITN-10)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Delete an owned itinerary activity. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-101 (ITN-12)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Upload a validated activity image. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-102 (ITN-12)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Remove an activity image. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-103 (ITN-14)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Add a daily budget entry. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-104 (ITN-14)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Update an owned budget entry. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-105 (ITN-14)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Delete an owned budget entry. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-106 (ITN-16)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Add an intercity transport cost. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-107 (ITN-16)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Update an intercity transport cost. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-108 (ITN-16)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Delete an intercity transport cost. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-109 (ITN-18)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Calculate a budget summary with cached FX rates. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-110 (ITN-20)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Search and filter public itineraries. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-111 (ITN-21)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Read public itinerary details and attribution. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-112 (ITN-21)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Clone a public itinerary into a private copy. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-113 (ITN-25)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Search available hotels from itinerary context. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-114 (ITN-26)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Search flights from itinerary context. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-115 (ITN-27)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Attach an owned confirmed booking. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+================================================
+
+
+================================================
+Date: 2026-11-19
+Student: Ahmed Amer
+Tool: OpenAI Codex
+Related Requirement: SCRUM-116 (ITN-28)
+
+Prompt:
+Implement my assigned Passportly Jira tasks following the repository architecture, commits and pull request workflow. Split the work so each Jira task has its own branch and pull request.
+
+How the output was used:
+Export an itinerary as PDF. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Added a delivery index linking all 28 ticket branches and pull requests with their merge order. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
 
 ================================================
 Date: 2026-11-19
 Student: Abdullah Emam
 Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: BLG-01 (SCRUM-117, POST /api/posts)
+
+Prompt:
+Implement SCRUM-117 [BLG-01] POST /api/posts - Create blog post (Draft or Published) with DTO validation, Tag upsert and normalization, slug generation, publishedAt on PUBLISHED, and unit tests.
+
+How the output was used:
+Fixed .gitignore upload path pattern and added shared UploadsModule/UploadsService so the backend builds cleanly, created CreatePostDto, BlogPostItemDto, blog.utils.ts helpers, BlogService.createPost, BlogController.createPost with Swagger/role decorators, and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
+
+Related Requirement: BLG-02, BLG-09 (SCRUM-118, GET /api/posts)
+
+Prompt:
+Implement SCRUM-118 [BLG-02, BLG-09] GET /api/posts - List and search published blog posts with pagination, keyword search, tag filter, author filter, and sorting.
+
+How the output was used:
+Added ListPostsQueryDto, PaginatedBlogPostsResponseDto, escapeRegex helper, UsersModule import in BlogModule for author population, BlogService.listPosts enforcing status == PUBLISHED and isHidden == false with $and-combined filters, BlogController.listPosts with @Public() and Swagger annotations, and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
+
+Related Requirement: BLG-03 (SCRUM-119, GET /api/posts/mine)
+
+Prompt:
+Implement SCRUM-119 [BLG-03] GET /api/posts/mine - List current user blog posts (drafts + published) with optional status filter, pagination, and sorting.
+
+How the output was used:
+Added ListMyPostsQueryDto, BlogService.listMyPosts scoped to CurrentUser.userId with optional DRAFT/PUBLISHED filter, BlogController.listMyPosts wired with @Roles(Role.REGISTERED_USER) above :id routes, and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
+
 Related Requirement: BLG-02 (SCRUM-120, GET /api/posts/:id)
 
 Prompt:

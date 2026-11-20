@@ -1,6 +1,27 @@
-import { Controller, Get, NotImplementedException } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Controller, Get, Query } from '@nestjs/common';
+import {
+  ApiBadRequestResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { Public } from '../../common/decorators/public.decorator';
+import {
+  ListAirportsQueryDto,
+  PaginatedAirportsResponseDto,
+} from './dto/list-airports-query.dto';
+import {
+  ListCitiesQueryDto,
+  PaginatedCitiesResponseDto,
+} from './dto/list-cities-query.dto';
+import {
+  ListAttractionsQueryDto,
+  PaginatedAttractionsResponseDto,
+} from './dto/list-attractions-query.dto';
+import {
+  ListCountriesQueryDto,
+  PaginatedCountriesResponseDto,
+} from './dto/list-countries-query.dto';
 import { ReferenceDataService } from './reference-data.service';
 
 @ApiTags('Reference Data')
@@ -13,29 +34,55 @@ export class ReferenceDataController {
   @ApiOperation({
     summary: 'FLT-02: Search/list reference airports with IANA time zones',
   })
-  getAirports() {
-    throw new NotImplementedException('GET /api/airports not implemented yet');
+  @ApiOkResponse({
+    description: 'Paginated list of reference airports with IANA time zones',
+    type: PaginatedAirportsResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid query parameters' })
+  getAirports(
+    @Query() query: ListAirportsQueryDto,
+  ): Promise<PaginatedAirportsResponseDto> {
+    return this.referenceDataService.getAirports(query);
   }
 
   @Get('countries')
   @ApiOperation({
-    summary: 'List reference countries and supported currencies',
+    summary: 'REF-01: List reference countries and supported currencies',
   })
-  getCountries() {
-    throw new NotImplementedException('GET /api/countries not implemented yet');
+  @ApiOkResponse({
+    description: 'Paginated list of reference countries and currency codes',
+    type: PaginatedCountriesResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid query parameters' })
+  getCountries(
+    @Query() query: ListCountriesQueryDto,
+  ): Promise<PaginatedCountriesResponseDto> {
+    return this.referenceDataService.getCountries(query);
   }
 
   @Get('cities')
-  @ApiOperation({ summary: 'Search/list reference cities' })
-  getCities() {
-    throw new NotImplementedException('GET /api/cities not implemented yet');
+  @ApiOperation({ summary: 'REF-02: Search/list reference cities' })
+  @ApiOkResponse({
+    description: 'Paginated list of reference cities',
+    type: PaginatedCitiesResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid query parameters' })
+  getCities(
+    @Query() query: ListCitiesQueryDto,
+  ): Promise<PaginatedCitiesResponseDto> {
+    return this.referenceDataService.getCities(query);
   }
 
   @Get('attractions')
-  @ApiOperation({ summary: 'Search/list reference attractions' })
-  getAttractions() {
-    throw new NotImplementedException(
-      'GET /api/attractions not implemented yet',
-    );
+  @ApiOperation({ summary: 'REF-03: Search/list reference attractions' })
+  @ApiOkResponse({
+    description: 'Paginated list of reference attractions',
+    type: PaginatedAttractionsResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid query parameters' })
+  getAttractions(
+    @Query() query: ListAttractionsQueryDto,
+  ): Promise<PaginatedAttractionsResponseDto> {
+    return this.referenceDataService.getAttractions(query);
   }
 }
