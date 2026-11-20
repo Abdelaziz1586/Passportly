@@ -170,9 +170,14 @@ export class FlightBooking {
   @Prop({ trim: true })
   cancellationReason?: string;
 
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'Flight' })
+  providerCancellationFlight?: Types.ObjectId;
+
   @Prop({ type: Number, min: 0 })
   refundAmount?: number;
 }
 
 export const FlightBookingSchema = SchemaFactory.createForClass(FlightBooking);
 FlightBookingSchema.index({ status: 1, holdExpiresAt: 1 });
+
+FlightBookingSchema.index({ 'legs.flight': 1, status: 1 });

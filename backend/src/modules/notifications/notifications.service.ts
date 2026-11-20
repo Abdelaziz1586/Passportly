@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { isValidObjectId, Model, Types } from 'mongoose';
+import { ClientSession, isValidObjectId, Model, Types } from 'mongoose';
 import { NotificationType } from '../../common/enums';
 import { ListNotificationsQueryDto } from './dto/list-notifications-query.dto';
 import { MarkAllNotificationsReadResponseDto } from './dto/mark-all-read-response.dto';
@@ -39,15 +39,18 @@ export class NotificationsService {
     readonly notificationModel: Model<NotificationDocument>,
   ) {}
 
-  async createNotification(params: {
-    recipient: string | Types.ObjectId;
-    type: NotificationType;
-    title: string;
-    message: string;
-    relatedEntityType?: string;
-    relatedEntityId?: string | Types.ObjectId;
-  }) {
-    return this.notificationModel.create({
+  async createNotification(
+    params: {
+      recipient: string | Types.ObjectId;
+      type: NotificationType;
+      title: string;
+      message: string;
+      relatedEntityType?: string;
+      relatedEntityId?: string | Types.ObjectId;
+    },
+    session?: ClientSession,
+  ) {
+    const payload = {
       recipient: new Types.ObjectId(params.recipient),
       type: params.type,
       title: params.title,
@@ -56,7 +59,14 @@ export class NotificationsService {
       relatedEntityId: params.relatedEntityId
         ? new Types.ObjectId(params.relatedEntityId)
         : undefined,
-    });
+    };
+    if (session) {
+      const [created] = await this.notificationModel.create([payload], {
+        session,
+      });
+      return created;
+    }
+    return this.notificationModel.create(payload);
   }
 
   /**

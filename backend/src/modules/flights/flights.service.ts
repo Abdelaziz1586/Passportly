@@ -14,7 +14,12 @@ import {
   Types,
   isObjectIdOrHexString,
 } from 'mongoose';
-import { FlightStatus, Role } from '../../common/enums';
+import {
+  BookingStatus,
+  FlightStatus,
+  NotificationType,
+  Role,
+} from '../../common/enums';
 import { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
 import { Airline, AirlineDocument } from './schemas/airline.schema';
@@ -38,6 +43,7 @@ import {
   assertLocalDate,
   flightInstant,
 } from './flight-time';
+import { FlightEventsService } from './flight-events.service';
 
 function checkId(id: string) {
   if (!isObjectIdOrHexString(id)) throw new BadRequestException('Invalid ID');
@@ -72,6 +78,7 @@ export class FlightsService {
     readonly flightBookingModel: Model<FlightBookingDocument>,
     @InjectConnection() private readonly connection: Connection,
     private readonly reference: ReferenceDataService,
+    private readonly events: FlightEventsService,
   ) {}
 
   private authorize(user: AuthenticatedUser, airline: Types.ObjectId) {
@@ -202,6 +209,21 @@ export class FlightsService {
     const flight = await this.flightModel.findById(id).session(session ?? null);
     if (!flight) throw new NotFoundException('Flight not found');
     if (user) this.authorize(user, flight.airline);
+    return flight;
+  }
+
+  /** Booking and payment transactions must acquire this same write before touching inventory. */
+  async lockScheduledFlight(id: Types.ObjectId, session: ClientSession) {
+    const flight = await this.flightModel.findOneAndUpdate(
+      {
+        _id: id,
+        status: FlightStatus.SCHEDULED,
+        departureTime: { $gt: new Date() },
+      },
+      { $inc: { bookingVersion: 1 } },
+      { session, returnDocument: 'after' },
+    );
+    if (!flight) throw new ConflictException('Flight is no longer scheduled');
     return flight;
   }
 
@@ -538,6 +560,53 @@ export class FlightsService {
   }
 
   async getFlight(id: string) {
+    return this.flightDetails(id);
+  }
+  async updateFlight(id: string, user: AuthenticatedUser, input: FlightUpdate) {
+    await unique(() =>
+      this.connection.transaction(async (session) => {
+        const current = await this.flight(id, user, session);
+        const flight = await this.lockScheduledFlight(current._id, session);
+        const schedule = await this.schedule(input, flight);
+        if (
+          (!flight.departureAirport.equals(schedule.departureAirport) ||
+            !flight.arrivalAirport.equals(schedule.arrivalAirport)) &&
+          (await this.flightBookingModel
+            .exists({ 'legs.flight': flight._id })
+            .session(session))
+        ) {
+          throw new ConflictException('Airports cannot change after booking');
+        }
+        const changed =
+          +flight.departureTime !== +schedule.departureTime ||
+          +flight.arrivalTime !== +schedule.arrivalTime;
+        await this.checkLegacyFlightDate(
+          flight.airline,
+          input.flightNumber ?? flight.flightNumber,
+          schedule.localDepartureDate,
+          session,
+          flight._id,
+        );
+        flight.set({ ...input, ...schedule });
+        await flight.save({ session });
+        if (changed) {
+          const bookings = await this.flightBookingModel
+            .find({
+              'legs.flight': flight._id,
+              status: BookingStatus.CONFIRMED,
+            })
+            .session(session);
+          for (const booking of bookings) {
+            await this.events.notify(
+              booking,
+              flight,
+              NotificationType.FLIGHT_SCHEDULE_CHANGED,
+              session,
+            );
+          }
+        }
+      }),
+    );
     return this.flightDetails(id);
   }
 }

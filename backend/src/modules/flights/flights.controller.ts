@@ -15,7 +15,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { FlightsService } from './flights.service';
-import { FlightCreate } from './create-flight.dto';
+import { FlightCreate, FlightUpdate } from './create-flight.dto';
 import { FlightSearch } from './flight-search.dto';
 
 @ApiTags('Flights')
@@ -54,10 +54,12 @@ export class FlightsController {
   @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
   @Patch(':id')
   @ApiOperation({ summary: 'FLT-05: Update flight schedule or details' })
-  updateFlight() {
-    throw new NotImplementedException(
-      'PATCH /api/flights/:id not implemented yet',
-    );
+  updateFlight(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: FlightUpdate,
+  ) {
+    return this.flightsService.updateFlight(id, user, input);
   }
 
   @ApiCookieAuth()
