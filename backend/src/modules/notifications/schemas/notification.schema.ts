@@ -1,12 +1,17 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 import { NotificationType } from '../../../common/enums';
 
 export type NotificationDocument = HydratedDocument<Notification>;
 
 @Schema({ timestamps: true, collection: 'notifications' })
 export class Notification {
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  })
   recipient: Types.ObjectId;
 
   @Prop({
@@ -26,7 +31,7 @@ export class Notification {
   @Prop({ trim: true })
   relatedEntityType?: string;
 
-  @Prop({ type: Types.ObjectId })
+  @Prop({ type: SchemaTypes.ObjectId })
   relatedEntityId?: Types.ObjectId;
 
   @Prop({ default: false, index: true })

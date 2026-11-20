@@ -60,4 +60,22 @@ describe('buildSimplePdf', () => {
 
     expect(buildSimplePdf(input).equals(buildSimplePdf(input))).toBe(true);
   });
+
+  it('wraps long lines cleanly inside the A4 printable width', () => {
+    const longLine =
+      '   Departs JED (King Abdulaziz International Terminal 1 Airport) 2027-06-15 23:00 UTC+03:00 local extra notes that exceed A4 margin';
+    const text = buildSimplePdf([{ text: longLine, size: 11 }]).toString(
+      'latin1',
+    );
+    const drawnLines = Array.from(text.matchAll(/Td \((.+?)\) Tj ET/g)).map(
+      (m) => m[1],
+    );
+
+    expect(drawnLines.length).toBeGreaterThanOrEqual(2);
+    for (const drawn of drawnLines) {
+      expect(drawn.length).toBeLessThanOrEqual(90);
+    }
+    expect(drawnLines.join(' ')).toContain('King Abdulaziz');
+    expect(drawnLines.join(' ')).toContain('A4 margin');
+  });
 });

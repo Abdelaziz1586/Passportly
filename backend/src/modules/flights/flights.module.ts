@@ -1,4 +1,7 @@
 import { Module } from '@nestjs/common';
+import { ReferenceDataModule } from '../reference-data/reference-data.module';
+import { PaymentsModule } from '../payments/payments.module';
+import { FlightEventsService } from './flight-events.service';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AirlinesController } from './airlines.controller';
 import { FlightBookingsController } from './flight-bookings.controller';
@@ -25,6 +28,8 @@ import { Flight, FlightSchema } from './schemas/flight.schema';
 
 @Module({
   imports: [
+    ReferenceDataModule,
+    PaymentsModule,
     MongooseModule.forFeature([
       { name: Airline.name, schema: AirlineSchema },
       { name: Flight.name, schema: FlightSchema },
@@ -41,6 +46,7 @@ import { Flight, FlightSchema } from './schemas/flight.schema';
   ],
   providers: [
     FlightsService,
+    FlightEventsService,
     FlightBookingsService,
     FlightETicketService,
     FlightBookingViewService,
