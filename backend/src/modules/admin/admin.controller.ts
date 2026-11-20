@@ -47,6 +47,10 @@ import {
   ListAdminBookingsQueryDto,
   PaginatedAdminBookingsResponseDto,
 } from './dto/list-admin-bookings-query.dto';
+import {
+  ListReportsQueryDto,
+  PaginatedReportsResponseDto,
+} from './dto/list-reports-query.dto';
 import { ReactivateAccountResponseDto } from './dto/reactivate-account-response.dto';
 import { DeactivateProviderResponseDto } from './dto/deactivate-provider-response.dto';
 import { ReactivateProviderResponseDto } from './dto/reactivate-provider-response.dto';
@@ -243,10 +247,16 @@ export class AdminController {
 
   @Get('reports')
   @ApiOperation({ summary: 'GEN-09, GEN-10: List submitted content reports' })
-  listReports() {
-    throw new NotImplementedException(
-      'GET /api/admin/reports not implemented yet',
-    );
+  @ApiOkResponse({
+    description: 'Paginated content moderation reports with reporter details',
+    type: PaginatedReportsResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid filter or pagination query' })
+  @ApiForbiddenResponse({ description: 'Admin role required' })
+  listReports(
+    @Query() query: ListReportsQueryDto,
+  ): Promise<PaginatedReportsResponseDto> {
+    return this.adminService.listReports(query);
   }
 
   @Patch('reports/:id')

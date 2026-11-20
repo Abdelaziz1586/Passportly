@@ -8,6 +8,8 @@ import {
   BookingStatus,
   BookingType,
   ProviderType,
+  ReportStatus,
+  ReportTargetType,
   Role,
 } from '../../common/enums';
 import { AdminController } from './admin.controller';
@@ -17,6 +19,7 @@ import { CreateModeratorDto } from './dto/create-moderator.dto';
 import { ListAccountsQueryDto } from './dto/list-accounts-query.dto';
 import { SuspendAccountDto } from './dto/suspend-account.dto';
 import { ListAdminBookingsQueryDto } from './dto/list-admin-bookings-query.dto';
+import { ListReportsQueryDto } from './dto/list-reports-query.dto';
 
 describe('AdminController (ACC-07a admin reset password)', () => {
   let controller: AdminController;
@@ -555,6 +558,66 @@ describe('AdminController (ACC-17 admin bookings)', () => {
       validationPipe.transform(
         { unknownParam: 'x' },
         { type: 'query', metatype: ListAdminBookingsQueryDto },
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+});
+
+describe('AdminController (GEN-09/GEN-10 list reports)', () => {
+  let controller: AdminController;
+
+  const validationPipe = new ValidationPipe({
+    whitelist: true,
+    forbidNonWhitelisted: true,
+    transform: true,
+    transformOptions: { enableImplicitConversion: true },
+  });
+
+  const mockAdminService = {
+    listReports: jest.fn(),
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+
+    const module: TestingModule = await Test.createTestingModule({
+      controllers: [AdminController],
+      providers: [{ provide: AdminService, useValue: mockAdminService }],
+    }).compile();
+
+    controller = module.get<AdminController>(AdminController);
+  });
+
+  it('restricts endpoint to Role.ADMIN', () => {
+    const reflector = new Reflector();
+    expect(reflector.get<Role[]>(ROLES_KEY, AdminController)).toEqual([
+      Role.ADMIN,
+    ]);
+  });
+
+  it('validates status and targetType filters and delegates to AdminService.listReports', async () => {
+    const query = (await validationPipe.transform(
+      {
+        status: ReportStatus.PENDING,
+        targetType: ReportTargetType.REVIEW,
+        page: '1',
+        limit: '10',
+      },
+      { type: 'query', metatype: ListReportsQueryDto },
+    )) as ListReportsQueryDto;
+
+    const expected = { data: [], total: 0, page: 1, limit: 10, totalPages: 0 };
+    mockAdminService.listReports.mockResolvedValue(expected);
+
+    const result = await controller.listReports(query);
+    expect(result).toEqual(expected);
+  });
+
+  it('rejects invalid ReportStatus values via ValidationPipe', async () => {
+    await expect(
+      validationPipe.transform(
+        { status: 'UNKNOWN' },
+        { type: 'query', metatype: ListReportsQueryDto },
       ),
     ).rejects.toThrow(BadRequestException);
   });
