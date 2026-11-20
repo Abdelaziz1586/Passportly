@@ -167,3 +167,43 @@ describe('PaymentsController PAY-01 retry (SCRUM-85)', () => {
     );
   });
 });
+
+describe('PaymentsController PAY-01 get (SCRUM-86)', () => {
+  const getPayment = jest.fn();
+  const controller = new PaymentsController(
+    { getPayment } as unknown as PaymentsService,
+    {} as BookingPoliciesService,
+  );
+  const user: AuthenticatedUser = {
+    userId: '665f1c2e8a1b2c3d4e5f6a7b',
+    email: 'a@example.com',
+    role: Role.REGISTERED_USER,
+    jti: 'jti',
+  };
+
+  afterEach(() => jest.clearAllMocks());
+
+  it('reads a payment for the JWT user and role (an admin can read any)', async () => {
+    const params = Object.assign(new PaymentParamsDto(), {
+      id: '665f1c2e8a1b2c3d4e5f6a7d',
+    });
+
+    await controller.getPayment(params, { ...user, role: Role.ADMIN });
+
+    expect(getPayment).toHaveBeenCalledWith(user.userId, Role.ADMIN, params.id);
+  });
+
+  it('is for registered users and admins only and not public', () => {
+    expect(Reflect.getMetadata(ROLES_KEY, handlers.getPayment)).toEqual([
+      Role.REGISTERED_USER,
+      Role.ADMIN,
+    ]);
+    expect(Reflect.getMetadata(IS_PUBLIC_KEY, handlers.getPayment)).toBeFalsy();
+  });
+
+  it('keeps the documented route', () => {
+    expect(Reflect.getMetadata(PATH_METADATA, handlers.getPayment)).toBe(
+      'payments/:id',
+    );
+  });
+});

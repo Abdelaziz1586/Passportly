@@ -35,12 +35,19 @@ import { AcceptPoliciesDto } from './dto/accept-policies.dto';
 import { BookingParamsDto } from './dto/booking-params.dto';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { PaymentParamsDto } from './dto/payment-params.dto';
-import { PaymentIntentResponseDto } from './dto/payment-response.dto';
+import {
+  PaymentIntentResponseDto,
+  PaymentResponseDto,
+} from './dto/payment-response.dto';
 import {
   AcceptPoliciesResponseDto,
   BookingPoliciesResponseDto,
 } from './dto/booking-policies-response.dto';
-import { PaymentIntentResponse, PaymentsService } from './payments.service';
+import {
+  PaymentIntentResponse,
+  PaymentResponse,
+  PaymentsService,
+} from './payments.service';
 
 @ApiTags('Payments & Refunds')
 @Controller()
@@ -183,11 +190,23 @@ export class PaymentsController {
   @ApiCookieAuth()
   @Roles(Role.REGISTERED_USER, Role.ADMIN)
   @Get('payments/:id')
-  @ApiOperation({ summary: 'PAY-01: Get payment status and details' })
-  getPayment() {
-    throw new NotImplementedException(
-      'GET /api/payments/:id not implemented yet',
-    );
+  @ApiOperation({
+    summary: 'PAY-01: Get payment status and details',
+    description:
+      'Returns status, amount, currency, timestamps and failureReason. The owner can read their own payments; an admin can read any. Never returns card details or the client secret.',
+  })
+  @ApiOkResponse({ description: 'The payment', type: PaymentResponseDto })
+  @ApiBadRequestResponse({ description: 'Invalid id' })
+  @ApiUnauthorizedResponse({ description: 'Not signed in' })
+  @ApiForbiddenResponse({
+    description: 'Only registered users and admins may read payments',
+  })
+  @ApiNotFoundResponse({ description: 'Payment not found or not yours' })
+  getPayment(
+    @Param() params: PaymentParamsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<PaymentResponse> {
+    return this.paymentsService.getPayment(user.userId, user.role, params.id);
   }
 
   @Public()
