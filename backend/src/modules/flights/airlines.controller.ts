@@ -1,46 +1,103 @@
+import { maxLogoBytes, UploadsService } from '../uploads/uploads.service';
 import {
+  Body,
   Controller,
   Get,
-  NotImplementedException,
+  Param,
   Patch,
   Post,
   Put,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import {
+  ApiOperation,
+  ApiBody,
+  ApiConsumes,
+  ApiCookieAuth,
+  ApiTags,
+} from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
+import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { FlightsService } from './flights.service';
+import { AirlineCreate } from './create-airline.dto';
+import { BaggagePolicy } from './airline-baggage-policy.dto';
+import { CancellationPolicy } from './airline-cancellation-policy.dto';
+import { AirlineUpdate } from './update-airline.dto';
 
 @ApiTags('Airlines')
 @Controller('airlines')
 export class AirlinesController {
-  constructor(private readonly flightsService: FlightsService) {}
+  constructor(
+    private readonly flightsService: FlightsService,
+    private readonly uploads: UploadsService,
+  ) {}
 
   @ApiCookieAuth()
-  @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
+  @ApiConsumes('application/json', 'multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        iataCode: { type: 'string', example: 'MS' },
+        logo: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @Roles(Role.ADMIN)
+  @UseInterceptors(
+    FileInterceptor('logo', { limits: { fileSize: maxLogoBytes, files: 1 } }),
+  )
   @Post()
   @ApiOperation({ summary: 'FLT-01: Create an airline profile' })
-  createAirline() {
-    throw new NotImplementedException('POST /api/airlines not implemented yet');
+  createAirline(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: AirlineCreate,
+    @UploadedFile() logo?: Express.Multer.File,
+  ) {
+    return this.uploads.withAirlineLogo(logo, (url) =>
+      this.flightsService.createAirline(user, input, url),
+    );
   }
 
   @Public()
   @Get(':id')
   @ApiOperation({ summary: 'FLT-01: Get airline details' })
-  getAirline() {
-    throw new NotImplementedException(
-      'GET /api/airlines/:id not implemented yet',
-    );
+  getAirline(@Param('id') id: string) {
+    return this.flightsService.getAirline(id);
   }
 
   @ApiCookieAuth()
   @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
+  @ApiConsumes('application/json', 'multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        iataCode: { type: 'string', example: 'MS' },
+        logo: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @UseInterceptors(
+    FileInterceptor('logo', { limits: { fileSize: maxLogoBytes, files: 1 } }),
+  )
   @Patch(':id')
   @ApiOperation({ summary: 'FLT-01: Update airline profile' })
-  updateAirline() {
-    throw new NotImplementedException(
-      'PATCH /api/airlines/:id not implemented yet',
+  updateAirline(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: AirlineUpdate,
+    @UploadedFile() logo?: Express.Multer.File,
+  ) {
+    return this.uploads.withAirlineLogo(logo, (url) =>
+      this.flightsService.updateAirline(id, user, input, url),
     );
   }
 
@@ -48,19 +105,23 @@ export class AirlinesController {
   @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
   @Put(':id/baggage-policy')
   @ApiOperation({ summary: 'FLT-04, FLT-08: Set airline baggage policy' })
-  updateBaggagePolicy() {
-    throw new NotImplementedException(
-      'PUT /api/airlines/:id/baggage-policy not implemented yet',
-    );
+  updateBaggagePolicy(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: BaggagePolicy,
+  ) {
+    return this.flightsService.updateBaggage(id, user, input);
   }
 
   @ApiCookieAuth()
   @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
   @Put(':id/cancellation-policy')
   @ApiOperation({ summary: 'FLT-09: Set airline cancellation policy' })
-  updateCancellationPolicy() {
-    throw new NotImplementedException(
-      'PUT /api/airlines/:id/cancellation-policy not implemented yet',
-    );
+  updateCancellationPolicy(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: CancellationPolicy,
+  ) {
+    return this.flightsService.updateCancellation(id, user, input);
   }
 }

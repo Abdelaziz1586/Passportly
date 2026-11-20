@@ -12,6 +12,7 @@ import * as bcrypt from 'bcryptjs';
 import { AccountStatus, Role } from '../../common/enums';
 import { MailService } from '../mail/mail.service';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
+import { ModeratorAssignment } from '../users/schemas/moderator-assignment.schema';
 import { User } from '../users/schemas/user.schema';
 import { AuthService } from './auth.service';
 import { UserSession } from './schemas/user-session.schema';
@@ -23,12 +24,15 @@ describe('AuthService (ACC-01 register, ACC-02 verify-email, ACC-04/05 login)', 
     exists: jest.fn(),
     create: jest.fn(),
     findOne: jest.fn(),
+    findById: jest.fn(),
     findOneAndUpdate: jest.fn(),
     findByIdAndUpdate: jest.fn(),
   };
 
   const mockSessionModel = {
     create: jest.fn(),
+    updateOne: jest.fn(),
+    updateMany: jest.fn(),
   };
 
   const mockJwtService = {
@@ -53,11 +57,17 @@ describe('AuthService (ACC-01 register, ACC-02 verify-email, ACC-04/05 login)', 
 
   const mockMailService = {
     sendVerificationEmail: jest.fn(),
+    sendPasswordResetEmail: jest.fn(),
+  };
+
+  const mockAssignmentModel = {
+    findOne: jest.fn(),
   };
 
   beforeEach(async () => {
     jest.clearAllMocks();
     mockMailService.sendVerificationEmail.mockResolvedValue(true);
+    mockMailService.sendPasswordResetEmail.mockResolvedValue(true);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -66,6 +76,10 @@ describe('AuthService (ACC-01 register, ACC-02 verify-email, ACC-04/05 login)', 
         {
           provide: getModelToken(UserSession.name),
           useValue: mockSessionModel,
+        },
+        {
+          provide: getModelToken(ModeratorAssignment.name),
+          useValue: mockAssignmentModel,
         },
         { provide: JwtService, useValue: mockJwtService },
         { provide: ConfigService, useValue: mockConfigService },
@@ -541,6 +555,583 @@ describe('AuthService (ACC-01 register, ACC-02 verify-email, ACC-04/05 login)', 
         }),
       ).rejects.toThrow(ForbiddenException);
       expect(mockSessionModel.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('changePassword', () => {
+    const authUser = {
+      userId: '507f1f77bcf86cd799439011',
+      email: 'traveler@example.com',
+      role: Role.REGISTERED_USER,
+      jti: 'current-jti-1',
+    };
+
+    it('verifies current password, updates passwordHash, clears mustChangePassword, and revokes other sessions by default', async () => {
+      const oldHash = await bcrypt.hash('OldPass123!', 4);
+      const selectMock = jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        email: 'traveler@example.com',
+        passwordHash: oldHash,
+        status: AccountStatus.ACTIVE,
+        mustChangePassword: true,
+      });
+      mockUserModel.findById.mockReturnValue({ select: selectMock });
+      mockUserModel.findByIdAndUpdate.mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        mustChangePassword: false,
+      });
+      mockSessionModel.updateMany.mockResolvedValue({ modifiedCount: 2 });
+
+      const result = await service.changePassword(authUser, {
+        currentPassword: 'OldPass123!',
+        newPassword: 'NewStrongPass456!',
+      });
+
+      expect(mockUserModel.findById).toHaveBeenCalledWith(authUser.userId);
+      expect(selectMock).toHaveBeenCalledWith('+passwordHash');
+
+      const updateCalls = mockUserModel.findByIdAndUpdate.mock.calls as [
+        [
+          string,
+          { $set: { passwordHash: string; mustChangePassword: boolean } },
+          { returnDocument: string },
+        ],
+      ];
+      expect(updateCalls[0][1].$set.mustChangePassword).toBe(false);
+      await expect(
+        bcrypt.compare(
+          'NewStrongPass456!',
+          updateCalls[0][1].$set.passwordHash,
+        ),
+      ).resolves.toBe(true);
+
+      expect(mockSessionModel.updateMany).toHaveBeenCalledWith(
+        {
+          user: '507f1f77bcf86cd799439011',
+          jti: { $ne: 'current-jti-1' },
+          revokedAt: null,
+        },
+        { $set: { revokedAt: expect.any(Date) as Date } },
+      );
+      expect(result).toEqual({
+        message: 'Password changed successfully',
+        mustChangePassword: false,
+        revokedOtherSessionsCount: 2,
+      });
+    });
+
+    it('preserves other active sessions when revokeOtherSessions is false', async () => {
+      const oldHash = await bcrypt.hash('OldPass123!', 4);
+      const selectMock = jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        passwordHash: oldHash,
+        status: AccountStatus.ACTIVE,
+        mustChangePassword: true,
+      });
+      mockUserModel.findById.mockReturnValue({ select: selectMock });
+      mockUserModel.findByIdAndUpdate.mockResolvedValue({});
+
+      const result = await service.changePassword(authUser, {
+        currentPassword: 'OldPass123!',
+        newPassword: 'NewStrongPass456!',
+        revokeOtherSessions: false,
+      });
+
+      expect(mockSessionModel.updateMany).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        message: 'Password changed successfully',
+        mustChangePassword: false,
+        revokedOtherSessionsCount: 0,
+      });
+    });
+
+    it('throws UnauthorizedException when current password does not match', async () => {
+      const oldHash = await bcrypt.hash('OldPass123!', 4);
+      const selectMock = jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        passwordHash: oldHash,
+        status: AccountStatus.ACTIVE,
+      });
+      mockUserModel.findById.mockReturnValue({ select: selectMock });
+
+      await expect(
+        service.changePassword(authUser, {
+          currentPassword: 'WrongPassword!',
+          newPassword: 'NewStrongPass456!',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(mockUserModel.findByIdAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it('throws BadRequestException when new password matches current password', async () => {
+      const oldHash = await bcrypt.hash('SameStrongPass123!', 4);
+      const selectMock = jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        passwordHash: oldHash,
+        status: AccountStatus.ACTIVE,
+      });
+      mockUserModel.findById.mockReturnValue({ select: selectMock });
+
+      await expect(
+        service.changePassword(authUser, {
+          currentPassword: 'SameStrongPass123!',
+          newPassword: 'SameStrongPass123!',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockUserModel.findByIdAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it('throws ForbiddenException when user account is inactive', async () => {
+      const oldHash = await bcrypt.hash('OldPass123!', 4);
+      const selectMock = jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        passwordHash: oldHash,
+        status: AccountStatus.SUSPENDED,
+      });
+      mockUserModel.findById.mockReturnValue({ select: selectMock });
+
+      await expect(
+        service.changePassword(authUser, {
+          currentPassword: 'OldPass123!',
+          newPassword: 'NewStrongPass456!',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('resetPassword', () => {
+    it('validates token and expiry, hashes new password, clears token/lockout flags, and revokes active sessions', async () => {
+      const futureExpiry = new Date(Date.now() + 10 * 60 * 1000);
+      const selectMock = jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        status: AccountStatus.ACTIVE,
+        passwordResetExpiresAt: futureExpiry,
+      });
+      mockUserModel.findOne.mockReturnValue({ select: selectMock });
+      mockUserModel.findOneAndUpdate.mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+      });
+      mockSessionModel.updateMany.mockResolvedValue({ modifiedCount: 2 });
+
+      const result = await service.resetPassword({
+        passwordResetToken: 'valid-reset-token',
+        newPassword: 'NewStrongPassword123!',
+      });
+
+      expect(mockUserModel.findOne).toHaveBeenCalledWith({
+        passwordResetToken: 'valid-reset-token',
+      });
+      expect(selectMock).toHaveBeenCalledWith('+passwordResetExpiresAt status');
+      expect(mockUserModel.findOneAndUpdate).toHaveBeenCalledTimes(1);
+
+      const updateCalls = mockUserModel.findOneAndUpdate.mock.calls as [
+        [
+          Record<string, unknown>,
+          {
+            $set: {
+              passwordHash: string;
+              mustChangePassword: boolean;
+              failedLoginAttempts: number;
+              lockoutUntil: null;
+            };
+            $unset: {
+              passwordResetToken: number;
+              passwordResetExpiresAt: number;
+            };
+          },
+          { returnDocument: string },
+        ],
+      ];
+      const [filterArg, updateArg, optionsArg] = updateCalls[0];
+      expect(filterArg._id).toBe('507f1f77bcf86cd799439011');
+      expect(filterArg.passwordResetToken).toBe('valid-reset-token');
+      expect(updateArg.$set.mustChangePassword).toBe(false);
+      expect(updateArg.$set.failedLoginAttempts).toBe(0);
+      expect(updateArg.$set.lockoutUntil).toBeNull();
+      expect(updateArg.$unset).toEqual({
+        passwordResetToken: 1,
+        passwordResetExpiresAt: 1,
+      });
+      expect(optionsArg).toEqual({ returnDocument: 'after' });
+      await expect(
+        bcrypt.compare('NewStrongPassword123!', updateArg.$set.passwordHash),
+      ).resolves.toBe(true);
+
+      expect(mockSessionModel.updateMany).toHaveBeenCalledWith(
+        { user: '507f1f77bcf86cd799439011', revokedAt: null },
+        { $set: { revokedAt: expect.any(Date) as Date } },
+      );
+      expect(result).toEqual({
+        message:
+          'Password reset successfully. Please log in with your new password.',
+      });
+    });
+
+    it('supports token alias property', async () => {
+      const selectMock = jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        status: AccountStatus.ACTIVE,
+        passwordResetExpiresAt: new Date(Date.now() + 60_000),
+      });
+      mockUserModel.findOne.mockReturnValue({ select: selectMock });
+      mockUserModel.findOneAndUpdate.mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+      });
+      mockSessionModel.updateMany.mockResolvedValue({ modifiedCount: 1 });
+
+      const result = await service.resetPassword({
+        token: 'alias-reset-token',
+        newPassword: 'NewStrongPassword123!',
+      });
+
+      expect(mockUserModel.findOne).toHaveBeenCalledWith({
+        passwordResetToken: 'alias-reset-token',
+      });
+      expect(result.message).toContain('Password reset successfully');
+    });
+
+    it('throws BadRequestException when reset token is missing or expired or unknown', async () => {
+      await expect(
+        service.resetPassword({ newPassword: 'NewStrongPassword123!' }),
+      ).rejects.toThrow(BadRequestException);
+
+      const unknownSelect = jest.fn().mockResolvedValue(null);
+      mockUserModel.findOne.mockReturnValue({ select: unknownSelect });
+      await expect(
+        service.resetPassword({
+          passwordResetToken: 'unknown',
+          newPassword: 'NewStrongPassword123!',
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      const expiredSelect = jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        status: AccountStatus.ACTIVE,
+        passwordResetExpiresAt: new Date(Date.now() - 1000),
+      });
+      mockUserModel.findOne.mockReturnValue({ select: expiredSelect });
+      await expect(
+        service.resetPassword({
+          passwordResetToken: 'expired',
+          newPassword: 'NewStrongPassword123!',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockSessionModel.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('throws BadRequestException when account is inactive or token was concurrently consumed', async () => {
+      const inactiveSelect = jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        status: AccountStatus.SUSPENDED,
+        passwordResetExpiresAt: new Date(Date.now() + 60_000),
+      });
+      mockUserModel.findOne.mockReturnValue({ select: inactiveSelect });
+      await expect(
+        service.resetPassword({
+          passwordResetToken: 'valid',
+          newPassword: 'NewStrongPassword123!',
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      const activeSelect = jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        status: AccountStatus.ACTIVE,
+        passwordResetExpiresAt: new Date(Date.now() + 60_000),
+      });
+      mockUserModel.findOne.mockReturnValue({ select: activeSelect });
+      mockUserModel.findOneAndUpdate.mockResolvedValue(null);
+
+      await expect(
+        service.resetPassword({
+          passwordResetToken: 'race-token',
+          newPassword: 'NewStrongPassword123!',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockSessionModel.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('forgotPassword', () => {
+    it('generates short-lived passwordResetToken and passwordResetExpiresAt for active user and sends reset email', async () => {
+      const selectMock = jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        email: 'traveler@example.com',
+        firstName: 'Abdelaziz',
+        status: AccountStatus.ACTIVE,
+      });
+      mockUserModel.findOne.mockReturnValue({ select: selectMock });
+      mockUserModel.findByIdAndUpdate.mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+      });
+
+      const before = Date.now();
+      const result = await service.forgotPassword({
+        email: '  Traveler@Example.COM ',
+      });
+      const after = Date.now();
+
+      expect(mockUserModel.findOne).toHaveBeenCalledWith({
+        email: 'traveler@example.com',
+      });
+      expect(selectMock).toHaveBeenCalledWith('email firstName status');
+      expect(mockUserModel.findByIdAndUpdate).toHaveBeenCalledTimes(1);
+
+      const updateCalls = mockUserModel.findByIdAndUpdate.mock.calls as [
+        [
+          string,
+          {
+            $set: {
+              passwordResetToken: string;
+              passwordResetExpiresAt: Date;
+            };
+          },
+        ],
+      ];
+      const token = updateCalls[0][1].$set.passwordResetToken;
+      const expiresAt = updateCalls[0][1].$set.passwordResetExpiresAt;
+
+      expect(typeof token).toBe('string');
+      expect(token).toHaveLength(64);
+      expect(expiresAt).toBeInstanceOf(Date);
+      expect(expiresAt.getTime()).toBeGreaterThanOrEqual(
+        before + 14 * 60 * 1000,
+      );
+      expect(expiresAt.getTime()).toBeLessThanOrEqual(after + 16 * 60 * 1000);
+
+      expect(mockMailService.sendPasswordResetEmail).toHaveBeenCalledWith({
+        to: 'traveler@example.com',
+        firstName: 'Abdelaziz',
+        token,
+        expiresInMinutes: 15,
+      });
+      expect(result).toEqual({
+        message:
+          'If an active account exists with that email, a password reset link has been sent.',
+      });
+    });
+
+    it('returns identical generic response without updating or sending email when account does not exist', async () => {
+      const selectMock = jest.fn().mockResolvedValue(null);
+      mockUserModel.findOne.mockReturnValue({ select: selectMock });
+
+      const result = await service.forgotPassword({
+        email: 'unknown@example.com',
+      });
+
+      expect(mockUserModel.findByIdAndUpdate).not.toHaveBeenCalled();
+      expect(mockMailService.sendPasswordResetEmail).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        message:
+          'If an active account exists with that email, a password reset link has been sent.',
+      });
+    });
+
+    it('returns identical generic response without generating token for suspended or deactivated accounts', async () => {
+      const selectMock = jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        email: 'suspended@example.com',
+        firstName: 'Suspended',
+        status: AccountStatus.SUSPENDED,
+      });
+      mockUserModel.findOne.mockReturnValue({ select: selectMock });
+
+      const result = await service.forgotPassword({
+        email: 'suspended@example.com',
+      });
+
+      expect(mockUserModel.findByIdAndUpdate).not.toHaveBeenCalled();
+      expect(mockMailService.sendPasswordResetEmail).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        message:
+          'If an active account exists with that email, a password reset link has been sent.',
+      });
+    });
+  });
+
+  describe('logout', () => {
+    it('revokes current UserSession by jti and returns clearCookie options', async () => {
+      mockSessionModel.updateOne.mockResolvedValue({ modifiedCount: 1 });
+
+      const result = await service.logout({
+        userId: '507f1f77bcf86cd799439011',
+        email: 'traveler@example.com',
+        role: Role.REGISTERED_USER,
+        jti: 'session-jti-123',
+      });
+
+      expect(mockSessionModel.updateOne).toHaveBeenCalledWith(
+        {
+          jti: 'session-jti-123',
+          user: '507f1f77bcf86cd799439011',
+          revokedAt: null,
+        },
+        { $set: { revokedAt: expect.any(Date) as Date } },
+      );
+      expect(result).toEqual({
+        response: { message: 'Logged out successfully' },
+        cookieName: 'access_token',
+        clearCookieOptions: {
+          httpOnly: true,
+          sameSite: 'lax',
+          secure: false,
+          path: '/',
+        },
+      });
+    });
+  });
+  describe('getMe', () => {
+    it('returns safe user details, role, status, and omits sensitive fields for traveler', async () => {
+      const lastLoginAt = new Date('2026-11-19T12:00:00.000Z');
+      mockUserModel.findById.mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        email: 'traveler@example.com',
+        firstName: 'Abdelaziz',
+        lastName: 'Mohamed',
+        preferredCurrency: 'EGP',
+        role: Role.REGISTERED_USER,
+        status: AccountStatus.ACTIVE,
+        isEmailVerified: true,
+        mustChangePassword: false,
+        lastLoginAt,
+        passwordHash: 'secret-hash',
+        emailVerificationToken: 'secret-verify',
+        passwordResetToken: 'secret-reset',
+      });
+
+      const result = await service.getMe({
+        userId: '507f1f77bcf86cd799439011',
+        email: 'traveler@example.com',
+        role: Role.REGISTERED_USER,
+        jti: 'jti-1',
+      });
+
+      expect(result).toEqual({
+        id: '507f1f77bcf86cd799439011',
+        email: 'traveler@example.com',
+        firstName: 'Abdelaziz',
+        lastName: 'Mohamed',
+        preferredCurrency: 'EGP',
+        role: Role.REGISTERED_USER,
+        status: AccountStatus.ACTIVE,
+        isEmailVerified: true,
+        mustChangePassword: false,
+        lastLoginAt,
+      });
+      expect('passwordHash' in result).toBe(false);
+      expect('emailVerificationToken' in result).toBe(false);
+      expect('passwordResetToken' in result).toBe(false);
+      expect(result.assignedProviderId).toBeUndefined();
+    });
+
+    it('includes assignedProviderId and assignedProviderType for moderators', async () => {
+      mockUserModel.findById.mockResolvedValue({
+        _id: '507f1f77bcf86cd799439022',
+        email: 'airline-mod@example.com',
+        firstName: 'Airline',
+        lastName: 'Mod',
+        preferredCurrency: 'USD',
+        role: Role.AIRLINE_MODERATOR,
+        status: AccountStatus.ACTIVE,
+        isEmailVerified: true,
+        mustChangePassword: true,
+      });
+
+      const result = await service.getMe({
+        userId: '507f1f77bcf86cd799439022',
+        email: 'airline-mod@example.com',
+        role: Role.AIRLINE_MODERATOR,
+        jti: 'jti-mod',
+        assignedProviderId: '507f1f77bcf86cd799439099',
+        assignedProviderType: 'airline',
+      });
+
+      expect(result.assignedProviderId).toBe('507f1f77bcf86cd799439099');
+      expect(result.assignedProviderType).toBe('airline');
+      expect(result.mustChangePassword).toBe(true);
+    });
+
+    it('falls back to ModeratorAssignment lookup when moderator context is absent from authUser', async () => {
+      mockUserModel.findById.mockResolvedValue({
+        _id: '507f1f77bcf86cd799439033',
+        email: 'hotel-mod@example.com',
+        firstName: 'Hotel',
+        lastName: 'Mod',
+        preferredCurrency: 'USD',
+        role: Role.HOTEL_MODERATOR,
+        status: AccountStatus.ACTIVE,
+        isEmailVerified: true,
+        mustChangePassword: false,
+      });
+      mockAssignmentModel.findOne.mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          providerType: 'hotel',
+          hotel: '507f1f77bcf86cd799439088',
+        }),
+      });
+
+      const result = await service.getMe({
+        userId: '507f1f77bcf86cd799439033',
+        email: 'hotel-mod@example.com',
+        role: Role.HOTEL_MODERATOR,
+        jti: 'jti-hotel-mod',
+      });
+
+      expect(result.assignedProviderId).toBe('507f1f77bcf86cd799439088');
+      expect(result.assignedProviderType).toBe('hotel');
+    });
+
+    it('throws UnauthorizedException or ForbiddenException when user is missing or inactive', async () => {
+      await expect(
+        service.getMe({
+          userId: 'invalid-id',
+          email: 'bad@example.com',
+          role: Role.REGISTERED_USER,
+          jti: 'jti',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+
+      mockUserModel.findById.mockResolvedValue(null);
+      await expect(
+        service.getMe({
+          userId: '507f1f77bcf86cd799439011',
+          email: 'missing@example.com',
+          role: Role.REGISTERED_USER,
+          jti: 'jti',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+
+      mockUserModel.findById.mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        status: AccountStatus.SUSPENDED,
+      });
+      await expect(
+        service.getMe({
+          userId: '507f1f77bcf86cd799439011',
+          email: 'suspended@example.com',
+          role: Role.REGISTERED_USER,
+          jti: 'jti',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('revokeUserSessions', () => {
+    it('revokes all unrevoked sessions for a user and returns modified count', async () => {
+      mockSessionModel.updateMany.mockResolvedValue({ modifiedCount: 2 });
+
+      const count = await service.revokeUserSessions(
+        '507f1f77bcf86cd799439011',
+      );
+
+      expect(count).toBe(2);
+      expect(mockSessionModel.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ revokedAt: null }) as unknown,
+        expect.objectContaining({
+          $set: expect.objectContaining({
+            revokedAt: expect.any(Date) as unknown,
+          }) as unknown,
+        }),
+      );
     });
   });
 });
