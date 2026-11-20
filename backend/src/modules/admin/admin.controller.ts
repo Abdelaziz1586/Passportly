@@ -13,7 +13,9 @@ import {
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
+  ApiConflictResponse,
   ApiCookieAuth,
+  ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
@@ -31,6 +33,10 @@ import {
   AdminResetPasswordDto,
   AdminResetPasswordResponseDto,
 } from './dto/admin-reset-password.dto';
+import {
+  CreateModeratorDto,
+  ModeratorResponseDto,
+} from './dto/create-moderator.dto';
 
 @ApiTags('Administration')
 @ApiCookieAuth()
@@ -66,10 +72,24 @@ export class AdminController {
   @ApiOperation({
     summary: 'ACC-13: Create airline or hotel moderator account & assignment',
   })
-  createModerator() {
-    throw new NotImplementedException(
-      'POST /api/admin/moderators not implemented yet',
-    );
+  @ApiCreatedResponse({
+    description: 'Moderator account and provider assignment created',
+    type: ModeratorResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid moderator payload, role, or providerId',
+  })
+  @ApiConflictResponse({
+    description: 'Email already exists',
+  })
+  @ApiForbiddenResponse({ description: 'Admin role required' })
+  @ApiNotFoundResponse({ description: 'Target Airline or Hotel not found' })
+  createModerator(
+    @Body() dto: CreateModeratorDto,
+    @CurrentUser() admin: AuthenticatedUser,
+    @Req() req: Request,
+  ): Promise<ModeratorResponseDto> {
+    return this.adminService.createModerator(dto, admin, req.ip);
   }
 
   @Get('accounts')
