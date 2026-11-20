@@ -36,6 +36,7 @@ import {
   CreateItineraryDayDto,
   CreateTransportCostDto,
   ListItinerariesQueryDto,
+  PublicItinerarySearchQueryDto,
   ReorderItineraryDaysDto,
   UpdateActivityDto,
   UpdateBudgetEntryDto,
@@ -644,6 +645,58 @@ export class ItinerariesService {
       totalsByCategory: Object.fromEntries(totalsByCategory),
       total,
       entries: lines,
+    };
+  }
+
+  async searchPublicItineraries(query: PublicItinerarySearchQueryDto) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const filter: QueryFilter<ItineraryDocument> = {
+      visibility: ItineraryVisibility.PUBLIC,
+      isHidden: false,
+    };
+    if (query.search?.trim()) {
+      const search = new RegExp(this.escapeRegex(query.search.trim()), 'i');
+      filter.$or = [{ title: search }, { description: search }];
+    }
+    if (query.countryId) {
+      filter.countries = this.objectId(query.countryId, 'countryId');
+    }
+    if (
+      query.minDays !== undefined &&
+      query.maxDays !== undefined &&
+      query.minDays > query.maxDays
+    ) {
+      throw new BadRequestException('minDays must not exceed maxDays');
+    }
+    const durationConstraints: Record<string, unknown>[] = [];
+    if (query.minDays !== undefined) {
+      durationConstraints.push({
+        $gte: [{ $size: { $ifNull: ['$days', []] } }, query.minDays],
+      });
+    }
+    if (query.maxDays !== undefined) {
+      durationConstraints.push({
+        $lte: [{ $size: { $ifNull: ['$days', []] } }, query.maxDays],
+      });
+    }
+    if (durationConstraints.length > 0) {
+      filter.$expr = { $and: durationConstraints };
+    }
+
+    const [items, total] = await Promise.all([
+      this.itineraryModel
+        .find(filter)
+        .populate('user', 'firstName lastName avatarUrl')
+        .sort(this.sortOptions(query.sortBy, query.sortOrder))
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .exec(),
+      this.itineraryModel.countDocuments(filter).exec(),
+    ]);
+    return {
+      items,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     };
   }
 

@@ -27,6 +27,7 @@ parent lands. Each pull request shows only its own ticket delta.
 | SCRUM-107 | ITN-16 | Update an intercity transport cost |
 | SCRUM-108 | ITN-16 | Delete an intercity transport cost |
 | SCRUM-109 | ITN-18 | Calculate a budget summary with cached FX rates |
+| SCRUM-110 | ITN-20 | Search and filter public itineraries |
 
 Each ticket is checked with `npm run lint`, `npm run build` and `npm test`.
 Database tests use an isolated local MongoDB replica set and never load application environment files.
