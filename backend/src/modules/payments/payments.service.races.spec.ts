@@ -1,7 +1,7 @@
 import { ConflictException } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { BookingStatus, BookingType, PaymentStatus } from '../../common/enums';
-import { PaymentsService } from './payments.service';
+import { INTENT_CREATION_GRACE_MS, PaymentsService } from './payments.service';
 
 interface Chain<T> extends PromiseLike<T> {
   lean(): Chain<T>;
@@ -206,5 +206,73 @@ describe('PaymentsService.createPayment: intent creation racing the payment expi
       t.service.createPayment(userId.toString(), dto(t.booking)),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(t.stripe.paymentIntents.cancel).toHaveBeenCalledWith('pi_1');
+  });
+});
+
+describe('PaymentsService.retryPayment: retry racing the first intent creation', () => {
+  it('refuses a retry while the first intent is still being created, so only one intent exists', async () => {
+    const t = build();
+    // Hold the first Stripe call open: createPayment has inserted the payment but has no intent id yet.
+    let releaseStripe: () => void = () => undefined;
+    t.stripe.paymentIntents.create.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseStripe = () => {
+            t.intents.push('pi_1');
+            resolve({
+              id: 'pi_1',
+              status: 'requires_payment_method',
+              client_secret: 'pi_1_secret',
+            });
+          };
+        }),
+    );
+    const creating = t.service.createPayment(userId.toString(), dto(t.booking));
+    await new Promise((r) => setImmediate(r));
+    expect(t.store.payment?.stripePaymentIntentId).toBeUndefined();
+
+    // The caller learned the payment id and retries at once.
+    await expect(
+      t.service.retryPayment(
+        userId.toString(),
+        (t.store.payment as PaymentDoc)._id.toString(),
+      ),
+    ).rejects.toThrow(/still being created/);
+    expect(t.stripe.paymentIntents.create).toHaveBeenCalledTimes(1);
+
+    releaseStripe();
+    const res = await creating;
+    expect(res.stripePaymentIntentId).toBe('pi_1');
+    expect(t.intents).toEqual(['pi_1']);
+    expect(t.paymentModel.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('lets a retry through once the first creation clearly crashed (no intent id after the grace period)', async () => {
+    const t = build();
+    t.stripe.paymentIntents.create.mockImplementationOnce(
+      () => new Promise(() => undefined),
+    ); // never answers
+    void t.service.createPayment(userId.toString(), dto(t.booking));
+    await new Promise((r) => setImmediate(r));
+    (t.store.payment as PaymentDoc).createdAt = new Date(
+      Date.now() - INTENT_CREATION_GRACE_MS - 1000,
+    );
+    const res = await t.service.retryPayment(
+      userId.toString(),
+      (t.store.payment as PaymentDoc)._id.toString(),
+    );
+    expect(res.stripePaymentIntentId).toBe('pi_1');
+  });
+
+  it('retries normally when the payment already has its intent', async () => {
+    const t = build();
+    await t.service.createPayment(userId.toString(), dto(t.booking));
+    (t.store.payment as PaymentDoc).status = PaymentStatus.FAILED;
+    const res = await t.service.retryPayment(
+      userId.toString(),
+      (t.store.payment as PaymentDoc)._id.toString(),
+    );
+    expect(res.clientSecret).toBe('pi_1_secret');
+    expect(t.stripe.paymentIntents.create).toHaveBeenCalledTimes(1);
   });
 });

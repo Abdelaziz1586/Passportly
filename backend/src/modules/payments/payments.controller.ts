@@ -34,6 +34,7 @@ import {
 import { AcceptPoliciesDto } from './dto/accept-policies.dto';
 import { BookingParamsDto } from './dto/booking-params.dto';
 import { CreatePaymentDto } from './dto/create-payment.dto';
+import { PaymentParamsDto } from './dto/payment-params.dto';
 import { PaymentIntentResponseDto } from './dto/payment-response.dto';
 import {
   AcceptPoliciesResponseDto,
@@ -151,11 +152,32 @@ export class PaymentsController {
   @ApiCookieAuth()
   @Roles(Role.REGISTERED_USER)
   @Post('payments/:id/retry')
-  @ApiOperation({ summary: 'PAY-01: Retry a failed or pending payment' })
-  retryPayment() {
-    throw new NotImplementedException(
-      'POST /api/payments/:id/retry not implemented yet',
-    );
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'PAY-01: Retry a failed or pending payment',
+    description:
+      'After a failed (or still pending) attempt, returns a usable clientSecret so the owner can pay again until the hold expires. The same PaymentIntent is reused when Stripe still allows it, otherwise a new one is created. The payment goes back to PENDING. Only the owner; the booking must still be PENDING_PAYMENT with a running hold.',
+  })
+  @ApiOkResponse({
+    description: 'Payment is PENDING again; use the clientSecret',
+    type: PaymentIntentResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid id' })
+  @ApiUnauthorizedResponse({ description: 'Not signed in' })
+  @ApiForbiddenResponse({ description: 'Only registered users may retry' })
+  @ApiNotFoundResponse({ description: 'Payment not found or not yours' })
+  @ApiConflictResponse({
+    description:
+      'Payment is not FAILED/PENDING, it is processing or already succeeded, or the booking hold expired',
+  })
+  @ApiServiceUnavailableResponse({
+    description: 'Stripe is not configured or not reachable',
+  })
+  retryPayment(
+    @Param() params: PaymentParamsDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<PaymentIntentResponse> {
+    return this.paymentsService.retryPayment(user.userId, params.id);
   }
 
   @ApiCookieAuth()
