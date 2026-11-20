@@ -33,6 +33,8 @@ import { LoginResponseDto } from './dto/login-response.dto';
 import { LoginDto } from './dto/login.dto';
 import { LogoutResponseDto } from './dto/logout-response.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ResetPasswordResponseDto } from './dto/reset-password-response.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SafeUserResponseDto } from './dto/safe-user-response.dto';
 import { VerifyEmailQueryDto } from './dto/verify-email-query.dto';
 import { VerifyEmailResponseDto } from './dto/verify-email-response.dto';
@@ -145,11 +147,20 @@ export class AuthController {
 
   @Public()
   @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'ACC-07 (Optional): Reset password with token' })
-  resetPassword() {
-    throw new NotImplementedException(
-      'POST /api/auth/reset-password not implemented yet',
-    );
+  @ApiOkResponse({
+    description: 'Password reset successfully and existing sessions revoked',
+    type: ResetPasswordResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description:
+      'Missing, invalid, or expired reset token, or weak new password',
+  })
+  resetPassword(
+    @Body() dto: ResetPasswordDto,
+  ): Promise<ResetPasswordResponseDto> {
+    return this.authService.resetPassword(dto);
   }
 
   @ApiCookieAuth()
