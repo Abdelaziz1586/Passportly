@@ -1,12 +1,17 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 import { BookingType, PaymentStatus } from '../../../common/enums';
 
 export type PaymentDocument = HydratedDocument<Payment>;
 
 @Schema({ timestamps: true, collection: 'payments' })
 export class Payment {
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  })
   user: Types.ObjectId;
 
   @Prop({
@@ -17,10 +22,10 @@ export class Payment {
   })
   bookingType: BookingType;
 
-  @Prop({ type: Types.ObjectId, ref: 'FlightBooking', default: null })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'FlightBooking', default: null })
   flightBooking?: Types.ObjectId | null;
 
-  @Prop({ type: Types.ObjectId, ref: 'HotelBooking', default: null })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'HotelBooking', default: null })
   hotelBooking?: Types.ObjectId | null;
 
   @Prop({ required: true, min: 0 })
