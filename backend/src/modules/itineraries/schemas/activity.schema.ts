@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
+import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 import {
   MediaItem,
   MediaItemSchema,
@@ -10,18 +10,18 @@ export type ActivityDocument = HydratedDocument<Activity>;
 @Schema({ timestamps: true, collection: 'activities' })
 export class Activity {
   @Prop({
-    type: MongooseSchema.Types.ObjectId,
+    type: SchemaTypes.ObjectId,
     ref: 'Itinerary',
     required: true,
     index: true,
   })
   itinerary: Types.ObjectId;
 
-  @Prop({ type: MongooseSchema.Types.ObjectId, required: true, index: true })
+  @Prop({ type: SchemaTypes.ObjectId, required: true, index: true })
   dayId: Types.ObjectId;
 
   @Prop({
-    type: MongooseSchema.Types.ObjectId,
+    type: SchemaTypes.ObjectId,
     ref: 'User',
     required: true,
     index: true,
@@ -37,11 +37,7 @@ export class Activity {
   @Prop({ trim: true })
   category?: string;
 
-  @Prop({
-    type: MongooseSchema.Types.ObjectId,
-    ref: 'Attraction',
-    default: null,
-  })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'Attraction', default: null })
   attraction?: Types.ObjectId | null;
 
   @Prop({ trim: true })
