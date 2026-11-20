@@ -43,6 +43,7 @@ import {
   ListAccountsQueryDto,
   PaginatedAccountsResponseDto,
 } from './dto/list-accounts-query.dto';
+import { ReactivateAccountResponseDto } from './dto/reactivate-account-response.dto';
 import {
   AccountStatusChangeResponseDto,
   SuspendAccountDto,
@@ -144,10 +145,21 @@ export class AdminController {
 
   @Patch('accounts/:id/reactivate')
   @ApiOperation({ summary: 'ACC-15, ACC-16: Reactivate suspended account' })
-  reactivateAccount() {
-    throw new NotImplementedException(
-      'PATCH /api/admin/accounts/:id/reactivate not implemented yet',
-    );
+  @ApiParam({ name: 'id', type: String, description: 'Target account ID' })
+  @ApiOkResponse({
+    description: 'Account reactivated and lockout/suspension flags cleared',
+    type: ReactivateAccountResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid account ID' })
+  @ApiConflictResponse({ description: 'Account is already active' })
+  @ApiForbiddenResponse({ description: 'Admin role required' })
+  @ApiNotFoundResponse({ description: 'Account not found' })
+  reactivateAccount(
+    @Param('id') id: string,
+    @CurrentUser() admin: AuthenticatedUser,
+    @Req() req: Request,
+  ): Promise<ReactivateAccountResponseDto> {
+    return this.adminService.reactivateAccount(id, admin, req.ip);
   }
 
   @Patch('providers/:type/:id/deactivate')

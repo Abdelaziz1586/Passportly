@@ -390,3 +390,16 @@ Implement SCRUM-25 (PATCH /api/admin/accounts/:id/suspend): Set AccountStatus.SU
 How the output was used:
 Added AuthService.revokeUserSessions helper, imported AuthModule into AdminModule, implemented SuspendAccountDto, AccountStatusChangeResponseDto, AdminService.suspendAccount (self-suspension guard, status update, session revocation, ACCOUNT_SUSPENDED notification, ACCOUNT_SUSPENDED audit log), and AdminController.suspendAccount. Added unit tests in auth.service.spec.ts, admin.service.spec.ts, and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
 ================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-15, ACC-16 (PATCH /api/admin/accounts/:id/reactivate, SCRUM-26)
+
+Prompt:
+Implement SCRUM-26 (PATCH /api/admin/accounts/:id/reactivate): Restore AccountStatus.ACTIVE, clear lockout/suspension flags, send in-app Notification, and write AuditLog.
+
+How the output was used:
+Implemented ReactivateAccountResponseDto, AdminService.reactivateAccount (restoring AccountStatus.ACTIVE, clearing failedLoginAttempts/lockoutUntil/suspendedAt/suspendedReason/deactivatedAt, sending ACCOUNT_REACTIVATED notification, and writing ACCOUNT_REACTIVATED audit log), and AdminController.reactivateAccount. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
