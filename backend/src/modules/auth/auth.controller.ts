@@ -4,7 +4,6 @@ import {
   Get,
   HttpCode,
   HttpStatus,
-  NotImplementedException,
   Patch,
   Post,
   Query,
@@ -27,6 +26,8 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { AuthService } from './auth.service';
+import { ChangePasswordResponseDto } from './dto/change-password-response.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordResponseDto } from './dto/forgot-password-response.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
@@ -166,10 +167,23 @@ export class AuthController {
   @ApiCookieAuth()
   @Patch('change-password')
   @ApiOperation({ summary: 'ACC-08: Change current user password' })
-  changePassword(@CurrentUser() user: AuthenticatedUser) {
-    throw new NotImplementedException(
-      `PATCH /api/auth/change-password not implemented yet (user: ${user.userId})`,
-    );
+  @ApiOkResponse({
+    description:
+      'Password changed successfully and mustChangePassword flag cleared',
+    type: ChangePasswordResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description:
+      'Invalid payload, weak password, or new password matches current password',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Authentication required or current password is incorrect',
+  })
+  changePassword(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: ChangePasswordDto,
+  ): Promise<ChangePasswordResponseDto> {
+    return this.authService.changePassword(user, dto);
   }
 
   @ApiCookieAuth()

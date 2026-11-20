@@ -87,10 +87,6 @@ Implemented LoginDto, LoginResponseDto, AuthService.login (email normalization, 
 Date: 2026-11-19
 Student: Abdelaziz Mohamed
 Tool: Antigravity (Gemini 4 Hydrogen)
-================================================
-Date: 2026-11-19
-Student: Abdelaziz Mohamed
-Tool: Antigravity (Gemini 4 Hydrogen)
 Related Requirement: ACC-06 (POST /api/auth/logout)
 
 Prompt:
@@ -136,4 +132,21 @@ Details: Validate passwordResetToken and expiry, enforce password rules, update 
 
 How the output was used:
 Implemented ResetPasswordDto, ResetPasswordResponseDto, AuthService.resetPassword (validates passwordResetToken/token alias and expiry on ACTIVE accounts, enforces password complexity, hashes with bcryptjs, clears token/expiry/lockout/mustChangePassword atomically, and revokes active UserSessions), AuthController.resetPassword (@Public(), 200 OK, Swagger docs), and unit + HTTP integration tests in auth.service.spec.ts and auth.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-08 (PATCH /api/auth/change-password, SCRUM-13)
+
+Prompt:
+Requirement: ACC-08
+Endpoint: PATCH /api/auth/change-password
+Controller: backend/src/modules/auth/auth.controller.ts
+Allowed Roles: Authenticated (All Roles)
+Details: Verify current password, enforce password strength rules on new password, update passwordHash, clear mustChangePassword flag, and optionally revoke other sessions.
+
+How the output was used:
+Implemented ChangePasswordDto, ChangePasswordResponseDto, AuthService.changePassword (verifies currentPassword, enforces newPassword complexity and difference from current password, hashes with bcryptjs, clears mustChangePassword, and revokes other UserSessions unless revokeOtherSessions is false), AuthController.changePassword Swagger/validation wiring, and unit + HTTP integration tests in auth.service.spec.ts and auth.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
 ================================================

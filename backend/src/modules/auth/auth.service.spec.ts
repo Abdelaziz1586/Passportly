@@ -23,6 +23,7 @@ describe('AuthService (ACC-01 register, ACC-02 verify-email, ACC-04/05 login)', 
     exists: jest.fn(),
     create: jest.fn(),
     findOne: jest.fn(),
+    findById: jest.fn(),
     findOneAndUpdate: jest.fn(),
     findByIdAndUpdate: jest.fn(),
   };
@@ -545,6 +546,147 @@ describe('AuthService (ACC-01 register, ACC-02 verify-email, ACC-04/05 login)', 
         }),
       ).rejects.toThrow(ForbiddenException);
       expect(mockSessionModel.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('changePassword', () => {
+    const authUser = {
+      userId: '507f1f77bcf86cd799439011',
+      email: 'traveler@example.com',
+      role: Role.REGISTERED_USER,
+      jti: 'current-jti-1',
+    };
+
+    it('verifies current password, updates passwordHash, clears mustChangePassword, and revokes other sessions by default', async () => {
+      const oldHash = await bcrypt.hash('OldPass123!', 4);
+      const selectMock = jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        email: 'traveler@example.com',
+        passwordHash: oldHash,
+        status: AccountStatus.ACTIVE,
+        mustChangePassword: true,
+      });
+      mockUserModel.findById.mockReturnValue({ select: selectMock });
+      mockUserModel.findByIdAndUpdate.mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        mustChangePassword: false,
+      });
+      mockSessionModel.updateMany.mockResolvedValue({ modifiedCount: 2 });
+
+      const result = await service.changePassword(authUser, {
+        currentPassword: 'OldPass123!',
+        newPassword: 'NewStrongPass456!',
+      });
+
+      expect(mockUserModel.findById).toHaveBeenCalledWith(authUser.userId);
+      expect(selectMock).toHaveBeenCalledWith('+passwordHash');
+
+      const updateCalls = mockUserModel.findByIdAndUpdate.mock.calls as [
+        [
+          string,
+          { $set: { passwordHash: string; mustChangePassword: boolean } },
+          { returnDocument: string },
+        ],
+      ];
+      expect(updateCalls[0][1].$set.mustChangePassword).toBe(false);
+      await expect(
+        bcrypt.compare(
+          'NewStrongPass456!',
+          updateCalls[0][1].$set.passwordHash,
+        ),
+      ).resolves.toBe(true);
+
+      expect(mockSessionModel.updateMany).toHaveBeenCalledWith(
+        {
+          user: '507f1f77bcf86cd799439011',
+          jti: { $ne: 'current-jti-1' },
+          revokedAt: null,
+        },
+        { $set: { revokedAt: expect.any(Date) as Date } },
+      );
+      expect(result).toEqual({
+        message: 'Password changed successfully',
+        mustChangePassword: false,
+        revokedOtherSessionsCount: 2,
+      });
+    });
+
+    it('preserves other active sessions when revokeOtherSessions is false', async () => {
+      const oldHash = await bcrypt.hash('OldPass123!', 4);
+      const selectMock = jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        passwordHash: oldHash,
+        status: AccountStatus.ACTIVE,
+        mustChangePassword: true,
+      });
+      mockUserModel.findById.mockReturnValue({ select: selectMock });
+      mockUserModel.findByIdAndUpdate.mockResolvedValue({});
+
+      const result = await service.changePassword(authUser, {
+        currentPassword: 'OldPass123!',
+        newPassword: 'NewStrongPass456!',
+        revokeOtherSessions: false,
+      });
+
+      expect(mockSessionModel.updateMany).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        message: 'Password changed successfully',
+        mustChangePassword: false,
+        revokedOtherSessionsCount: 0,
+      });
+    });
+
+    it('throws UnauthorizedException when current password does not match', async () => {
+      const oldHash = await bcrypt.hash('OldPass123!', 4);
+      const selectMock = jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        passwordHash: oldHash,
+        status: AccountStatus.ACTIVE,
+      });
+      mockUserModel.findById.mockReturnValue({ select: selectMock });
+
+      await expect(
+        service.changePassword(authUser, {
+          currentPassword: 'WrongPassword!',
+          newPassword: 'NewStrongPass456!',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(mockUserModel.findByIdAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it('throws BadRequestException when new password matches current password', async () => {
+      const oldHash = await bcrypt.hash('SameStrongPass123!', 4);
+      const selectMock = jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        passwordHash: oldHash,
+        status: AccountStatus.ACTIVE,
+      });
+      mockUserModel.findById.mockReturnValue({ select: selectMock });
+
+      await expect(
+        service.changePassword(authUser, {
+          currentPassword: 'SameStrongPass123!',
+          newPassword: 'SameStrongPass123!',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockUserModel.findByIdAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it('throws ForbiddenException when user account is inactive', async () => {
+      const oldHash = await bcrypt.hash('OldPass123!', 4);
+      const selectMock = jest.fn().mockResolvedValue({
+        _id: '507f1f77bcf86cd799439011',
+        passwordHash: oldHash,
+        status: AccountStatus.SUSPENDED,
+      });
+      mockUserModel.findById.mockReturnValue({ select: selectMock });
+
+      await expect(
+        service.changePassword(authUser, {
+          currentPassword: 'OldPass123!',
+          newPassword: 'NewStrongPass456!',
+        }),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 
