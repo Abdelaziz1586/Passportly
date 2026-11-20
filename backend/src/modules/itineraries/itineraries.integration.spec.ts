@@ -23,7 +23,12 @@ import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 import request from 'supertest';
 import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
-import { BudgetCategory, ItineraryVisibility, Role } from '../../common/enums';
+import {
+  BudgetCategory,
+  ItineraryVisibility,
+  Role,
+  TransportMode,
+} from '../../common/enums';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
@@ -477,6 +482,38 @@ describe('Itinerary endpoints and persistence', () => {
     ).toBe(20);
     await service.deleteBudgetEntry(String(entry._id), ownerId);
     expect(await service.budgetEntryModel.countDocuments()).toBe(0);
+  });
+
+  it('SCRUM-106/107/108: creates and edits transport costs with owner and day validation', async () => {
+    const { itinerary, dayId } = await itineraryWithDay();
+    const transport = await service.addTransportCost(
+      String(itinerary._id),
+      ownerId,
+      {
+        amount: 25,
+        currency: 'USD',
+        mode: TransportMode.TRAIN,
+        departureDayId: dayId,
+      },
+    );
+    await expect(
+      service.deleteTransportCost(String(transport._id), otherId),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(
+      (
+        await service.updateTransportCost(String(transport._id), ownerId, {
+          amount: 30,
+          notes: 'Express',
+        })
+      ).notes,
+    ).toBe('Express');
+    await expect(
+      service.updateTransportCost(String(transport._id), ownerId, {
+        departureDayId: new Types.ObjectId().toString(),
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    await service.deleteTransportCost(String(transport._id), ownerId);
+    expect(await service.transportCostModel.countDocuments()).toBe(0);
   });
 
   it('SCRUM-93: cascade-deletes activities, budgets and transport costs', async () => {
