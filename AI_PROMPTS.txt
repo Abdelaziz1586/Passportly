@@ -1473,4 +1473,16 @@ Implement my assigned Passportly Jira tasks following the repository architectur
 
 How the output was used:
 Export an itinerary as PDF. Reused and corrected the previously unmerged itinerary implementation, limited this commit to the ticket endpoint and its required DTOs/helpers, and ran lint, build and the available regression tests before committing. Added a delivery index linking all 28 ticket branches and pull requests with their merge order. Dependencies are recorded in the pull request; later ticket endpoints remain unimplemented until their own commits.
+
+================================================
+Date: 2026-11-19
+Student: Abdullah Emam
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: BLG-01 (SCRUM-117, POST /api/posts)
+
+Prompt:
+Implement SCRUM-117 [BLG-01] POST /api/posts - Create blog post (Draft or Published) with DTO validation, Tag upsert and normalization, slug generation, publishedAt on PUBLISHED, and unit tests.
+
+How the output was used:
+Fixed .gitignore upload path pattern and added shared UploadsModule/UploadsService so the backend builds cleanly, created CreatePostDto, BlogPostItemDto, blog.utils.ts helpers, BlogService.createPost, BlogController.createPost with Swagger/role decorators, and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
 ================================================

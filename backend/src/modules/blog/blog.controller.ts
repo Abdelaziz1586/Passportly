@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
@@ -6,11 +7,23 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
-import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiCookieAuth,
+  ApiCreatedResponse,
+  ApiForbiddenResponse,
+  ApiOperation,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
+import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { BlogService } from './blog.service';
+import { BlogPostItemDto } from './dto/blog-post-response.dto';
+import { CreatePostDto } from './dto/create-post.dto';
 
 @ApiTags('Blog & Community')
 @Controller()
@@ -21,8 +34,20 @@ export class BlogController {
   @Roles(Role.REGISTERED_USER)
   @Post('posts')
   @ApiOperation({ summary: 'BLG-01: Create blog post (Draft or Published)' })
-  createPost() {
-    throw new NotImplementedException('POST /api/posts not implemented yet');
+  @ApiCreatedResponse({
+    description: 'Blog post created successfully',
+    type: BlogPostItemDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid blog post payload or tags',
+  })
+  @ApiUnauthorizedResponse({ description: 'Authentication required' })
+  @ApiForbiddenResponse({ description: 'Insufficient role permissions' })
+  createPost(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreatePostDto,
+  ): Promise<BlogPostItemDto> {
+    return this.blogService.createPost(user.userId, dto);
   }
 
   @Public()
