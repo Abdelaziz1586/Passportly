@@ -1549,4 +1549,12 @@ Implement SCRUM-125 [BLG-07] DELETE /api/comments/:id - Delete comment verifying
 
 How the output was used:
 Added DeleteCommentResponseDto, BlogService.deleteComment with author/ADMIN authorization, atomic deletion, guarded commentsCount decrement, and admin audit/notification hooks, BlogController.deleteComment Swagger/role wiring, and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
+
+Related Requirement: BLG-06 (SCRUM-126, POST /api/posts/:id/like)
+
+Prompt:
+Implement SCRUM-126 [BLG-06] POST /api/posts/:id/like - Like a published post (at most once per user) using unique (post, user) index and incrementing BlogPost.likesCount.
+
+How the output was used:
+Added PostLikeResponseDto, BlogService.likePost verifying PUBLISHED/non-hidden status, inserting Like with duplicate-key ConflictException handling, and atomically incrementing BlogPost.likesCount, plus BlogController.likePost Swagger/role wiring and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
 ================================================

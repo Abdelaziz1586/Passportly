@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
+  ApiConflictResponse,
   ApiCookieAuth,
   ApiCreatedResponse,
   ApiForbiddenResponse,
@@ -37,6 +38,7 @@ import {
   DeleteBlogPostResponseDto,
   DeleteCommentResponseDto,
   PaginatedBlogPostsResponseDto,
+  PostLikeResponseDto,
 } from './dto/blog-post-response.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { CreatePostDto } from './dto/create-post.dto';
@@ -252,10 +254,21 @@ export class BlogController {
   @Roles(Role.REGISTERED_USER)
   @Post('posts/:id/like')
   @ApiOperation({ summary: 'BLG-06: Like a post (at most once per user)' })
-  likePost() {
-    throw new NotImplementedException(
-      'POST /api/posts/:id/like not implemented yet',
-    );
+  @ApiParam({ name: 'id', description: 'Published blog post MongoDB ObjectId' })
+  @ApiCreatedResponse({
+    description: 'Post liked successfully',
+    type: PostLikeResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid blog post ID' })
+  @ApiUnauthorizedResponse({ description: 'Authentication required' })
+  @ApiForbiddenResponse({ description: 'Insufficient role permissions' })
+  @ApiNotFoundResponse({ description: 'Published blog post not found' })
+  @ApiConflictResponse({ description: 'User has already liked this post' })
+  likePost(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<PostLikeResponseDto> {
+    return this.blogService.likePost(id, user.userId);
   }
 
   @ApiCookieAuth()

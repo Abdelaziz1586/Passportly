@@ -93,6 +93,20 @@ export class BlogPostItemDto {
   updatedAt?: Date;
 }
 
+export class PostLikeResponseDto {
+  @ApiProperty({ example: 'Post liked successfully' })
+  message: string;
+
+  @ApiProperty({ example: '673c1f2a9c4b2d001f8a3333' })
+  postId: string;
+
+  @ApiProperty({ example: true })
+  liked: boolean;
+
+  @ApiProperty({ example: 1 })
+  likesCount: number;
+}
+
 export class PaginatedBlogPostsResponseDto {
   @ApiProperty({ type: [BlogPostItemDto] })
   data: BlogPostItemDto[];
