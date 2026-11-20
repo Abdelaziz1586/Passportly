@@ -338,3 +338,16 @@ Implement SCRUM-34 (POST /api/reports): Validate targetType (BLOG_POST, COMMENT,
 How the output was used:
 Updated ReportsModule to import BlogModule, ItinerariesModule, and HotelsModule; implemented CreateReportDto, ReportResponseDto, ReportsService.createReport (validating target existence, visibility/hidden protections, and duplicate pending report checks), and ReportsController.createReport. Added unit tests in reports.service.spec.ts and reports.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
 ================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-07a (POST /api/admin/users/:id/reset-password, SCRUM-22)
+
+Prompt:
+Implement SCRUM-22 (POST /api/admin/users/:id/reset-password): Allow ADMIN to set a new temporary password for user :id, set mustChangePassword = true, revoke user sessions, create Notification & AuditLog.
+
+How the output was used:
+Added AuthService.revokeUserSessions helper, imported AuthModule into AdminModule, implemented AdminResetPasswordDto, AdminResetPasswordResponseDto, AdminService.resetUserPassword (bcrypt hashing, mustChangePassword = true, session revocation, in-app notification, ADMIN_PASSWORD_RESET audit log), and AdminController.resetUserPassword. Added unit tests in auth.service.spec.ts, admin.service.spec.ts, and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
