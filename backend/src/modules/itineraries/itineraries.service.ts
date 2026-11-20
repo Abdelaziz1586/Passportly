@@ -25,6 +25,7 @@ import {
 } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import type { MediaItem } from '../../common/schemas/media-item.schema';
+import { HotelsService } from '../hotels/hotels.service';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
 import { AttractionDocument } from '../reference-data/schemas/attraction.schema';
 import { CityDocument } from '../reference-data/schemas/city.schema';
@@ -36,6 +37,7 @@ import {
   CreateBudgetEntryDto,
   CreateItineraryDayDto,
   CreateTransportCostDto,
+  ItineraryContextSearchQueryDto,
   ListItinerariesQueryDto,
   PublicItinerarySearchQueryDto,
   ReorderItineraryDaysDto,
@@ -91,6 +93,7 @@ export class ItinerariesService {
     readonly httpService: HttpService,
     readonly configService: ConfigService,
     readonly referenceDataService: ReferenceDataService,
+    readonly hotelsService: HotelsService,
     readonly uploadsService: UploadsService,
   ) {}
 
@@ -859,6 +862,64 @@ export class ItinerariesService {
     return this.getItineraryDetails(clone);
   }
 
+  async searchHotelsForItinerary(
+    id: string,
+    userId: string,
+    query: ItineraryContextSearchQueryDto,
+  ) {
+    const itinerary = await this.findOwnedItinerary(id, userId);
+    const days = this.selectDays(itinerary, query);
+    const cityIds = Array.from(
+      new Set(
+        days
+          .map((day) => day.city)
+          .filter((city): city is Types.ObjectId => Boolean(city))
+          .map((city) => String(city)),
+      ),
+    );
+    const stays: Array<{
+      cityId: string;
+      cityName?: string;
+      checkInDate: Date;
+      checkOutDate: Date;
+      startDay: number;
+      endDay: number;
+    }> = [];
+    for (const day of days) {
+      if (!day.city) continue;
+      const cityId = String(day.city);
+      const previousStay = stays[stays.length - 1];
+      if (
+        previousStay?.cityId === cityId &&
+        previousStay.endDay + 1 === day.dayNumber
+      ) {
+        previousStay.endDay = day.dayNumber;
+        previousStay.checkOutDate = this.addUtcDays(day.date, 1);
+        if (day.cityName) previousStay.cityName = day.cityName;
+        continue;
+      }
+      stays.push({
+        cityId,
+        ...(day.cityName ? { cityName: day.cityName } : {}),
+        checkInDate: day.date,
+        checkOutDate: this.addUtcDays(day.date, 1),
+        startDay: day.dayNumber,
+        endDay: day.dayNumber,
+      });
+    }
+    const suggestions = await Promise.all(
+      stays.map(async (stay) => ({
+        ...stay,
+        hotels: await this.hotelsService.searchForStay(
+          stay.cityId,
+          stay.checkInDate,
+          stay.checkOutDate,
+        ),
+      })),
+    );
+    return { itineraryId: String(itinerary._id), cityIds, stays: suggestions };
+  }
+
   private async getItineraryDetails(
     itinerary: ItineraryDocument,
   ): Promise<Record<string, unknown>> {
@@ -1162,6 +1223,30 @@ export class ItinerariesService {
     if (startTime && endTime && startTime > endTime) {
       throw new BadRequestException('endTime must be after startTime');
     }
+  }
+
+  private selectDays(
+    itinerary: ItineraryDocument,
+    query: ItineraryContextSearchQueryDto,
+  ) {
+    if (
+      query.startDay !== undefined &&
+      query.endDay !== undefined &&
+      query.startDay > query.endDay
+    ) {
+      throw new BadRequestException('startDay must not exceed endDay');
+    }
+    return [...itinerary.days]
+      .filter((day) => {
+        if (query.startDay !== undefined && day.dayNumber < query.startDay) {
+          return false;
+        }
+        if (query.endDay !== undefined && day.dayNumber > query.endDay) {
+          return false;
+        }
+        return true;
+      })
+      .sort((first, second) => first.dayNumber - second.dayNumber);
   }
 
   private sortOptions(

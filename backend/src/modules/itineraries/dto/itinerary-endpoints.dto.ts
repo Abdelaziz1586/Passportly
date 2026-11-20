@@ -475,3 +475,19 @@ export class BudgetSummaryQueryDto {
   @Matches(/^[A-Z]{3}$/)
   currency?: string;
 }
+
+export class ItineraryContextSearchQueryDto {
+  @ApiPropertyOptional({ description: 'First day number in the search range' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  startDay?: number;
+
+  @ApiPropertyOptional({ description: 'Last day number in the search range' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  endDay?: number;
+}

@@ -716,6 +716,68 @@ describe('Itinerary endpoints and persistence', () => {
     ).toBe(0);
   });
 
+  it('SCRUM-113: groups city stays and only suggests hotels with a room for every night', async () => {
+    const { itinerary, dayId } = await itineraryWithDay();
+    const country = await reference.countryModel
+      .findOne({ code: 'FR' })
+      .orFail();
+    const city = await reference.cityModel.create({
+      name: 'Paris',
+      country: country._id,
+      countryCode: 'FR',
+    });
+    const id = String(itinerary._id);
+    await service.updateDay(id, dayId, ownerId, { cityId: String(city._id) });
+    await service.addDay(id, ownerId, { cityId: String(city._id) });
+    const hotels = service.hotelsService;
+    const hotel = await hotels.hotelModel.create({
+      name: 'Available hotel',
+      city: city._id,
+      address: 'Test address',
+    });
+    const room = await hotels.roomModel.create({
+      hotel: hotel._id,
+      name: 'Double',
+      roomType: 'Double',
+      maxOccupancy: 2,
+      basePricePerNight: 100,
+    });
+    await hotels.roomAvailabilityModel.create([
+      {
+        hotel: hotel._id,
+        room: room._id,
+        date: new Date('2027-06-15'),
+        totalUnits: 2,
+      },
+      {
+        hotel: hotel._id,
+        room: room._id,
+        date: new Date('2027-06-16'),
+        totalUnits: 2,
+      },
+    ]);
+    const result = await service.searchHotelsForItinerary(id, ownerId, {});
+    expect(result.stays).toHaveLength(1);
+    expect(result.stays[0].hotels).toHaveLength(1);
+    expect(result.stays[0].checkOutDate.toISOString().slice(0, 10)).toBe(
+      '2027-06-17',
+    );
+    await hotels.roomAvailabilityModel.updateOne(
+      { date: new Date('2027-06-16') },
+      { isBlocked: true },
+    );
+    expect(
+      (await service.searchHotelsForItinerary(id, ownerId, {})).stays[0].hotels,
+    ).toEqual([]);
+    expect(
+      (await service.searchHotelsForItinerary(id, ownerId, { endDay: 1 }))
+        .stays[0].hotels,
+    ).toHaveLength(1);
+    await expect(
+      service.searchHotelsForItinerary(id, otherId, {}),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
   it('SCRUM-93: cascade-deletes activities, budgets and transport costs', async () => {
     const { itinerary, dayId } = await itineraryWithDay();
     const id = String(itinerary._id);

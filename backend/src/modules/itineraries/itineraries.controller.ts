@@ -33,6 +33,7 @@ import {
   CreateBudgetEntryDto,
   CreateItineraryDayDto,
   CreateTransportCostDto,
+  ItineraryContextSearchQueryDto,
   ListItinerariesQueryDto,
   PublicItinerarySearchQueryDto,
   ReorderItineraryDaysDto,
@@ -353,9 +354,15 @@ export class ItinerariesController {
   @Roles(Role.REGISTERED_USER)
   @Get('itineraries/:id/hotels')
   @ApiOperation({ summary: 'ITN-25: Search hotels from itinerary context' })
-  searchHotelsForItinerary() {
-    throw new NotImplementedException(
-      'GET /api/itineraries/:id/hotels not implemented yet',
+  searchHotelsForItinerary(
+    @Param('id') id: string,
+    @Query() query: ItineraryContextSearchQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.searchHotelsForItinerary(
+      id,
+      user.userId,
+      query,
     );
   }
 
