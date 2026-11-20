@@ -700,6 +700,21 @@ export class ItinerariesService {
     };
   }
 
+  async getPublicItinerary(id: string): Promise<Record<string, unknown>> {
+    const itinerary = await this.findItineraryById(id);
+    if (
+      itinerary.visibility !== ItineraryVisibility.PUBLIC ||
+      itinerary.isHidden
+    ) {
+      throw new NotFoundException('Public itinerary not found');
+    }
+    await itinerary.populate({
+      path: 'user',
+      select: 'firstName lastName avatarUrl',
+    });
+    return this.getItineraryDetails(itinerary);
+  }
+
   private async getItineraryDetails(
     itinerary: ItineraryDocument,
   ): Promise<Record<string, unknown>> {
