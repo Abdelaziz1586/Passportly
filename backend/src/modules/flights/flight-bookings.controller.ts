@@ -5,6 +5,7 @@ import {
   NotImplementedException,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -13,6 +14,7 @@ import {
   ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
+  ApiOkResponse,
   ApiOperation,
   ApiTags,
   ApiUnauthorizedResponse,
@@ -22,8 +24,11 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { CreateFlightBookingDto } from './dto/create-flight-booking.dto';
+import { FlightBookingListResponseDto } from './dto/flight-booking-list-response.dto';
 import { HoldSeatsDto } from './dto/hold-seats.dto';
+import { ListFlightBookingsQueryDto } from './dto/list-flight-bookings-query.dto';
 import {
+  FlightBookingListResponse,
   FlightBookingResponse,
   FlightBookingsService,
   FlightHoldResponse,
@@ -90,11 +95,28 @@ export class FlightBookingsController {
 
   @Roles(Role.REGISTERED_USER, Role.ADMIN)
   @Get()
-  @ApiOperation({ summary: 'FLT-25: List current user flight bookings' })
-  listBookings() {
-    throw new NotImplementedException(
-      'GET /api/flight-bookings not implemented yet',
-    );
+  @ApiOperation({
+    summary: 'FLT-25: List current user flight bookings',
+    description:
+      "Paginated list of the signed-in user's own flight bookings (admins also see only their own). Filter by one or more statuses and sort by createdAt, departureDate (first leg) or totalPrice. A seat hold that has run out is expired first, so it is never listed as PENDING_PAYMENT.",
+  })
+  @ApiOkResponse({
+    description: 'One page of bookings and the pagination meta',
+    type: FlightBookingListResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description:
+      'Invalid page, limit (1-50), status, sortBy or sortOrder, or an unknown query parameter',
+  })
+  @ApiUnauthorizedResponse({ description: 'Not signed in' })
+  @ApiForbiddenResponse({
+    description: 'Only registered users and admins may list bookings',
+  })
+  listBookings(
+    @Query() query: ListFlightBookingsQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<FlightBookingListResponse> {
+    return this.flightBookingsService.listBookings(user.userId, query);
   }
 
   @Roles(Role.REGISTERED_USER, Role.ADMIN, Role.AIRLINE_MODERATOR)

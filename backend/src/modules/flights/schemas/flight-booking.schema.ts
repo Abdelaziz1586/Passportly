@@ -179,5 +179,7 @@ export class FlightBooking {
 
 export const FlightBookingSchema = SchemaFactory.createForClass(FlightBooking);
 FlightBookingSchema.index({ status: 1, holdExpiresAt: 1 });
-
 FlightBookingSchema.index({ 'legs.flight': 1, status: 1 });
+// FLT-25 listing: one user's bookings, optionally by status, newest first.
+FlightBookingSchema.index({ user: 1, createdAt: -1 });
+FlightBookingSchema.index({ user: 1, status: 1, createdAt: -1 });

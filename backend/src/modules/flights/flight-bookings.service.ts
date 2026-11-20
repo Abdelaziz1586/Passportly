@@ -29,6 +29,11 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { CreateFlightBookingDto } from './dto/create-flight-booking.dto';
 import { HoldSeatsDto } from './dto/hold-seats.dto';
 import {
+  FLIGHT_BOOKING_LIST_DEFAULT_LIMIT,
+  FlightBookingSortField,
+  ListFlightBookingsQueryDto,
+} from './dto/list-flight-bookings-query.dto';
+import {
   assertExtraBagCounts,
   assertExtraBagWeights,
   buildPolicySnapshot,
@@ -129,6 +134,27 @@ export interface FlightBookingResponse {
   /** Baggage and cancellation policies the user must accept before paying. */
   policies: FlightPolicySnapshot;
 }
+
+/** Same fields as the create response; policies is null until passenger details exist. */
+export interface FlightBookingListItem extends Omit<
+  FlightBookingResponse,
+  'policies'
+> {
+  policies: FlightPolicySnapshot | null;
+  createdAt: Date;
+}
+
+export interface FlightBookingListResponse {
+  data: FlightBookingListItem[];
+  meta: { page: number; limit: number; total: number; totalPages: number };
+}
+
+/** Mongo sort path for each whitelisted sortBy value. */
+const SORT_PATHS: Record<FlightBookingSortField, string> = {
+  createdAt: 'createdAt',
+  departureDate: 'legs.0.departureTime',
+  totalPrice: 'totalPrice',
+};
 
 interface HoldCandidate {
   flight: Flight & { _id: Types.ObjectId };
@@ -271,6 +297,134 @@ export class FlightBookingsService {
       );
     }
     return this.toBookingResponse(updated, snapshot);
+  }
+
+  /**
+   * FLT-25: the signed-in user's own bookings, paginated, filterable by status
+   * and sortable. The owner always comes from the JWT, never from the query, and
+   * the Mongo filter is built from the validated DTO only.
+   *
+   * Hold expiry (FLT-22) is done by a once-a-minute cron, so a hold that just ran
+   * out could still read PENDING_PAYMENT. Before listing, this user's lapsed
+   * holds are expired through the same expireHold() the cron uses (atomic,
+   * returns the seats, notifies once, a no-op if the cron got there first).
+   */
+  async listBookings(
+    userId: string,
+    query: ListFlightBookingsQueryDto,
+  ): Promise<FlightBookingListResponse> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? FLIGHT_BOOKING_LIST_DEFAULT_LIMIT;
+    const direction = query.sortOrder === 'asc' ? 1 : -1;
+    const sortBy = query.sortBy ?? 'createdAt';
+    if (!Object.hasOwn(SORT_PATHS, sortBy)) {
+      // Normally stopped by the DTO; never let a raw key reach the sort.
+      throw new BadRequestException(`Unsupported sortBy: ${sortBy}`);
+    }
+    const sortPath = SORT_PATHS[sortBy];
+    const owner = new Types.ObjectId(userId);
+    const now = new Date();
+
+    await this.expireLapsedHoldsFor(owner, now);
+
+    const filter = this.buildListFilter(owner, query.status, now);
+
+    const [bookings, total] = await Promise.all([
+      this.bookingModel
+        .find(filter)
+        // _id as a tiebreaker keeps page boundaries stable when values repeat.
+        .sort({ [sortPath]: direction, _id: direction })
+        .skip((page - 1) * limit)
+        .limit(limit),
+      this.bookingModel.countDocuments(filter),
+    ]);
+
+    return {
+      data: bookings.map((booking) => this.toListItem(booking, now)),
+      meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
+  }
+
+  private buildListFilter(
+    user: Types.ObjectId,
+    statuses: BookingStatus[] | undefined,
+    now: Date,
+  ): Record<string, unknown> {
+    if (!statuses?.length) return { user };
+    const touchesHold = statuses.some(
+      (s) => s === BookingStatus.PENDING_PAYMENT || s === BookingStatus.EXPIRED,
+    );
+    if (!touchesHold) {
+      return { user, status: { $in: statuses } };
+    }
+    const clauses: Record<string, unknown>[] = [];
+    const plain = statuses.filter(
+      (s) => s !== BookingStatus.PENDING_PAYMENT && s !== BookingStatus.EXPIRED,
+    );
+    if (plain.length) {
+      clauses.push({ status: { $in: plain } });
+    }
+    if (statuses.includes(BookingStatus.PENDING_PAYMENT)) {
+      clauses.push({
+        status: BookingStatus.PENDING_PAYMENT,
+        holdExpiresAt: { $gt: now },
+      });
+    }
+    if (statuses.includes(BookingStatus.EXPIRED)) {
+      clauses.push({ status: BookingStatus.EXPIRED });
+      clauses.push({
+        status: { $in: ACTIVE_HOLD_STATUSES },
+        holdExpiresAt: { $lte: now },
+      });
+    }
+    return clauses.length === 1
+      ? { user, ...clauses[0] }
+      : { user, $or: clauses };
+  }
+
+  private async expireLapsedHoldsFor(owner: Types.ObjectId, now: Date) {
+    try {
+      const lapsed = await this.bookingModel
+        .find({
+          user: owner,
+          status: { $in: ACTIVE_HOLD_STATUSES },
+          holdExpiresAt: { $lte: now },
+        })
+        .select('_id')
+        .limit(EXPIRY_BATCH_SIZE)
+        .lean();
+      for (const { _id } of lapsed) await this.expireHold(_id, now);
+    } catch (error) {
+      // Listing must not fail because of housekeeping; toListItem still never
+      // reports a lapsed hold as pending, and the cron retries within a minute.
+      this.logger.error(
+        'Could not expire lapsed holds while listing flight bookings',
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
+  }
+
+  private toListItem(
+    booking: FlightBookingDocument,
+    now: Date,
+  ): FlightBookingListItem {
+    const lapsed =
+      ACTIVE_HOLD_STATUSES.includes(booking.status) &&
+      !!booking.holdExpiresAt &&
+      booking.holdExpiresAt.getTime() <= now.getTime();
+    const policies =
+      (booking.policySnapshot as FlightPolicySnapshot | undefined) ?? null;
+    const response = this.toBookingResponse(
+      booking,
+      policies as FlightPolicySnapshot,
+    );
+    return {
+      ...response,
+      policies,
+      status: lapsed ? BookingStatus.EXPIRED : response.status,
+      createdAt: (booking as FlightBookingDocument & { createdAt: Date })
+        .createdAt,
+    };
   }
 
   private assertAwaitingDetails(booking: FlightBookingDocument, now: Date) {
