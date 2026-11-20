@@ -32,7 +32,12 @@ import { BaggagePolicy } from './airline-baggage-policy.dto';
 import { CancellationPolicy } from './airline-cancellation-policy.dto';
 import { AirlineUpdate } from './update-airline.dto';
 import { CabinCreate, FlightCreate, FlightUpdate } from './create-flight.dto';
-import { airportLocalTime, flightInstant } from './flight-time';
+import { FlightSearch } from './flight-search.dto';
+import {
+  airportLocalTime,
+  assertLocalDate,
+  flightInstant,
+} from './flight-time';
 
 function checkId(id: string) {
   if (!isObjectIdOrHexString(id)) throw new BadRequestException('Invalid ID');
@@ -372,5 +377,163 @@ export class FlightsService {
       { status: FlightStatus.SCHEDULED, departureTime: { $lte: new Date() } },
       { $set: { status: FlightStatus.DEPARTED } },
     );
+  }
+  async searchFlights(input: FlightSearch) {
+    const {
+      adults = 1,
+      children = 0,
+      infants = 0,
+      page = 1,
+      limit = 20,
+      sort = 'departure',
+    } = input;
+    if (infants > adults)
+      throw new BadRequestException('Infants cannot outnumber adults');
+    if (
+      input.minPrice !== undefined &&
+      input.maxPrice !== undefined &&
+      input.minPrice > input.maxPrice
+    ) {
+      throw new BadRequestException('minPrice cannot exceed maxPrice');
+    }
+    const comparesPrice =
+      sort === 'price' ||
+      input.minPrice !== undefined ||
+      input.maxPrice !== undefined;
+    if (comparesPrice && !input.currency)
+      throw new BadRequestException('Specify a currency to compare prices');
+    const currency = input.currency && (await this.currency(input.currency));
+    const minorUnit = currency
+      ? 10 **
+        (new Intl.NumberFormat('en', {
+          style: 'currency',
+          currency,
+        }).resolvedOptions().maximumFractionDigits ?? 2)
+      : 100;
+    assertLocalDate(input.departureDate);
+    if (input.returnDate) {
+      assertLocalDate(input.returnDate);
+      if (input.returnDate < input.departureDate)
+        throw new BadRequestException('Return date precedes departure');
+    }
+    const [origin, destination, airlines] = await Promise.all([
+      this.airport(input.origin),
+      this.airport(input.destination),
+      this.airlineModel.find({ isActive: true }),
+    ]);
+    if (origin._id.equals(destination._id))
+      throw new BadRequestException('Airports must differ');
+    const active = new Map(
+      airlines.map((airline) => [airline._id.toString(), airline]),
+    );
+    const leg = async (
+      from: typeof origin,
+      to: typeof destination,
+      date: string,
+    ) => {
+      const flights = await this.flightModel
+        .find({
+          airline: { $in: airlines.map((airline) => airline._id) },
+          departureAirport: from._id,
+          arrivalAirport: to._id,
+          departureTime: { $gt: new Date() },
+          status: FlightStatus.SCHEDULED,
+          $or: [
+            { localDepartureDate: date },
+            {
+              localDepartureDate: { $exists: false },
+              departureTime: {
+                $gt: new Date(
+                  Math.max(Date.now(), Date.parse(date) - 86400000),
+                ),
+                $lt: new Date(Date.parse(date) + 172800000),
+              },
+            },
+          ],
+          ...(input.maxStops === undefined
+            ? {}
+            : { stopsCount: { $lte: input.maxStops } }),
+        })
+        .lean();
+      const cabins = await this.cabinInventoryModel
+        .find({
+          flight: { $in: flights.map((flight) => flight._id) },
+          isActive: true,
+          availableSeats: { $gte: adults + children },
+          ...(currency ? { currency } : {}),
+          ...(input.cabinClass ? { cabinClass: input.cabinClass } : {}),
+        })
+        .lean();
+      const byFlight = new Map(
+        flights.map((flight) => [flight._id.toString(), flight]),
+      );
+      const results = cabins.flatMap((cabin) => {
+        const flight = byFlight.get(cabin.flight.toString())!;
+        const departureTime = airportLocalTime(
+          flight.departureTime,
+          from.timezone,
+        );
+        if (departureTime.slice(0, 10) !== date) return [];
+        const units = currency
+          ? minorUnit
+          : 10 **
+            (new Intl.NumberFormat('en', {
+              style: 'currency',
+              currency: cabin.currency,
+            }).resolvedOptions().maximumFractionDigits ?? 2);
+        const fare = Math.round(cabin.basePrice * units);
+        const total =
+          fare * (adults + children) + Math.round(fare * 0.1) * infants;
+        if (
+          input.minPrice !== undefined &&
+          total < Math.round(input.minPrice * units)
+        )
+          return [];
+        if (
+          input.maxPrice !== undefined &&
+          total > Math.round(input.maxPrice * units)
+        )
+          return [];
+        return [
+          {
+            id: flight._id.toString(),
+            flightNumber: flight.flightNumber,
+            departureTime,
+            departureUtc: flight.departureTime,
+            arrivalTime: airportLocalTime(flight.arrivalTime, to.timezone),
+            durationMinutes: flight.durationMinutes,
+            stopsCount: flight.stopsCount,
+            partyFare: total / units,
+            cabin: this.cabinView(
+              cabin,
+              active.get(flight.airline.toString())!,
+            ),
+            airline: this.airlineView(active.get(flight.airline.toString())!),
+          },
+        ];
+      });
+      results.sort(
+        (a, b) =>
+          (sort === 'price'
+            ? a.partyFare - b.partyFare
+            : sort === 'duration'
+              ? a.durationMinutes - b.durationMinutes
+              : 0) ||
+          +a.departureUtc - +b.departureUtc ||
+          a.id.localeCompare(b.id) ||
+          a.cabin.id.localeCompare(b.cabin.id),
+      );
+      return {
+        data: results.slice((page - 1) * limit, page * limit),
+        total: results.length,
+        page,
+        limit,
+      };
+    };
+    const [outbound, inbound] = await Promise.all([
+      leg(origin, destination, input.departureDate),
+      input.returnDate ? leg(destination, origin, input.returnDate) : undefined,
+    ]);
+    return { outbound, ...(inbound && { return: inbound }) };
   }
 }
