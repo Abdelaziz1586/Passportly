@@ -26,6 +26,7 @@ import {
   CreateItineraryDayDto,
   ListItinerariesQueryDto,
   ReorderItineraryDaysDto,
+  UpdateActivityDto,
   UpdateItineraryDayDto,
   UpdateItineraryDto,
 } from './dto/itinerary-endpoints.dto';
@@ -185,10 +186,12 @@ export class ItinerariesController {
   @Roles(Role.REGISTERED_USER)
   @Patch('activities/:id')
   @ApiOperation({ summary: 'ITN-10: Update activity' })
-  updateActivity() {
-    throw new NotImplementedException(
-      'PATCH /api/activities/:id not implemented yet',
-    );
+  updateActivity(
+    @Param('id') id: string,
+    @Body() dto: UpdateActivityDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.updateActivity(id, user.userId, dto);
   }
 
   @ApiCookieAuth()
