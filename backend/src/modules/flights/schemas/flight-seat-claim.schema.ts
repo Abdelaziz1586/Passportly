@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 
 export type FlightSeatClaimDocument = HydratedDocument<FlightSeatClaim>;
 
@@ -14,21 +14,21 @@ export type FlightSeatClaimDocument = HydratedDocument<FlightSeatClaim>;
  */
 @Schema({ timestamps: true, collection: 'flight_seat_claims' })
 export class FlightSeatClaim {
-  @Prop({ type: Types.ObjectId, ref: 'Flight', required: true })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'Flight', required: true })
   flight: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'CabinInventory', required: true })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'CabinInventory', required: true })
   cabin: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'FlightBooking', required: true })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'FlightBooking', required: true })
   booking: Types.ObjectId;
 
   /** _id of the leg subdocument inside the booking. */
-  @Prop({ type: Types.ObjectId, required: true })
+  @Prop({ type: SchemaTypes.ObjectId, required: true })
   leg: Types.ObjectId;
 
   /** _id of the passenger subdocument inside the booking. */
-  @Prop({ type: Types.ObjectId, required: true })
+  @Prop({ type: SchemaTypes.ObjectId, required: true })
   passenger: Types.ObjectId;
 
   /** Seat label such as "12C" (upper case). */
