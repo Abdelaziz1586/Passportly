@@ -1573,4 +1573,12 @@ Implement SCRUM-128 [BLG-10, GEN-08] POST /api/posts/:id/images - Upload validat
 
 How the output was used:
 Implemented UploadsService.saveImage() with MIME/magic-byte/size validation and safe UUID disk storage, UploadPostImageResponseDto, BlogService.uploadPostImage with author ownership enforcement and orphan cleanup, BlogController.uploadPostImage multipart/form-data Swagger/FileInterceptor wiring, and unit tests in uploads.service.spec.ts, blog.controller.spec.ts, and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
+
+Related Requirement: BLG-10 (SCRUM-129, DELETE /api/posts/:id/images/:imageId)
+
+Prompt:
+Implement SCRUM-129 [BLG-10] DELETE /api/posts/:id/images/:imageId - Delete image from blog post enforcing author ownership and removing MediaItem matching :imageId.
+
+How the output was used:
+Added DeletePostImageResponseDto, BlogService.deletePostImage with author ownership verification, atomic $pull on BlogPost.images, and disk cleanup via UploadsService.deleteImage, plus BlogController.deletePostImage and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
 ================================================

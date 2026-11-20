@@ -178,3 +178,17 @@ export class DeleteBlogPostResponseDto {
   @ApiProperty({ example: '673c1f2a9c4b2d001f8a2222' })
   id: string;
 }
+
+export class DeletePostImageResponseDto {
+  @ApiProperty({ example: 'Image deleted successfully' })
+  message: string;
+
+  @ApiProperty({ example: '673c1f2a9c4b2d001f8a3333' })
+  postId: string;
+
+  @ApiProperty({ example: '673c1f2a9c4b2d001f8a2222' })
+  imageId: string;
+
+  @ApiProperty({ type: [BlogMediaItemDto] })
+  images: BlogMediaItemDto[];
+}
