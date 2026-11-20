@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
 import {
   MediaItem,
   MediaItemSchema,
@@ -9,7 +9,12 @@ export type RoomDocument = HydratedDocument<Room>;
 
 @Schema({ timestamps: true, collection: 'rooms' })
 export class Room {
-  @Prop({ type: Types.ObjectId, ref: 'Hotel', required: true, index: true })
+  @Prop({
+    type: MongooseSchema.Types.ObjectId,
+    ref: 'Hotel',
+    required: true,
+    index: true,
+  })
   hotel: Types.ObjectId;
 
   @Prop({ required: true, trim: true })
@@ -17,6 +22,9 @@ export class Room {
 
   @Prop({ required: true, trim: true })
   roomType: string;
+
+  @Prop({ required: true, min: 1, default: 1 })
+  numberOfBeds: number;
 
   @Prop({ trim: true })
   description?: string;
@@ -53,3 +61,4 @@ export class Room {
 }
 
 export const RoomSchema = SchemaFactory.createForClass(Room);
+RoomSchema.index({ hotel: 1, name: 1 }, { unique: true });
