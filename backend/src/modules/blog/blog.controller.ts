@@ -35,6 +35,7 @@ import {
   BlogPostDetailResponseDto,
   BlogPostItemDto,
   DeleteBlogPostResponseDto,
+  DeleteCommentResponseDto,
   PaginatedBlogPostsResponseDto,
 } from './dto/blog-post-response.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
@@ -227,10 +228,24 @@ export class BlogController {
   @Roles(Role.REGISTERED_USER, Role.ADMIN)
   @Delete('comments/:id')
   @ApiOperation({ summary: 'BLG-07: Delete comment' })
-  deleteComment() {
-    throw new NotImplementedException(
-      'DELETE /api/comments/:id not implemented yet',
-    );
+  @ApiParam({ name: 'id', description: 'Comment MongoDB ObjectId' })
+  @ApiOkResponse({
+    description: 'Comment deleted and post comment count updated',
+    type: DeleteCommentResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid comment ID' })
+  @ApiUnauthorizedResponse({ description: 'Authentication required' })
+  @ApiForbiddenResponse({
+    description:
+      'Only the comment author or an administrator can delete this comment',
+  })
+  @ApiNotFoundResponse({ description: 'Comment not found' })
+  deleteComment(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
+  ): Promise<DeleteCommentResponseDto> {
+    return this.blogService.deleteComment(id, user, req.ip);
   }
 
   @ApiCookieAuth()

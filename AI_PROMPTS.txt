@@ -1541,4 +1541,12 @@ Implement SCRUM-124 [BLG-07] PATCH /api/comments/:id - Update own comment enforc
 
 How the output was used:
 Added UpdateCommentDto, BlogService.updateComment with comment author ownership and hidden-comment guards, BlogController.updateComment Swagger/role wiring, and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
+
+Related Requirement: BLG-07 (SCRUM-125, DELETE /api/comments/:id)
+
+Prompt:
+Implement SCRUM-125 [BLG-07] DELETE /api/comments/:id - Delete comment verifying Comment.author == CurrentUser.userId or ADMIN, deleting Comment, and decrementing BlogPost.commentsCount.
+
+How the output was used:
+Added DeleteCommentResponseDto, BlogService.deleteComment with author/ADMIN authorization, atomic deletion, guarded commentsCount decrement, and admin audit/notification hooks, BlogController.deleteComment Swagger/role wiring, and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
 ================================================

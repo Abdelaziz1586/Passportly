@@ -138,6 +138,17 @@ export class BlogPostDetailResponseDto extends BlogPostItemDto {
   comments: BlogCommentItemDto[];
 }
 
+export class DeleteCommentResponseDto {
+  @ApiProperty({ example: 'Comment deleted successfully' })
+  message: string;
+
+  @ApiProperty({ example: '673c1f2a9c4b2d001f8a4444' })
+  id: string;
+
+  @ApiProperty({ example: '673c1f2a9c4b2d001f8a3333' })
+  postId: string;
+}
+
 export class DeleteBlogPostResponseDto {
   @ApiProperty({ example: 'Blog post deleted successfully' })
   message: string;
