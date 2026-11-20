@@ -370,9 +370,15 @@ export class ItinerariesController {
   @Roles(Role.REGISTERED_USER)
   @Get('itineraries/:id/flights')
   @ApiOperation({ summary: 'ITN-26: Search flights from itinerary context' })
-  searchFlightsForItinerary() {
-    throw new NotImplementedException(
-      'GET /api/itineraries/:id/flights not implemented yet',
+  searchFlightsForItinerary(
+    @Param('id') id: string,
+    @Query() query: ItineraryContextSearchQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.searchFlightsForItinerary(
+      id,
+      user.userId,
+      query,
     );
   }
 

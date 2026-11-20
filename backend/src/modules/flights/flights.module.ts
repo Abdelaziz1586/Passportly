@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
-import { ReferenceDataModule } from '../reference-data/reference-data.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { FlightEventsService } from './flight-events.service';
 import { MongooseModule } from '@nestjs/mongoose';
+import { ReferenceDataModule } from '../reference-data/reference-data.module';
 import { AirlinesController } from './airlines.controller';
 import { FlightBookingsController } from './flight-bookings.controller';
 import { FlightBookingsService } from './flight-bookings.service';
