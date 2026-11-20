@@ -25,8 +25,8 @@ yarn-debug.log*
 yarn-error.log*
 
 # Uploads / runtime artifacts
-uploads/
-backend/uploads/
+/uploads/
+/backend/uploads/
 
 # Testing & coverage
 coverage/

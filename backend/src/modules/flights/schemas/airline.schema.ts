@@ -23,6 +23,9 @@ export class AirlineBaggagePolicy {
   @Prop({ type: Number, default: 50, min: 0 })
   extraBagFee: number;
 
+  @Prop({ type: Number, min: 0 })
+  maxExtraBagsPerPassenger?: number;
+
   @Prop({ type: Number, default: 15, min: 0 })
   overweightFeePerKg: number;
 
@@ -40,6 +43,14 @@ export const AirlineBaggagePolicySchema =
 export class AirlineCancellationPolicy {
   @Prop({ default: true })
   allowCancellation: boolean;
+
+  @Prop({
+    type: [
+      { _id: false, daysBeforeDeparture: Number, refundPercentage: Number },
+    ],
+    default: undefined,
+  })
+  tiers?: { daysBeforeDeparture: number; refundPercentage: number }[];
 
   @Prop({ type: Number, default: 24, min: 0 })
   freeCancellationHoursBeforeDeparture: number;
