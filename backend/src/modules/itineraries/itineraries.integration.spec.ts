@@ -287,6 +287,30 @@ describe('Itinerary endpoints and persistence', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('SCRUM-96: deletes day children, clears transport day references, and renumbers remaining dates', async () => {
+    const { itinerary, dayId } = await itineraryWithDay();
+    const id = String(itinerary._id);
+    await addDay(id);
+    await service.addActivity(id, dayId, ownerId, { title: 'Museum' });
+    await service.addBudgetEntry(id, dayId, ownerId, budget);
+    const transport = await service.addTransportCost(id, ownerId, {
+      amount: 15,
+      currency: 'USD',
+      departureDayId: dayId,
+    });
+    await service.deleteDay(id, dayId, ownerId);
+    const updated = await service.itineraryModel.findById(id).orFail();
+    expect(updated.days).toHaveLength(1);
+    expect(updated.days[0].dayNumber).toBe(1);
+    expect(updated.days[0].date.toISOString().slice(0, 10)).toBe('2027-06-15');
+    expect(await service.activityModel.countDocuments()).toBe(0);
+    expect(await service.budgetEntryModel.countDocuments()).toBe(0);
+    expect(
+      (await service.transportCostModel.findById(transport._id).orFail())
+        .departureDayId,
+    ).toBeNull();
+  });
+
   it('SCRUM-95/96/97: normalizes uppercase day IDs and never deletes the wrong day', async () => {
     const { itinerary, dayId } = await itineraryWithDay();
     const id = String(itinerary._id);
@@ -453,6 +477,22 @@ describe('Itinerary endpoints and persistence', () => {
     ).toBe(20);
     await service.deleteBudgetEntry(String(entry._id), ownerId);
     expect(await service.budgetEntryModel.countDocuments()).toBe(0);
+  });
+
+  it('SCRUM-93: cascade-deletes activities, budgets and transport costs', async () => {
+    const { itinerary, dayId } = await itineraryWithDay();
+    const id = String(itinerary._id);
+    await service.addActivity(id, dayId, ownerId, { title: 'Museum' });
+    await service.addBudgetEntry(id, dayId, ownerId, budget);
+    await service.addTransportCost(id, ownerId, { amount: 5, currency: 'USD' });
+    await expect(service.deleteItinerary(id, otherId)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    await service.deleteItinerary(id, ownerId);
+    expect(await service.itineraryModel.countDocuments()).toBe(0);
+    expect(await service.activityModel.countDocuments()).toBe(0);
+    expect(await service.budgetEntryModel.countDocuments()).toBe(0);
+    expect(await service.transportCostModel.countDocuments()).toBe(0);
   });
 
   it('HTTP validation: rejects extra properties, invalid IDs, negative amounts, and accepts valid PATCH times', async () => {

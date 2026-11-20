@@ -30,6 +30,7 @@ import {
   CreateActivityDto,
   CreateBudgetEntryDto,
   CreateItineraryDayDto,
+  CreateTransportCostDto,
   ListItinerariesQueryDto,
   ReorderItineraryDaysDto,
   UpdateActivityDto,
@@ -289,10 +290,12 @@ export class ItinerariesController {
   @Roles(Role.REGISTERED_USER)
   @Post('itineraries/:id/transport-costs')
   @ApiOperation({ summary: 'ITN-16: Add intercity transport cost' })
-  addTransportCost() {
-    throw new NotImplementedException(
-      'POST /api/itineraries/:id/transport-costs not implemented yet',
-    );
+  addTransportCost(
+    @Param('id') id: string,
+    @Body() dto: CreateTransportCostDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.addTransportCost(id, user.userId, dto);
   }
 
   @ApiCookieAuth()
