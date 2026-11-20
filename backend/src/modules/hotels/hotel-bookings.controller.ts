@@ -1,21 +1,37 @@
+import { HotelAdminAuditInterceptor } from './hotel-admin-audit.interceptor';
 import {
+  UseInterceptors,
+  Body,
   Controller,
   Delete,
   Get,
   NotImplementedException,
   Patch,
   Post,
+  Param,
 } from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import { HotelsService } from './hotels.service';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
+import {
+  CreateReviewDto,
+  ReplyReviewDto,
+  UpdateReviewDto,
+} from './dto/hotel.dto';
+import { HotelReviewsService } from './hotel-reviews.service';
 
 @ApiTags('Hotel Bookings & Reviews')
 @ApiCookieAuth()
+@UseInterceptors(HotelAdminAuditInterceptor)
 @Controller()
 export class HotelBookingsController {
-  constructor(private readonly hotelsService: HotelsService) {}
+  constructor(
+    private readonly hotelsService: HotelsService,
+    private readonly reviews: HotelReviewsService,
+  ) {}
 
   @Roles(Role.REGISTERED_USER)
   @Post('hotel-bookings')
@@ -61,36 +77,43 @@ export class HotelBookingsController {
   @Roles(Role.REGISTERED_USER)
   @Post('hotel-bookings/:id/review')
   @ApiOperation({ summary: 'HTL-23: Submit review for completed hotel stay' })
-  createReview() {
-    throw new NotImplementedException(
-      'POST /api/hotel-bookings/:id/review not implemented yet',
-    );
+  createReview(
+    @Param('id') id: string,
+    @Body() dto: CreateReviewDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.reviews.createReview(id, dto, user);
   }
 
   @Roles(Role.REGISTERED_USER)
   @Patch('reviews/:id')
   @ApiOperation({ summary: 'HTL-23: Update own review' })
-  updateReview() {
-    throw new NotImplementedException(
-      'PATCH /api/reviews/:id not implemented yet',
-    );
+  updateReview(
+    @Param('id') id: string,
+    @Body() dto: UpdateReviewDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.reviews.updateReview(id, dto, user);
   }
 
   @Roles(Role.REGISTERED_USER, Role.ADMIN)
   @Delete('reviews/:id')
   @ApiOperation({ summary: 'HTL-23: Delete review' })
-  deleteReview() {
-    throw new NotImplementedException(
-      'DELETE /api/reviews/:id not implemented yet',
-    );
+  deleteReview(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.reviews.deleteReview(id, user);
   }
 
   @Roles(Role.HOTEL_MODERATOR, Role.ADMIN)
   @Post('reviews/:id/reply')
   @ApiOperation({ summary: 'HTL-26 (Optional): Reply to a hotel review' })
-  replyToReview() {
-    throw new NotImplementedException(
-      'POST /api/reviews/:id/reply not implemented yet',
-    );
+  replyToReview(
+    @Param('id') id: string,
+    @Body() dto: ReplyReviewDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.reviews.reply(id, dto, user);
   }
 }
