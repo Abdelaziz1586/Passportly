@@ -7,9 +7,9 @@ import {
   IsEnum,
   IsInt,
   IsMongoId,
-  IsOptional,
   Max,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { CabinClass, TripType } from '../../../common/enums';
@@ -61,7 +61,9 @@ export class HoldSeatsDto {
     maximum: MAX_PASSENGERS_PER_TYPE,
     default: 0,
   })
-  @IsOptional()
+  // Omitted means 0 (the initializer), but an explicit null is rejected: IsOptional would let it
+  // through and it would be stored as null, which no passenger list can ever match.
+  @ValidateIf((_object, value) => value !== undefined)
   @IsInt()
   @Min(0)
   @Max(MAX_PASSENGERS_PER_TYPE)
@@ -74,7 +76,7 @@ export class HoldSeatsDto {
     description:
       'Infants (under 2) take no seat, pay 10% of the cabin fare per leg and cannot exceed adults',
   })
-  @IsOptional()
+  @ValidateIf((_object, value) => value !== undefined)
   @IsInt()
   @Min(0)
   @Max(MAX_PASSENGERS_PER_TYPE)
