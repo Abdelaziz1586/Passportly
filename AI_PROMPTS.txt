@@ -364,3 +364,16 @@ Implement SCRUM-23 (POST /api/admin/moderators): Create User with AIRLINE_MODERA
 How the output was used:
 Implemented CreateModeratorDto, ModeratorResponseDto, AdminService.createModerator (email uniqueness check, provider verification, bcrypt password hashing, rollback-safe ModeratorAssignment creation, MODERATOR_CREATED audit log), and AdminController.createModerator. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
 ================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: ACC-14 (GET /api/admin/accounts, SCRUM-24)
+
+Prompt:
+Implement SCRUM-24 (GET /api/admin/accounts): Support filtering by role, status, search (email/name), sorting, and pagination; include moderator provider assignment info.
+
+How the output was used:
+Implemented ListAccountsQueryDto, AccountAssignmentInfoDto, AdminAccountItemDto, PaginatedAccountsResponseDto, AdminService.listAccounts (safe projection excluding passwordHash/tokens, regex-escaped search, batched ModeratorAssignment lookup with provider info, sorting, and pagination), and AdminController.listAccounts. Added unit tests in admin.service.spec.ts and admin.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
