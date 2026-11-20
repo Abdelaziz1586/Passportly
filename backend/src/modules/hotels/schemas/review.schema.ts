@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 
 export type ReviewDocument = HydratedDocument<Review>;
 
@@ -8,7 +8,7 @@ export class ModeratorReply {
   @Prop({ required: true, trim: true })
   replyText: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'User', required: true })
   repliedBy: Types.ObjectId;
 
   @Prop({ required: true, default: () => new Date() })
@@ -20,18 +20,28 @@ export const ModeratorReplySchema =
 
 @Schema({ timestamps: true, collection: 'reviews' })
 export class Review {
-  @Prop({ type: Types.ObjectId, ref: 'Hotel', required: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'Hotel',
+    required: true,
+    index: true,
+  })
   hotel: Types.ObjectId;
 
   @Prop({
-    type: Types.ObjectId,
+    type: SchemaTypes.ObjectId,
     ref: 'HotelBooking',
     required: true,
     unique: true,
   })
   booking: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  })
   user: Types.ObjectId;
 
   @Prop({ required: true, min: 1, max: 5 })
