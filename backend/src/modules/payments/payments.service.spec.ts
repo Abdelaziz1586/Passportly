@@ -60,6 +60,43 @@ function makeBooking(overrides: Partial<BookingRow> = {}): BookingRow {
   };
 }
 
+interface PaymentRow {
+  _id: Types.ObjectId;
+  user: Types.ObjectId;
+  bookingType: BookingType;
+  flightBooking?: Types.ObjectId | null;
+  hotelBooking?: Types.ObjectId | null;
+  amount: number;
+  currency: string;
+  status: PaymentStatus;
+  stripePaymentIntentId?: string;
+  failureReason?: string;
+  paidAt?: Date;
+  metadata?: Record<string, unknown>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+function makePayment(
+  booking: BookingRow,
+  overrides: Partial<PaymentRow> = {},
+): PaymentRow {
+  return {
+    _id: new Types.ObjectId(),
+    user: userId,
+    bookingType: BookingType.FLIGHT,
+    flightBooking: booking._id,
+    amount: booking.totalPrice,
+    currency: 'USD',
+    status: PaymentStatus.PENDING,
+    stripePaymentIntentId: 'pi_existing',
+    metadata: { intentAttempts: 1 },
+    createdAt: new Date('2026-11-19T10:00:00Z'),
+    updatedAt: new Date('2026-11-19T10:00:00Z'),
+    ...overrides,
+  };
+}
+
 function build({
   flightBookings = [] as BookingRow[],
   hotelBookings = [] as BookingRow[],
@@ -423,5 +460,156 @@ describe('PaymentsService.createPayment', () => {
     expect(paymentModel.updateOne).toHaveBeenCalledWith(expect.anything(), {
       $set: { status: PaymentStatus.CANCELLED },
     });
+  });
+});
+
+describe('PaymentsService.retryPayment', () => {
+  function setup(
+    paymentOverrides: Partial<PaymentRow> = {},
+    bookingOverrides: Partial<BookingRow> = {},
+  ) {
+    const booking = makeBooking(bookingOverrides);
+    const payment = makePayment(booking, paymentOverrides);
+    const ctx = build({ flightBookings: [booking] });
+    ctx.paymentModel.findOne.mockReturnValue(query(payment));
+    ctx.paymentModel.findOneAndUpdate.mockImplementation(
+      (_filter: unknown, update: { $set: Record<string, unknown> }) =>
+        Promise.resolve({ ...payment, ...update.$set }),
+    );
+    return { ...ctx, booking, payment };
+  }
+
+  it('reuses the same PaymentIntent after a failed attempt and resets to PENDING', async () => {
+    const { service, stripe, paymentModel, payment } = setup({
+      status: PaymentStatus.FAILED,
+      failureReason: 'Your card was declined',
+    });
+    stripe.paymentIntents.retrieve.mockResolvedValue({
+      id: 'pi_existing',
+      status: 'requires_payment_method',
+      client_secret: 'pi_existing_secret',
+    });
+
+    const result = await service.retryPayment(
+      userId.toString(),
+      payment._id.toString(),
+    );
+
+    expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
+    expect(result.clientSecret).toBe('pi_existing_secret');
+    expect(result.status).toBe(PaymentStatus.PENDING);
+    const [filter, update] = paymentModel.findOneAndUpdate.mock.calls[0] as [
+      { status: { $in: PaymentStatus[] } },
+      { $set: Record<string, unknown>; $unset: Record<string, unknown> },
+    ];
+    expect(filter.status.$in).toEqual([
+      PaymentStatus.PENDING,
+      PaymentStatus.PROCESSING,
+      PaymentStatus.FAILED,
+    ]);
+    expect(update.$set.status).toBe(PaymentStatus.PENDING);
+    expect(update.$unset).toEqual({ failureReason: 1 });
+  });
+
+  it('creates a new PaymentIntent when Stripe already cancelled the old one', async () => {
+    const { service, stripe, payment } = setup({
+      status: PaymentStatus.FAILED,
+    });
+    stripe.paymentIntents.retrieve.mockResolvedValue({
+      id: 'pi_existing',
+      status: 'canceled',
+      client_secret: 'old',
+    });
+
+    const result = await service.retryPayment(
+      userId.toString(),
+      payment._id.toString(),
+    );
+
+    const [, options] = stripe.paymentIntents.create.mock.calls[0] as [
+      unknown,
+      { idempotencyKey: string },
+    ];
+    expect(options.idempotencyKey).toBe(`payment-${payment._id.toString()}-2`);
+    expect(result.stripePaymentIntentId).toBe('pi_new');
+  });
+
+  it.each(['succeeded', 'processing'])(
+    'refuses when the intent is already %s',
+    async (status) => {
+      const { service, stripe, payment } = setup({
+        status: PaymentStatus.PENDING,
+      });
+      stripe.paymentIntents.retrieve.mockResolvedValue({
+        id: 'pi_existing',
+        status,
+        client_secret: 'x',
+      });
+
+      await expect(
+        service.retryPayment(userId.toString(), payment._id.toString()),
+      ).rejects.toBeInstanceOf(ConflictException);
+    },
+  );
+
+  it.each([
+    PaymentStatus.SUCCEEDED,
+    PaymentStatus.CANCELLED,
+    PaymentStatus.EXPIRED,
+    PaymentStatus.REFUNDED,
+    PaymentStatus.PROCESSING,
+  ])('cannot retry a %s payment', async (status) => {
+    const { service, stripe, payment } = setup({ status });
+
+    await expect(
+      service.retryPayment(userId.toString(), payment._id.toString()),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(stripe.paymentIntents.retrieve).not.toHaveBeenCalled();
+  });
+
+  it('cannot retry once the hold has expired (the hold is never extended)', async () => {
+    const { service, stripe, payment } = setup(
+      { status: PaymentStatus.FAILED },
+      { holdExpiresAt: new Date(Date.now() - 1000) },
+    );
+
+    await expect(
+      service.retryPayment(userId.toString(), payment._id.toString()),
+    ).rejects.toThrow(/hold has expired/);
+    expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
+  });
+
+  it('cannot retry for an expired or cancelled booking', async () => {
+    const { service, payment } = setup(
+      { status: PaymentStatus.FAILED },
+      { status: BookingStatus.EXPIRED },
+    );
+
+    await expect(
+      service.retryPayment(userId.toString(), payment._id.toString()),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it("is not found for someone else's payment", async () => {
+    const { service, paymentModel, payment } = setup({
+      status: PaymentStatus.FAILED,
+    });
+    paymentModel.findOne.mockReturnValue(query(null));
+
+    await expect(
+      service.retryPayment(otherUserId.toString(), payment._id.toString()),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    const [filter] = paymentModel.findOne.mock.calls[0] as unknown as [
+      { user: Types.ObjectId },
+    ];
+    expect(filter.user.equals(otherUserId)).toBe(true);
+  });
+
+  it('is a 404 for a malformed id', async () => {
+    const { service } = setup();
+
+    await expect(
+      service.retryPayment(userId.toString(), 'bad'),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });

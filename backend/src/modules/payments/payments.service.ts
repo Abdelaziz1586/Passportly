@@ -29,6 +29,14 @@ export const LIVE_PAYMENT_STATUSES: PaymentStatus[] = [
   ...OPEN_PAYMENT_STATUSES,
   PaymentStatus.SUCCEEDED,
 ];
+/** How long a payment without an intent id counts as "still being created" (a crashed creation is retryable after this). */
+export const INTENT_CREATION_GRACE_MS = 60_000;
+const REUSABLE_INTENT_STATUSES: Stripe.PaymentIntent.Status[] = [
+  'requires_payment_method',
+  'requires_confirmation',
+  'requires_action',
+];
+
 export interface PaymentIntentResponse {
   paymentId: string;
   clientSecret: string;
@@ -53,6 +61,12 @@ interface PayableBooking {
   totalPrice: number;
   currency: string;
 }
+
+type StoredPayment = Payment & {
+  _id: Types.ObjectId;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
 /** What a PaymentIntent is built from (works for a document and a lean object). */
 type IntentSource = Pick<
@@ -190,6 +204,83 @@ export class PaymentsService {
     return this.toIntentResponse(payment, intent, booking, dto.bookingType);
   }
 
+  /**
+   * PAY-01: after a failed or still pending attempt, hand back a usable client
+   * secret so the user can try again until the hold expires (the hold is never
+   * extended). The same PaymentIntent is reused when Stripe still allows it,
+   * otherwise a new one is created.
+   */
+  async retryPayment(
+    userId: string,
+    paymentId: string,
+  ): Promise<PaymentIntentResponse> {
+    const stripe = this.requireStripe();
+    const now = new Date();
+    const payment = await this.findOwnedPayment(userId, paymentId);
+    if (!OPEN_PAYMENT_STATUSES.includes(payment.status)) {
+      throw new ConflictException(
+        `A ${payment.status} payment cannot be retried`,
+      );
+    }
+    if (payment.status === PaymentStatus.PROCESSING) {
+      throw new ConflictException('This payment is still being processed');
+    }
+    // The first intent of a payment is still being created (createPayment inserted the payment and is
+    // awaiting Stripe): a retry now would create a second intent next to it and only one id can be kept.
+    if (
+      !payment.stripePaymentIntentId &&
+      now.getTime() - payment.createdAt.getTime() < INTENT_CREATION_GRACE_MS
+    ) {
+      throw new ConflictException(
+        'The payment is still being created: try again in a moment',
+      );
+    }
+    const { bookingType, bookingId } = this.linkedBooking(payment);
+    const booking = await this.findOwnedBooking(userId, bookingType, bookingId);
+    this.assertPayable(booking, now);
+
+    let intent: Stripe.PaymentIntent | null = null;
+    const stored = payment.metadata?.intentAttempts;
+    let attempts = typeof stored === 'number' ? stored : 1;
+    try {
+      if (payment.stripePaymentIntentId) {
+        intent = await stripe.paymentIntents.retrieve(
+          payment.stripePaymentIntentId,
+        );
+        if (intent.status === 'succeeded' || intent.status === 'processing') {
+          throw new ConflictException(
+            'This payment already went through; the booking is confirmed once Stripe reports it',
+          );
+        }
+        if (!REUSABLE_INTENT_STATUSES.includes(intent.status)) intent = null;
+      }
+      if (!intent) {
+        attempts += 1;
+        intent = await this.createIntent(stripe, payment, booking, attempts);
+      }
+    } catch (error) {
+      if (error instanceof ConflictException) throw error;
+      throw this.toProviderException(error);
+    }
+
+    const updated = await this.paymentModel.findOneAndUpdate(
+      { _id: payment._id, status: { $in: OPEN_PAYMENT_STATUSES } },
+      {
+        $set: {
+          status: PaymentStatus.PENDING,
+          stripePaymentIntentId: intent.id,
+          'metadata.intentAttempts': attempts,
+        },
+        $unset: { failureReason: 1 },
+      },
+      { returnDocument: 'after' },
+    );
+    if (!updated) {
+      throw new ConflictException('The payment changed; reload and try again');
+    }
+    return this.toIntentResponse(updated, intent, booking, bookingType);
+  }
+
   /** Cancels an intent; false when Stripe says it can no longer be cancelled (paid or processing). */
   async cancelIntent(stripe: Stripe, intentId: string): Promise<boolean> {
     try {
@@ -272,6 +363,23 @@ export class PaymentsService {
       .lean();
     if (!booking) throw new NotFoundException('Booking not found');
     return booking;
+  }
+
+  private async findOwnedPayment(
+    userId: string,
+    id: string,
+  ): Promise<StoredPayment> {
+    if (!isValidObjectId(id) || !isValidObjectId(userId)) {
+      throw new NotFoundException('Payment not found');
+    }
+    const payment = await this.paymentModel
+      .findOne({
+        _id: new Types.ObjectId(id),
+        user: new Types.ObjectId(userId),
+      })
+      .lean();
+    if (!payment) throw new NotFoundException('Payment not found');
+    return payment as unknown as StoredPayment;
   }
 
   private bookingModelFor(type: BookingType): PayableBookingModel {
