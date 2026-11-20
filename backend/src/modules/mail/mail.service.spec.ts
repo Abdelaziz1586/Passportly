@@ -116,4 +116,58 @@ describe('MailService', () => {
 
     expect(sent).toBe(false);
   });
+
+  it('sends password reset email via configured custom SMTP server', async () => {
+    const sendMailMock = jest.fn().mockResolvedValue({ messageId: 'msg-2' });
+    createTransportMock.mockReturnValue({ sendMail: sendMailMock });
+
+    const configService = createConfigService({
+      'mail.host': 'smtp.custom.local',
+      'mail.port': 587,
+      'mail.secure': false,
+      'mail.user': 'smtp-user',
+      'mail.pass': 'smtp-pass',
+      'mail.appBaseUrl': 'http://localhost:3001/',
+    });
+
+    const mailService = new MailService(configService);
+    const sent = await mailService.sendPasswordResetEmail({
+      to: 'traveler@example.com',
+      firstName: 'Abdelaziz <script>',
+      token: 'reset-token-xyz',
+      expiresInMinutes: 15,
+    });
+
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
+    const callArgs = (
+      sendMailMock.mock.calls as [[Record<string, string>]]
+    )[0][0];
+    expect(callArgs.to).toBe('traveler@example.com');
+    expect(callArgs.subject).toBe('Reset your Passportly password');
+    expect(callArgs.text).toContain(
+      'http://localhost:3001/reset-password?token=reset-token-xyz',
+    );
+    expect(callArgs.text).toContain('15 minutes');
+    expect(callArgs.html).toContain('Abdelaziz &lt;script&gt;');
+    expect(sent).toBe(true);
+  });
+
+  it('skips sending password reset email when SMTP is unconfigured', async () => {
+    const configService = createConfigService({
+      'mail.host': 'smtp.example.com',
+      'mail.user': 'replace_me',
+      'mail.pass': 'replace_me',
+    });
+
+    const mailService = new MailService(configService);
+    const sent = await mailService.sendPasswordResetEmail({
+      to: 'traveler@example.com',
+      firstName: 'Abdelaziz',
+      token: 'reset-token-xyz',
+      expiresInMinutes: 15,
+    });
+
+    expect(createTransportMock).not.toHaveBeenCalled();
+    expect(sent).toBe(false);
+  });
 });
