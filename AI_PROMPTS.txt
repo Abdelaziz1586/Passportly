@@ -1525,4 +1525,12 @@ Implement SCRUM-122 [BLG-04] DELETE /api/posts/:id - Delete blog post verifying 
 
 How the output was used:
 Added DeleteBlogPostResponseDto, BlogService.deletePost with author/ADMIN authorization, atomic post deletion, cascading Comment/Like deletion, guarded Tag usageCount decrement, image file cleanup, and admin audit/notification hooks, plus BlogController.deletePost and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
+
+Related Requirement: BLG-05 (SCRUM-123, POST /api/posts/:id/comments)
+
+Prompt:
+Implement SCRUM-123 [BLG-05] POST /api/posts/:id/comments - Add comment to a published blog post, verifying PUBLISHED and not hidden, creating Comment, and atomically incrementing BlogPost.commentsCount.
+
+How the output was used:
+Added CreateCommentDto, BlogService.addComment with atomic PUBLISHED/non-hidden check and commentsCount increment (with rollback on write error), BlogController.addComment with Swagger/role decorators, and unit tests in blog.controller.spec.ts and blog.service.spec.ts. Verified with npm run lint, npm run build, and npm test.
 ================================================

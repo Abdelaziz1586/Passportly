@@ -31,11 +31,13 @@ import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { BlogService } from './blog.service';
 import {
+  BlogCommentItemDto,
   BlogPostDetailResponseDto,
   BlogPostItemDto,
   DeleteBlogPostResponseDto,
   PaginatedBlogPostsResponseDto,
 } from './dto/blog-post-response.dto';
+import { CreateCommentDto } from './dto/create-comment.dto';
 import { CreatePostDto } from './dto/create-post.dto';
 import { ListMyPostsQueryDto } from './dto/list-my-posts-query.dto';
 import { ListPostsQueryDto } from './dto/list-posts-query.dto';
@@ -176,10 +178,23 @@ export class BlogController {
   @Roles(Role.REGISTERED_USER)
   @Post('posts/:id/comments')
   @ApiOperation({ summary: 'BLG-05: Add comment to a published post' })
-  addComment() {
-    throw new NotImplementedException(
-      'POST /api/posts/:id/comments not implemented yet',
-    );
+  @ApiParam({ name: 'id', description: 'Published blog post MongoDB ObjectId' })
+  @ApiCreatedResponse({
+    description: 'Comment added to blog post successfully',
+    type: BlogCommentItemDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid blog post ID or comment payload',
+  })
+  @ApiUnauthorizedResponse({ description: 'Authentication required' })
+  @ApiForbiddenResponse({ description: 'Insufficient role permissions' })
+  @ApiNotFoundResponse({ description: 'Published blog post not found' })
+  addComment(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateCommentDto,
+  ): Promise<BlogCommentItemDto> {
+    return this.blogService.addComment(id, user.userId, dto);
   }
 
   @ApiCookieAuth()

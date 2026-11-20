@@ -24,11 +24,13 @@ import {
   slugify,
 } from './blog.utils';
 import {
+  BlogCommentItemDto,
   BlogPostDetailResponseDto,
   BlogPostItemDto,
   DeleteBlogPostResponseDto,
   PaginatedBlogPostsResponseDto,
 } from './dto/blog-post-response.dto';
+import { CreateCommentDto } from './dto/create-comment.dto';
 import { CreatePostDto } from './dto/create-post.dto';
 import { ListMyPostsQueryDto } from './dto/list-my-posts-query.dto';
 import { ListPostsQueryDto } from './dto/list-posts-query.dto';
@@ -52,6 +54,59 @@ export class BlogService {
   ) {}
 
   /**
+   * Verifies that a blog post is published and not hidden, atomically increments
+   * BlogPost.commentsCount, and creates the new Comment document.
+   */
+  async addComment(
+    postId: string,
+    userId: string,
+    dto: CreateCommentDto,
+  ): Promise<BlogCommentItemDto> {
+    if (!isValidObjectId(postId)) {
+      throw new BadRequestException('Invalid blog post ID');
+    }
+    if (!isValidObjectId(userId)) {
+      throw new BadRequestException('Invalid user ID');
+    }
+
+    const updatedPost = await this.blogPostModel
+      .findOneAndUpdate(
+        { _id: postId, status: PostStatus.PUBLISHED, isHidden: false },
+        { $inc: { commentsCount: 1 } },
+        { returnDocument: 'after' },
+      )
+      .lean();
+
+    if (!updatedPost) {
+      throw new NotFoundException('Published blog post not found');
+    }
+
+    try {
+      const created = await this.commentModel.create({
+        post: updatedPost._id,
+        author: new Types.ObjectId(userId),
+        content: dto.content,
+        isHidden: false,
+      });
+
+      const plainComment =
+        typeof created.toObject === 'function'
+          ? (created.toObject() as unknown as LeanCommentLike)
+          : (created as unknown as LeanCommentLike);
+
+      return formatComment(plainComment);
+    } catch (error) {
+      await this.blogPostModel
+        .updateOne(
+          { _id: updatedPost._id, commentsCount: { $gt: 0 } },
+          { $inc: { commentsCount: -1 } },
+        )
+        .catch(() => undefined);
+      throw error;
+    }
+  }
+
+  /**
    * Deletes a blog post (author or ADMIN), cascades deletion to its Comments
    * and Likes, decrements Tag usageCounts, and cleans up uploaded media files.
    */
@@ -60,6 +115,9 @@ export class BlogService {
     user: AuthenticatedUser,
     ipAddress?: string,
   ): Promise<DeleteBlogPostResponseDto> {
+    if (!isValidObjectId(postId)) {
+      throw new BadRequestException('Invalid blog post ID');
+    }
     if (!isValidObjectId(postId)) {
       throw new BadRequestException('Invalid blog post ID');
     }
