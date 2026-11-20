@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
@@ -6,11 +7,14 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiCookieAuth,
+  ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
@@ -26,7 +30,17 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { BlogService } from './blog.service';
-import { DeleteBlogPostResponseDto } from './dto/blog-post-response.dto';
+import {
+  BlogPostDetailResponseDto,
+  BlogPostItemDto,
+  DeleteBlogPostResponseDto,
+  PaginatedBlogPostsResponseDto,
+} from './dto/blog-post-response.dto';
+import { CreatePostDto } from './dto/create-post.dto';
+import { ListMyPostsQueryDto } from './dto/list-my-posts-query.dto';
+import { ListPostsQueryDto } from './dto/list-posts-query.dto';
+import { UpdatePostDto } from './dto/update-post.dto';
+import { OptionalJwtAuthGuard } from './guards/optional-jwt-auth.guard';
 
 @ApiTags('Blog & Community')
 @Controller()
@@ -37,8 +51,20 @@ export class BlogController {
   @Roles(Role.REGISTERED_USER)
   @Post('posts')
   @ApiOperation({ summary: 'BLG-01: Create blog post (Draft or Published)' })
-  createPost() {
-    throw new NotImplementedException('POST /api/posts not implemented yet');
+  @ApiCreatedResponse({
+    description: 'Blog post created successfully',
+    type: BlogPostItemDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid blog post payload or tags',
+  })
+  @ApiUnauthorizedResponse({ description: 'Authentication required' })
+  @ApiForbiddenResponse({ description: 'Insufficient role permissions' })
+  createPost(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreatePostDto,
+  ): Promise<BlogPostItemDto> {
+    return this.blogService.createPost(user.userId, dto);
   }
 
   @Public()
@@ -46,8 +72,15 @@ export class BlogController {
   @ApiOperation({
     summary: 'BLG-02, BLG-09: List & search published blog posts',
   })
-  listPosts() {
-    throw new NotImplementedException('GET /api/posts not implemented yet');
+  @ApiOkResponse({
+    description: 'Paginated published blog posts',
+    type: PaginatedBlogPostsResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid query parameters' })
+  listPosts(
+    @Query() query: ListPostsQueryDto,
+  ): Promise<PaginatedBlogPostsResponseDto> {
+    return this.blogService.listPosts(query);
   }
 
   @ApiCookieAuth()
@@ -56,27 +89,63 @@ export class BlogController {
   @ApiOperation({
     summary: 'BLG-03: List current user blog posts (including drafts)',
   })
-  listMyPosts() {
-    throw new NotImplementedException(
-      'GET /api/posts/mine not implemented yet',
-    );
+  @ApiOkResponse({
+    description: 'Paginated blog posts authored by current user',
+    type: PaginatedBlogPostsResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid query parameters' })
+  @ApiUnauthorizedResponse({ description: 'Authentication required' })
+  @ApiForbiddenResponse({ description: 'Insufficient role permissions' })
+  listMyPosts(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ListMyPostsQueryDto,
+  ): Promise<PaginatedBlogPostsResponseDto> {
+    return this.blogService.listMyPosts(user.userId, query);
   }
 
   @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('posts/:id')
-  @ApiOperation({ summary: 'BLG-02: Get published blog post details' })
-  getPost() {
-    throw new NotImplementedException('GET /api/posts/:id not implemented yet');
+  @ApiOperation({
+    summary: 'BLG-02: Get published blog post details (or draft by author)',
+  })
+  @ApiParam({ name: 'id', description: 'Blog post MongoDB ObjectId' })
+  @ApiOkResponse({
+    description: 'Blog post details with author summary and visible comments',
+    type: BlogPostDetailResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid blog post ID' })
+  @ApiNotFoundResponse({
+    description: 'Blog post not found or not accessible',
+  })
+  getPost(
+    @Param('id') id: string,
+    @CurrentUser() user?: AuthenticatedUser,
+  ): Promise<BlogPostDetailResponseDto> {
+    return this.blogService.getPost(id, user);
   }
 
   @ApiCookieAuth()
   @Roles(Role.REGISTERED_USER)
   @Patch('posts/:id')
   @ApiOperation({ summary: 'BLG-04, BLG-08: Update own blog post or tags' })
-  updatePost() {
-    throw new NotImplementedException(
-      'PATCH /api/posts/:id not implemented yet',
-    );
+  @ApiParam({ name: 'id', description: 'Blog post MongoDB ObjectId' })
+  @ApiOkResponse({
+    description: 'Blog post updated successfully',
+    type: BlogPostItemDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid post ID or update payload' })
+  @ApiUnauthorizedResponse({ description: 'Authentication required' })
+  @ApiForbiddenResponse({
+    description: 'Only the post author can update this blog post',
+  })
+  @ApiNotFoundResponse({ description: 'Blog post not found' })
+  updatePost(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdatePostDto,
+  ): Promise<BlogPostItemDto> {
+    return this.blogService.updatePost(id, user.userId, dto);
   }
 
   @ApiCookieAuth()
