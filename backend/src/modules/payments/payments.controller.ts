@@ -12,10 +12,12 @@ import {
   ApiBadRequestResponse,
   ApiConflictResponse,
   ApiCookieAuth,
+  ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiServiceUnavailableResponse,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -31,11 +33,13 @@ import {
 } from './booking-policies.service';
 import { AcceptPoliciesDto } from './dto/accept-policies.dto';
 import { BookingParamsDto } from './dto/booking-params.dto';
+import { CreatePaymentDto } from './dto/create-payment.dto';
+import { PaymentIntentResponseDto } from './dto/payment-response.dto';
 import {
   AcceptPoliciesResponseDto,
   BookingPoliciesResponseDto,
 } from './dto/booking-policies-response.dto';
-import { PaymentsService } from './payments.service';
+import { PaymentIntentResponse, PaymentsService } from './payments.service';
 
 @ApiTags('Payments & Refunds')
 @Controller()
@@ -115,9 +119,33 @@ export class PaymentsController {
   @ApiCookieAuth()
   @Roles(Role.REGISTERED_USER)
   @Post('payments')
-  @ApiOperation({ summary: 'PAY-01: Create Stripe payment intent for booking' })
-  createPayment() {
-    throw new NotImplementedException('POST /api/payments not implemented yet');
+  @ApiOperation({
+    summary: 'PAY-01: Create Stripe payment intent for booking',
+    description:
+      'Starts paying a PENDING_PAYMENT flight booking or hotel reservation inside its 10-minute hold (the hold is never extended). The amount is the booking total stored on the server, never taken from the request. The policies must have been accepted first. Creates a Stripe test-mode PaymentIntent and returns its clientSecret for Stripe Elements: card details go to Stripe only and never reach this backend. The booking is NOT confirmed here; only the verified Stripe webhook confirms it. When the hold expires the PaymentIntent is cancelled.',
+  })
+  @ApiCreatedResponse({
+    description: 'PaymentIntent created: use clientSecret with Stripe Elements',
+    type: PaymentIntentResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description: 'Invalid body, or Stripe rejected the amount/currency',
+  })
+  @ApiUnauthorizedResponse({ description: 'Not signed in' })
+  @ApiForbiddenResponse({ description: 'Only registered users may pay' })
+  @ApiNotFoundResponse({ description: 'Booking not found or not yours' })
+  @ApiConflictResponse({
+    description:
+      'Booking is not PENDING_PAYMENT, its hold expired, policies not accepted, passenger details missing, or a payment already exists for it',
+  })
+  @ApiServiceUnavailableResponse({
+    description: 'Stripe is not configured or not reachable',
+  })
+  createPayment(
+    @Body() dto: CreatePaymentDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<PaymentIntentResponse> {
+    return this.paymentsService.createPayment(user.userId, dto);
   }
 
   @ApiCookieAuth()
