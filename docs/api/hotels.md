@@ -1,6 +1,6 @@
 # Hotels, rooms and reviews (SCRUM-52–SCRUM-69)
 
-This document describes the complete 18-ticket stack. This branch completes SCRUM-52 through SCRUM-68; later ticket routes remain scaffolded here. All PRs target develop and should be merged in ascending ticket order with merge commits to preserve the stack.
+This document describes the complete 18-ticket stack. This branch completes SCRUM-52 through SCRUM-69; later ticket routes remain scaffolded here. All PRs target develop and should be merged in ascending ticket order with merge commits to preserve the stack.
 
 These endpoints implement Mohamed Ahmed's 18 hotel tickets for the backend milestone. They use the existing NestJS global JWT/session and role guards, Mongoose models, exception filter, and `/api` prefix. Swagger is served at `/api/docs`.
 
@@ -40,7 +40,7 @@ Identifiers are MongoDB ObjectIds. Hotel city/country selections must reference 
 
 The platform currency is USD, matching the existing schema defaults and the single-currency rule in PAY-04. Room currencies match their hotel. Prices use at most two decimal places. Existing reservation totals and policy snapshots are never rewritten by profile, room-price, availability-price, or policy edits.
 
-Paginated lists return `{ data, total, page, limit, totalPages }`, with page 1 and limit 10 by default (maximum 100). Search defaults to ascending price. Room quotes include every free room, including smaller rooms that may be selected together; `guestCount` is echoed as selection context. Hotel details include paginated active-room and visible-review summaries and an available-room page when both stay dates are supplied.
+Paginated lists return `{ data, total, page, limit, totalPages }`, with page 1 and limit 10 by default (maximum limit 100; maximum page 1,000,000). Search defaults to ascending price. Room quotes include every free room, including smaller rooms that may be selected together; `guestCount` is echoed as selection context. Hotel details include paginated active-room and visible-review summaries and an available-room page when both stay dates are supplied.
 
 ## Example workflow
 
@@ -117,7 +117,7 @@ Reservation queries accept `status`, `startDate`, `endDate`, pagination, and sor
 
 Submit a rating with `{ "rating": 5 }` or include optional `title` and `comment` (at most 1000 characters for the comment). A registered traveler must own a CONFIRMED/COMPLETED reservation whose check-out date has passed. A confirmed eligible booking is transitioned to COMPLETED in the review transaction; a minute-based maintenance job also completes checked-out confirmed stays. Unpaid, cancelled, future or other users' bookings are rejected. A unique booking index prevents duplicate concurrent reviews.
 
-Create, update and delete recalculate visible-review counts and ratings in the same transaction. Concurrent changes acquire a hotel write lock before recomputing statistics to prevent lost updates. Public reads calculate statistics from visible reviews, so externally moderated hidden reviews do not leak or inflate displayed ratings. Public reviews are newest first and expose only author display names and reply text/time, not booking IDs, account records or reply author IDs. Deactivated/missing authors appear as `Deleted user`. An admin review deletion is audited within the same transaction. Assigned moderators/admins may set or replace a visible review's embedded `{ replyText, repliedBy, repliedAt }` reply.
+Create, update and delete recalculate visible-review counts and ratings in the same transaction. Concurrent changes acquire a hotel write lock before recomputing statistics to prevent lost updates. Public reads calculate statistics from visible reviews, so externally moderated hidden reviews do not leak or inflate displayed ratings. Public reviews are newest first and expose only author display names and reply text/time, not booking IDs, account records or reply author IDs. Deactivated/missing authors appear as `Deleted user`. An admin review deletion is audited within the same transaction. Successful admin hotel/room/profile/photo/availability/policy/reply mutations are also audited by the hotel controller interceptor; request bodies and credentials are excluded from audit details. Assigned moderators/admins may set or replace a visible review's embedded `{ replyText, repliedBy, repliedAt }` reply.
 
 ## Validation and integration
 
@@ -131,7 +131,7 @@ npm test -- --runInBand
 npm run test:e2e -- --runInBand
 ```
 
-The hotel integration suite uses a temporary real MongoDB replica set through the development-only `mongodb-memory-server` dependency and the real JWT/session and role guards. No Atlas configuration or `.env` is read by these tests. The first installation downloads a MongoDB test binary. The suite exercises all 18 endpoints, reference-data validation, public/private responses, uploads, allocation protections, rollback, concurrent initialization and capacity edits, review eligibility, concurrent review uniqueness and aggregate consistency, and revoked/suspended sessions. The health e2e smoke test checks the actual public `/api/health` payload without external services. Swagger generation verifies route and DTO discoverability.
+The hotel integration suite uses a temporary real MongoDB replica set through the development-only `mongodb-memory-server` dependency and the real JWT/session and role guards. No Atlas configuration or `.env` is read by these tests. The first installation downloads a MongoDB test binary. The suite exercises all 18 endpoints, reference-data validation, public/private responses, uploads, allocation protections, rollback, concurrent initialization and capacity edits, review eligibility, concurrent review uniqueness and aggregate consistency, and revoked/suspended sessions. The health e2e smoke test checks the actual public `/api/health` payload without external services. Swagger generation verifies route and DTO discoverability; HTTP checks also verify that Swagger UI and the generated OpenAPI document are served.
 
 Shared fixes are required for these endpoints: `AppModule` already imported an upload module absent from the repository (the broad `uploads/` ignore pattern also hid source folders), and several dependent schemas declared reference types with `Types.ObjectId` instead of `Schema.Types.ObjectId`. The affected hotel, session, moderator-assignment, city and audit reference paths now cast and query ObjectIds correctly. Existing databases containing legacy **string** references or duplicate room names should be repaired before enabling the new casting/unique index; tests use a fresh isolated database and do not alter team data.
 

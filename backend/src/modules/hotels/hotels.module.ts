@@ -1,3 +1,4 @@
+import { HotelAdminAuditInterceptor } from './hotel-admin-audit.interceptor';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { HotelBookingsController } from './hotel-bookings.controller';
@@ -36,6 +37,7 @@ import { AuditLogsModule } from '../audit-logs/audit-logs.module';
   ],
   controllers: [HotelsController, HotelBookingsController],
   providers: [
+    HotelAdminAuditInterceptor,
     HotelsService,
     HotelAccessService,
     HotelInventoryService,

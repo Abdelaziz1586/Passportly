@@ -1,4 +1,6 @@
+import { HotelAdminAuditInterceptor } from './hotel-admin-audit.interceptor';
 import {
+  UseInterceptors,
   Body,
   Controller,
   Delete,
@@ -23,6 +25,7 @@ import { HotelReviewsService } from './hotel-reviews.service';
 
 @ApiTags('Hotel Bookings & Reviews')
 @ApiCookieAuth()
+@UseInterceptors(HotelAdminAuditInterceptor)
 @Controller()
 export class HotelBookingsController {
   constructor(
@@ -111,9 +114,6 @@ export class HotelBookingsController {
     @Body() dto: ReplyReviewDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    void [id, dto, user];
-    throw new NotImplementedException(
-      'Implemented by the subsequent SCRUM-69 PR in this stack',
-    );
+    return this.reviews.reply(id, dto, user);
   }
 }

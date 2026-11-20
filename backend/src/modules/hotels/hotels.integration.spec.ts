@@ -49,7 +49,7 @@ import { dateRange, DAY_MS, todayUtc } from './hotel-utils';
 
 // Each ticket branch activates its completed prefix; the final branch runs all 18 groups.
 const implementedTickets = new Set(
-  Array.from({ length: 17 }, (_, i) => `SCRUM-${52 + i}`),
+  Array.from({ length: 18 }, (_, i) => `SCRUM-${52 + i}`),
 );
 const ticket = (id: string, tests: () => void): void => {
   (implementedTickets.has(id) ? describe : describe.skip)(id, tests);
@@ -192,6 +192,15 @@ describe('Hotel ticket API integration (real MongoDB replica set)', () => {
       }),
     );
     app.useGlobalFilters(new AllExceptionsFilter());
+    const swagger = SwaggerModule.createDocument(
+      app,
+      new DocumentBuilder()
+        .setTitle('Hotel API verification')
+        .setVersion('1')
+        .addCookieAuth('access_token')
+        .build(),
+    );
+    SwaggerModule.setup('api/docs', app, swagger);
     await app.init();
     hotels = app.get(getModelToken(Hotel.name));
     rooms = app.get(getModelToken(Room.name));
@@ -618,6 +627,7 @@ describe('Hotel ticket API integration (real MongoDB replica set)', () => {
         { minPrice: 200, maxPrice: 100 },
         { sortBy: '$where' },
         { limit: 101 },
+        { page: 1e20 },
         { roomCount: 0 },
         { city: 'bad' },
         { unexpected: true },
@@ -1206,7 +1216,7 @@ describe('Hotel ticket API integration (real MongoDB replica set)', () => {
     });
     it('does not lose a concurrent atomic hold when reducing nightly capacity', async () => {
       await seedAvailability();
-      await Promise.all([
+      const [capacityResponse] = await Promise.all([
         request(app.getHttpServer())
           .patch(roomPath('/availability'))
           .set('Cookie', moderatorCookie)
@@ -1226,6 +1236,7 @@ describe('Hotel ticket API integration (real MongoDB replica set)', () => {
           { $inc: { heldUnits: 2 } },
         ),
       ]);
+      expect([200, 409]).toContain(capacityResponse.status);
       const rows = await availability.find({ room: roomId }).lean();
       expect(
         rows.every((row) => row.bookedUnits + row.heldUnits <= row.totalUnits),
@@ -1699,6 +1710,82 @@ describe('Hotel ticket API integration (real MongoDB replica set)', () => {
   });
 
   ticket('SCRUM-69', () => {
+    it('accepts Unicode review comments within the 1000-character limit', async () => {
+      const review = await seedReview();
+      const comment = String.fromCodePoint(0x1f642).repeat(600);
+      const response = await request(app.getHttpServer())
+        .patch('/api/reviews/' + review._id.toString())
+        .set('Cookie', travelerCookie)
+        .send({ comment })
+        .expect(200);
+      expect(body<{ comment: string }>(response).comment).toBe(comment);
+    });
+    it('audits successful admin hotel mutations and excludes moderator actions', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/api/hotels')
+        .set('Cookie', adminCookie)
+        .send({ name: 'Audited Hotel', address: 'A street', city: cityId })
+        .expect(201);
+      const createdId = body<{ _id: string }>(created)._id;
+      const auditModel = app.get<Model<AuditLog>>(getModelToken(AuditLog.name));
+      expect(
+        await auditModel
+          .findOne({ action: 'HOTEL_CREATED', targetId: createdId })
+          .lean(),
+      ).toMatchObject({ actorRole: Role.ADMIN, targetType: 'Hotel' });
+      await request(app.getHttpServer())
+        .patch(hotelPath())
+        .set('Cookie', adminCookie)
+        .send({ name: 'Admin update' })
+        .expect(200);
+      await request(app.getHttpServer())
+        .delete(roomPath())
+        .set('Cookie', adminCookie)
+        .expect(200);
+      expect(
+        await auditModel
+          .findOne({ action: 'ROOM_DELETED', targetId: roomId })
+          .lean(),
+      ).toMatchObject({ targetType: 'Room' });
+      expect(await auditModel.countDocuments({})).toBe(3);
+      const historicalRoom = await rooms.create({
+        hotel: hotelId,
+        ...newRoom(),
+      });
+      roomId = historicalRoom._id.toString();
+      await seedBooking({
+        checkInDate: new Date(jsonDate(-5)),
+        checkOutDate: new Date(jsonDate(-2)),
+        status: BookingStatus.COMPLETED,
+      });
+      await request(app.getHttpServer())
+        .delete(roomPath())
+        .set('Cookie', adminCookie)
+        .expect(200);
+      expect(
+        await auditModel
+          .findOne({ action: 'ROOM_DEACTIVATED', targetId: roomId })
+          .lean(),
+      ).toMatchObject({ targetType: 'Room', details: { deactivated: true } });
+      expect(await auditModel.countDocuments({})).toBe(4);
+      await request(app.getHttpServer())
+        .patch(hotelPath())
+        .set('Cookie', moderatorCookie)
+        .send({ name: 'Moderator update' })
+        .expect(200);
+      expect(await auditModel.countDocuments({})).toBe(4);
+    });
+    it('serves Swagger UI and the generated OpenAPI document over HTTP', async () => {
+      const ui = await request(app.getHttpServer())
+        .get('/api/docs/')
+        .expect(200);
+      expect(ui.text).toContain('swagger-ui');
+      const spec = body<{ paths: Record<string, unknown> }>(
+        await request(app.getHttpServer()).get('/api/docs-json').expect(200),
+      );
+      expect(spec.paths['/api/hotels/search']).toBeDefined();
+      expect(spec.paths['/api/reviews/{id}/reply']).toBeDefined();
+    });
     it('lets the assigned moderator/admin reply and exposes a sanitized public reply', async () => {
       const review = await seedReview();
       const url = `/api/reviews/${review._id.toString()}/reply`;

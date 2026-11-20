@@ -1,3 +1,4 @@
+import { HotelAdminAuditInterceptor } from './hotel-admin-audit.interceptor';
 import {
   Body,
   Controller,
@@ -43,6 +44,7 @@ import {
 } from './dto/hotel.dto';
 
 @ApiTags('Hotels & Rooms')
+@UseInterceptors(HotelAdminAuditInterceptor)
 @Controller('hotels')
 export class HotelsController {
   constructor(

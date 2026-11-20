@@ -50,7 +50,7 @@ export class Review {
   @Prop({ trim: true })
   title?: string;
 
-  @Prop({ trim: true, default: '', maxlength: 1000 })
+  @Prop({ trim: true, default: '' })
   comment: string;
 
   @Prop({ default: false, index: true })

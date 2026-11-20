@@ -328,11 +328,12 @@ export class AvailabilityFieldsDto extends DateRangeDto {
 }
 
 export class StayQueryDto {
-  @ApiPropertyOptional({ minimum: 1, default: 1 })
+  @ApiPropertyOptional({ maximum: 1000000, minimum: 1, default: 1 })
   @ValidateIf((_object, value: unknown) => value !== undefined)
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(1000000)
   page?: number = 1;
 
   @ApiPropertyOptional({ minimum: 1, maximum: 100, default: 10 })
@@ -369,11 +370,12 @@ export class HotelDetailsQueryDto extends PartialType(StayQueryDto, {
 }) {}
 
 export class HotelPaginationDto extends PaginationQueryDto {
-  @ApiPropertyOptional({ default: 1, minimum: 1 })
+  @ApiPropertyOptional({ maximum: 1000000, default: 1, minimum: 1 })
   @ValidateIf((_object, value: unknown) => value !== undefined)
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(1000000)
   page?: number = 1;
 
   @ApiPropertyOptional({ default: 10, minimum: 1, maximum: 100 })
