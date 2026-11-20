@@ -53,7 +53,6 @@ export interface LeanBlogPostLike {
 export function escapeRegex(input: string): string {
   return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
-
 export function slugify(input: string): string {
   return input
     .toLowerCase()

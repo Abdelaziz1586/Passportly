@@ -92,7 +92,6 @@ export class BlogPostItemDto {
   @ApiPropertyOptional()
   updatedAt?: Date;
 }
-
 export class PaginatedBlogPostsResponseDto {
   @ApiProperty({ type: [BlogPostItemDto] })
   data: BlogPostItemDto[];
