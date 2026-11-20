@@ -148,10 +148,7 @@ export class HotelsController {
     @Body() dto: AvailabilityFieldsDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    void [id, roomId, dto, user];
-    throw new NotImplementedException(
-      'Implemented by the subsequent SCRUM-60 PR in this stack',
-    );
+    return this.inventory.setAvailability(id, roomId, dto, user, true);
   }
 
   @ApiCookieAuth()
