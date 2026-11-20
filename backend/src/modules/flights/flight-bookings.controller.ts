@@ -29,11 +29,14 @@ import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.inte
 import { CreateFlightBookingDto } from './dto/create-flight-booking.dto';
 import { ETicketQueryDto, ETicketFormat } from './dto/e-ticket-query.dto';
 import { ETicketResponseDto } from './dto/e-ticket-response.dto';
+import { FlightBookingDetailsResponseDto } from './dto/flight-booking-details-response.dto';
 import { FlightBookingIdParamDto } from './dto/flight-booking-id-param.dto';
 import { FlightBookingListResponseDto } from './dto/flight-booking-list-response.dto';
 import { HoldSeatsDto } from './dto/hold-seats.dto';
 import { ListFlightBookingsQueryDto } from './dto/list-flight-bookings-query.dto';
 import type { ETicket } from './flight-e-ticket';
+import { FlightBookingViewService } from './flight-booking-view.service';
+import type { FlightBookingDetails } from './flight-booking-view';
 import { FlightETicketService } from './flight-e-ticket.service';
 import {
   FlightBookingListResponse,
@@ -49,6 +52,7 @@ export class FlightBookingsController {
   constructor(
     private readonly flightBookingsService: FlightBookingsService,
     private readonly flightETicketService: FlightETicketService,
+    private readonly flightBookingViewService: FlightBookingViewService,
   ) {}
 
   @Roles(Role.REGISTERED_USER)
@@ -132,11 +136,27 @@ export class FlightBookingsController {
 
   @Roles(Role.REGISTERED_USER, Role.ADMIN, Role.AIRLINE_MODERATOR)
   @Get(':id')
-  @ApiOperation({ summary: 'FLT-25: Get flight booking details' })
-  getBooking() {
-    throw new NotImplementedException(
-      'GET /api/flight-bookings/:id not implemented yet',
-    );
+  @ApiOperation({
+    summary: 'FLT-25: Get flight booking details',
+    description:
+      "Full details of one booking: every leg (flight, airline, cabin, times in UTC, seats), the passengers (passport masked, e-ticket numbers), prices, the policies captured at booking, status and timestamps, and a payment summary (status, amount, paidAt; never card data). Readable by the booking's owner, an admin, or the airline moderator of an airline operating a flight of it; for anyone else the booking looks like it does not exist. An airline moderator only gets a manifest of the legs of their own airline (names, masked passport, e-ticket numbers, seats) and no prices, payment, policies or date of birth, nationality or fees. A hold that ran out is reported as EXPIRED.",
+  })
+  @ApiOkResponse({
+    description: 'The booking',
+    type: FlightBookingDetailsResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid id' })
+  @ApiUnauthorizedResponse({ description: 'Not signed in' })
+  @ApiForbiddenResponse({
+    description:
+      'Only registered users, admins and airline moderators may call this',
+  })
+  @ApiNotFoundResponse({ description: 'Booking not found or not yours' })
+  getBooking(
+    @Param() params: FlightBookingIdParamDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<FlightBookingDetails> {
+    return this.flightBookingViewService.getBooking(user, params.id);
   }
 
   @Roles(Role.REGISTERED_USER)

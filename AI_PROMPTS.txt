@@ -993,3 +993,14 @@ Implement GET /api/flight-bookings/:id/e-ticket for a CONFIRMED booking: the boo
 How the output was used:
 The generated service, shared booking access helper, dependency-free PDF builder, DTOs, controller wiring and tests were integrated and checked with lint, build, unit tests, 30 live checks, a PDFKit open of the generated file and a Swagger "Try it out" run for both formats.
 ================================================
+================================================
+Date: 2026-11-19
+Student: Abdulrahman Ahmed
+Branch: feature/SCRUM-73-FLT-25-get-flight-booking (stacked on feature/SCRUM-76-FLT-23-flight-e-ticket)
+Tool: Claude Code (terminal, Claude Sonnet 5.5)
+Related Requirement: FLT-25 (GET /api/flight-bookings/:id)
+Prompt:
+Implement GET /api/flight-bookings/:id: the full details of one booking with legs (flight number, airline, cabin, UTC times, seats), passengers (passport masked, e-ticket numbers), prices, policies, status and timestamps, and a payment summary without card data. Readable by the owner, an admin, or the moderator of an operating airline; everyone else gets 404. An airline moderator only gets the manifest of their own legs, no prices, payment or personal details. A lapsed hold must be reported as EXPIRED. Then write unit tests and run live checks plus the Swagger page in a browser.
+How the output was used:
+The generated view service, mapper, response DTOs, controller wiring and tests were integrated and checked with lint, build, unit tests, 25 live checks and a Swagger "Try it out" run.
+================================================

@@ -12,6 +12,8 @@ import {
   Airport,
   AirportSchema,
 } from '../reference-data/schemas/airport.schema';
+import { Payment, PaymentSchema } from '../payments/schemas/payment.schema';
+import { FlightBookingViewService } from './flight-booking-view.service';
 import { FlightETicketService } from './flight-e-ticket.service';
 import { Airline, AirlineSchema } from './schemas/airline.schema';
 import {
@@ -34,6 +36,7 @@ import { Flight, FlightSchema } from './schemas/flight.schema';
       { name: CabinInventory.name, schema: CabinInventorySchema },
       { name: FlightBooking.name, schema: FlightBookingSchema },
       { name: Airport.name, schema: AirportSchema },
+      { name: Payment.name, schema: PaymentSchema },
     ]),
   ],
   controllers: [
@@ -46,6 +49,7 @@ import { Flight, FlightSchema } from './schemas/flight.schema';
     FlightEventsService,
     FlightBookingsService,
     FlightETicketService,
+    FlightBookingViewService,
   ],
   exports: [FlightsService, FlightBookingsService, MongooseModule],
 })
