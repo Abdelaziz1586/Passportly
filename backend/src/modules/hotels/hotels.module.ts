@@ -1,6 +1,8 @@
 import { HotelAdminAuditInterceptor } from './hotel-admin-audit.interceptor';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { Payment, PaymentSchema } from '../payments/schemas/payment.schema';
+import { Refund, RefundSchema } from '../payments/schemas/refund.schema';
 import { HotelBookingsController } from './hotel-bookings.controller';
 import { HotelBookingViewService } from './hotel-booking-view.service';
 import { HotelBookingsService } from './hotel-bookings.service';
@@ -37,6 +39,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
       { name: RoomAvailability.name, schema: RoomAvailabilitySchema },
       { name: HotelBooking.name, schema: HotelBookingSchema },
       { name: Review.name, schema: ReviewSchema },
+      { name: Payment.name, schema: PaymentSchema },
+      { name: Refund.name, schema: RefundSchema },
     ]),
   ],
   controllers: [HotelsController, HotelBookingsController],

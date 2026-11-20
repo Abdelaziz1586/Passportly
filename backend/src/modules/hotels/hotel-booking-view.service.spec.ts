@@ -1,6 +1,12 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Types } from 'mongoose';
-import { BookingStatus } from '../../common/enums';
+import {
+  BookingStatus,
+  PaymentStatus,
+  RefundStatus,
+  Role,
+} from '../../common/enums';
+import { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import {
   HotelBookingGroup,
   ListHotelBookingsQueryDto,
@@ -41,6 +47,7 @@ function query<T>(result: T) {
 
 const ownerId = new Types.ObjectId();
 const hotelId = new Types.ObjectId();
+const otherHotelId = new Types.ObjectId();
 const paymentId = new Types.ObjectId();
 const DAY = 86_400_000;
 const utcMidnight = (offsetDays: number) => {
@@ -107,18 +114,35 @@ function build(
   const hotelModel = {
     find: jest.fn(() => query([{ _id: hotelId, name: 'Nile Hotel' }])),
   };
+  const paymentModel = {
+    findById: jest.fn(() =>
+      query({
+        _id: paymentId,
+        status: PaymentStatus.SUCCEEDED,
+        amount: 300,
+        currency: 'USD',
+        paidAt: new Date('2026-11-19T10:04:00Z'),
+        stripePaymentIntentId: 'pi_secret_ish',
+      }),
+    ),
+  };
+  const refundModel = { findOne: jest.fn(() => query<unknown>(null)) };
   const hotelBookingsService = {
     expireHold: jest.fn().mockResolvedValue(true),
   };
   const service = new HotelBookingViewService(
     bookingModel as never,
     hotelModel as never,
+    paymentModel as never,
+    refundModel as never,
     hotelBookingsService as never,
   );
   return {
     service,
     bookingModel,
     hotelModel,
+    paymentModel,
+    refundModel,
     hotelBookingsService,
     findQuery,
   };
@@ -303,5 +327,239 @@ describe('HotelBookingViewService.listBookings', () => {
 
     expect(result.data).toEqual([]);
     expect(hotelModel.find).not.toHaveBeenCalled();
+  });
+});
+
+describe('HotelBookingViewService.getBooking', () => {
+  const owner: AuthenticatedUser = {
+    userId: ownerId.toString(),
+    email: 'o@example.com',
+    role: Role.REGISTERED_USER,
+    jti: 'j',
+  };
+  const moderator: AuthenticatedUser = {
+    userId: new Types.ObjectId().toString(),
+    email: 'm@example.com',
+    role: Role.HOTEL_MODERATOR,
+    jti: 'j',
+    assignedProviderType: 'hotel',
+    assignedProviderId: hotelId.toString(),
+  };
+
+  it('returns the owner every detail with a payment summary and no secrets', async () => {
+    const booking = makeBooking();
+    const { service } = build([booking]);
+
+    const view = await service.getBooking(owner, booking._id.toString());
+
+    expect(view).toMatchObject({
+      id: booking._id.toString(),
+      status: BookingStatus.CONFIRMED,
+      group: HotelBookingGroup.UPCOMING,
+      hotelName: 'Nile Hotel',
+      primaryGuestEmail: 'layla@example.com',
+      primaryGuestPhone: '+20 100',
+      specialRequests: 'Late arrival',
+      totalPrice: 300,
+      policies: { checkInTime: '14:00' },
+    });
+    expect(view.rooms[0]).toMatchObject({
+      roomName: '101',
+      adults: 2,
+      childrenAges: [5],
+      subtotal: 300,
+      averagePricePerNight: 100,
+    });
+    expect(view.payment).toEqual({
+      id: paymentId.toString(),
+      status: PaymentStatus.SUCCEEDED,
+      amount: 300,
+      currency: 'USD',
+      paidAt: new Date('2026-11-19T10:04:00Z'),
+    });
+    const json = JSON.stringify(view);
+    expect(json).not.toContain('pi_secret_ish');
+    expect(json).not.toContain(ownerId.toString());
+  });
+
+  it('shows the refund of a cancelled reservation and sorts to the newest', async () => {
+    const booking = makeBooking({
+      status: BookingStatus.CANCELLED,
+      cancelledAt: new Date('2026-11-25T08:00:00Z'),
+      cancellationReason: 'Plans changed',
+      refundAmount: 150,
+    });
+    const ctx = build([booking]);
+    const refundId = new Types.ObjectId();
+    ctx.refundModel.findOne.mockReturnValue(
+      query({
+        _id: refundId,
+        status: RefundStatus.PENDING,
+        amount: 150,
+        currency: 'USD',
+        reason: 'Cancelled by the traveller',
+        policyCalculationNotes: '50%',
+        stripeRefundId: 're_secret',
+      }),
+    );
+
+    const view = await ctx.service.getBooking(owner, booking._id.toString());
+
+    expect(view).toMatchObject({
+      status: BookingStatus.CANCELLED,
+      cancellationReason: 'Plans changed',
+      refundAmount: 150,
+    });
+    expect(view.refund).toEqual({
+      id: refundId.toString(),
+      status: RefundStatus.PENDING,
+      amount: 150,
+      currency: 'USD',
+      reason: 'Cancelled by the traveller',
+      policyCalculationNotes: '50%',
+      processedAt: null,
+    });
+    expect(JSON.stringify(view)).not.toContain('re_secret');
+    const [filter] = ctx.refundModel.findOne.mock.calls[0] as unknown as [
+      { bookingType: string; bookingId: Types.ObjectId },
+    ];
+    expect(filter.bookingType).toBe('hotel');
+    expect(filter.bookingId.equals(booking._id)).toBe(true);
+  });
+
+  it('lets an admin read any reservation in full', async () => {
+    const booking = makeBooking();
+    const { service } = build([booking]);
+
+    const view = await service.getBooking(
+      { ...owner, userId: new Types.ObjectId().toString(), role: Role.ADMIN },
+      booking._id.toString(),
+    );
+
+    expect(view.totalPrice).toBe(300);
+    expect(view.primaryGuestEmail).toBe('layla@example.com');
+    expect(view.payment?.status).toBe(PaymentStatus.SUCCEEDED);
+  });
+
+  it('gives the moderator of that hotel the stay facts only: no contact, prices, payment, policies or refund', async () => {
+    const booking = makeBooking();
+    const ctx = build([booking]);
+
+    const view = await ctx.service.getBooking(
+      moderator,
+      booking._id.toString(),
+    );
+
+    expect(view).toMatchObject({
+      primaryGuestName: 'Layla Hassan',
+      primaryGuestEmail: null,
+      primaryGuestPhone: null,
+      totalPrice: null,
+      policies: null,
+      policyAcceptedAt: null,
+      refundAmount: null,
+      payment: null,
+      refund: null,
+    });
+    expect(view.rooms[0]).toMatchObject({
+      roomName: '101',
+      adults: 2,
+      subtotal: null,
+      averagePricePerNight: null,
+    });
+    expect(ctx.paymentModel.findById).not.toHaveBeenCalled();
+    expect(ctx.refundModel.findOne).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ assignedProviderId: otherHotelId.toString() }],
+    [{ assignedProviderId: undefined }],
+    [{ assignedProviderType: 'airline' as const }],
+  ])(
+    'gives a moderator without that hotel assignment 404 %j',
+    async (override) => {
+      const booking = makeBooking();
+      const { service } = build([booking]);
+
+      await expect(
+        service.getBooking(
+          { ...moderator, ...override },
+          booking._id.toString(),
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    },
+  );
+
+  it("is a 404 for someone else's reservation, an airline moderator, a malformed id and an unknown id", async () => {
+    const booking = makeBooking();
+    const { service, bookingModel } = build([booking]);
+
+    await expect(
+      service.getBooking(
+        { ...owner, userId: new Types.ObjectId().toString() },
+        booking._id.toString(),
+      ),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(
+      service.getBooking(
+        { ...owner, role: Role.AIRLINE_MODERATOR },
+        booking._id.toString(),
+      ),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.getBooking(owner, 'nope')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(bookingModel.findById).toHaveBeenCalledTimes(2);
+    await expect(
+      service.getBooking(owner, new Types.ObjectId().toString()),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('has no payment summary when the payment record is missing', async () => {
+    const booking = makeBooking();
+    const ctx = build([booking]);
+    ctx.paymentModel.findById.mockReturnValue(query(null) as never);
+
+    const view = await ctx.service.getBooking(owner, booking._id.toString());
+
+    expect(view.payment).toBeNull();
+  });
+
+  it('a stay is CONFIRMED on its check-out day and COMPLETED from the next UTC day', async () => {
+    const onDay = makeBooking({
+      checkInDate: utcMidnight(-3),
+      checkOutDate: utcMidnight(0),
+    });
+    const dayAfter = makeBooking({
+      checkInDate: utcMidnight(-4),
+      checkOutDate: utcMidnight(-1),
+    });
+    const { service } = build([onDay, dayAfter]);
+
+    expect((await service.getBooking(owner, onDay._id.toString())).status).toBe(
+      BookingStatus.CONFIRMED,
+    );
+    expect(
+      (await service.getBooking(owner, dayAfter._id.toString())).status,
+    ).toBe(BookingStatus.COMPLETED);
+  });
+
+  it('has no payment or refund before paying starts, and reports a lapsed hold as EXPIRED', async () => {
+    const booking = makeBooking({
+      status: BookingStatus.PENDING_PAYMENT,
+      payment: null,
+      holdExpiresAt: new Date(Date.now() - 1000),
+      confirmedAt: undefined,
+      policyAcceptedAt: undefined,
+    });
+    const { service, paymentModel } = build([booking]);
+
+    const view = await service.getBooking(owner, booking._id.toString());
+
+    expect(view.status).toBe(BookingStatus.EXPIRED);
+    expect(view.group).toBe(HotelBookingGroup.PAST);
+    expect(view.payment).toBeNull();
+    expect(view.confirmedAt).toBeNull();
+    expect(paymentModel.findById).not.toHaveBeenCalled();
   });
 });

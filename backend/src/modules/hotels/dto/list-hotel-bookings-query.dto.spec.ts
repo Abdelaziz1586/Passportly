@@ -1,5 +1,6 @@
 import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import { BookingStatus } from '../../../common/enums';
+import { HotelBookingIdParamDto } from './hotel-booking-id-param.dto';
 import { ListHotelBookingsQueryDto } from './list-hotel-bookings-query.dto';
 
 // Same options as main.ts
@@ -83,5 +84,22 @@ describe('ListHotelBookingsQueryDto', () => {
     [{ hotel: '665f1c2e8a1b2c3d4e5f6a7b' }],
   ])('rejects %j', async (raw) => {
     await expect(parse(raw)).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('HotelBookingIdParamDto', () => {
+  const parse = (id: unknown) =>
+    pipe.transform(
+      { id },
+      { type: 'param', metatype: HotelBookingIdParamDto },
+    ) as Promise<HotelBookingIdParamDto>;
+
+  it('accepts an object id and rejects anything else', async () => {
+    expect((await parse('665f1c2e8a1b2c3d4e5f6a7b')).id).toBe(
+      '665f1c2e8a1b2c3d4e5f6a7b',
+    );
+    for (const bad of ['abc', '123', '{"$ne":null}']) {
+      await expect(parse(bad)).rejects.toBeInstanceOf(BadRequestException);
+    }
   });
 });

@@ -1,4 +1,4 @@
-import { BookingStatus } from '../../common/enums';
+import { BookingStatus, PaymentStatus, RefundStatus } from '../../common/enums';
 import { HotelBookingGroup } from './dto/list-hotel-bookings-query.dto';
 import { startOfUtcDay } from './hotel-booking-dates';
 
@@ -121,4 +121,64 @@ export interface HotelBookingListItem {
 export interface HotelBookingListResponse {
   data: HotelBookingListItem[];
   meta: { page: number; limit: number; total: number; totalPages: number };
+}
+
+export interface HotelDetailsRoom {
+  roomId: string;
+  roomName: string;
+  adults: number;
+  childrenAges: number[];
+  guestCount: number;
+  nights: number;
+  averagePricePerNight: number | null;
+  subtotal: number | null;
+}
+
+export interface HotelDetailsPayment {
+  id: string;
+  status: PaymentStatus;
+  amount: number;
+  currency: string;
+  paidAt: Date | null;
+}
+
+export interface HotelDetailsRefund {
+  id: string;
+  status: RefundStatus;
+  amount: number;
+  currency: string;
+  reason: string | null;
+  policyCalculationNotes: string | null;
+  processedAt: Date | null;
+}
+
+export interface HotelBookingDetails {
+  id: string;
+  bookingReference: string;
+  status: BookingStatus;
+  group: HotelBookingGroup;
+  hotelId: string;
+  hotelName: string | null;
+  checkInDate: Date;
+  checkOutDate: Date;
+  nights: number;
+  holdExpiresAt: Date | null;
+  rooms: HotelDetailsRoom[];
+  guestCount: number;
+  primaryGuestName: string;
+  primaryGuestEmail: string | null;
+  primaryGuestPhone: string | null;
+  specialRequests: string | null;
+  totalPrice: number | null;
+  currency: string;
+  policies: Record<string, unknown> | null;
+  policyAcceptedAt: Date | null;
+  confirmedAt: Date | null;
+  cancelledAt: Date | null;
+  cancellationReason: string | null;
+  refundAmount: number | null;
+  payment: HotelDetailsPayment | null;
+  refund: HotelDetailsRefund | null;
+  createdAt: Date;
+  updatedAt: Date;
 }

@@ -1,5 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { BookingStatus } from '../../../common/enums';
+import {
+  BookingStatus,
+  PaymentStatus,
+  RefundStatus,
+} from '../../../common/enums';
 import {
   HotelBookingGroup,
   LISTABLE_HOTEL_STATUSES,
@@ -58,4 +62,105 @@ export class HotelBookingListResponseDto {
   @ApiProperty({ type: [HotelBookingListItemDto] })
   data: HotelBookingListItemDto[];
   @ApiProperty({ type: HotelBookingListMetaDto }) meta: HotelBookingListMetaDto;
+}
+
+export class HotelDetailsRoomDto {
+  @ApiProperty() roomId: string;
+  @ApiProperty() roomName: string;
+  @ApiProperty() adults: number;
+  @ApiProperty({ type: [Number] }) childrenAges: number[];
+  @ApiProperty() guestCount: number;
+  @ApiProperty() nights: number;
+  @ApiProperty({ nullable: true, type: Number }) averagePricePerNight:
+    number | null;
+  @ApiProperty({ nullable: true, type: Number }) subtotal: number | null;
+}
+
+export class HotelDetailsPaymentDto {
+  @ApiProperty() id: string;
+  @ApiProperty({ enum: PaymentStatus }) status: PaymentStatus;
+  @ApiProperty({ description: 'Major units, e.g. 123.45' }) amount: number;
+  @ApiProperty({ example: 'USD' }) currency: string;
+  @ApiProperty({ nullable: true, type: Date }) paidAt: Date | null;
+}
+
+export class HotelDetailsRefundDto {
+  @ApiProperty() id: string;
+  @ApiProperty({
+    enum: RefundStatus,
+    description: 'PENDING (being processed), SUCCEEDED (refunded) or FAILED',
+  })
+  status: RefundStatus;
+  @ApiProperty() amount: number;
+  @ApiProperty({ example: 'USD' }) currency: string;
+  @ApiProperty({ nullable: true, type: String }) reason: string | null;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description:
+      'How the amount was computed from the tiers stored on the reservation',
+  })
+  policyCalculationNotes: string | null;
+  @ApiProperty({ nullable: true, type: Date }) processedAt: Date | null;
+}
+
+export class HotelBookingDetailsResponseDto {
+  @ApiProperty() id: string;
+  @ApiProperty() bookingReference: string;
+  @ApiProperty({ enum: LISTABLE_HOTEL_STATUSES }) status: BookingStatus;
+  @ApiProperty({ enum: HotelBookingGroup }) group: HotelBookingGroup;
+  @ApiProperty() hotelId: string;
+  @ApiProperty({ nullable: true, type: String }) hotelName: string | null;
+  @ApiProperty({ type: Date }) checkInDate: Date;
+  @ApiProperty({ type: Date }) checkOutDate: Date;
+  @ApiProperty() nights: number;
+  @ApiProperty({ nullable: true, type: Date }) holdExpiresAt: Date | null;
+  @ApiProperty({ type: [HotelDetailsRoomDto] }) rooms: HotelDetailsRoomDto[];
+  @ApiProperty() guestCount: number;
+  @ApiProperty() primaryGuestName: string;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: 'null for a hotel moderator',
+  })
+  primaryGuestEmail: string | null;
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: 'null for a hotel moderator',
+  })
+  primaryGuestPhone: string | null;
+  @ApiProperty({ nullable: true, type: String }) specialRequests: string | null;
+  @ApiProperty({
+    nullable: true,
+    type: Number,
+    description: 'null for a hotel moderator',
+  })
+  totalPrice: number | null;
+  @ApiProperty({ example: 'USD' }) currency: string;
+  @ApiProperty({
+    type: 'object',
+    additionalProperties: true,
+    nullable: true,
+    description:
+      'Hotel policies copied at booking time: check-in/check-out times and cancellation tiers',
+  })
+  policies: Record<string, unknown> | null;
+  @ApiProperty({ nullable: true, type: Date }) policyAcceptedAt: Date | null;
+  @ApiProperty({ nullable: true, type: Date }) confirmedAt: Date | null;
+  @ApiProperty({ nullable: true, type: Date }) cancelledAt: Date | null;
+  @ApiProperty({ nullable: true, type: String }) cancellationReason:
+    string | null;
+  @ApiProperty({ nullable: true, type: Number }) refundAmount: number | null;
+  @ApiProperty({ type: HotelDetailsPaymentDto, nullable: true })
+  payment: HotelDetailsPaymentDto | null;
+  @ApiProperty({
+    type: HotelDetailsRefundDto,
+    nullable: true,
+    description:
+      'The refund of this reservation with its status; null if none was issued',
+  })
+  refund: HotelDetailsRefundDto | null;
+  @ApiProperty({ type: Date }) createdAt: Date;
+  @ApiProperty({ type: Date }) updatedAt: Date;
 }

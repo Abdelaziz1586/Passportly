@@ -1,7 +1,15 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
-import { BookingStatus } from '../../common/enums';
+import { isValidObjectId, Model, Types } from 'mongoose';
+import { BookingStatus, BookingType, Role } from '../../common/enums';
+import { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
+import { Payment } from '../payments/schemas/payment.schema';
+import { Refund } from '../payments/schemas/refund.schema';
 import {
   HOTEL_BOOKING_LIST_DEFAULT_LIMIT,
   HotelBookingSortField,
@@ -11,8 +19,11 @@ import { HotelBookingsService } from './hotel-bookings.service';
 import {
   effectiveHotelStatus,
   groupOfStatus,
+  HotelBookingDetails,
   HotelBookingListItem,
   HotelBookingListResponse,
+  HotelDetailsPayment,
+  HotelDetailsRefund,
   statusCondition,
   statusesToList,
 } from './hotel-booking-view';
@@ -33,9 +44,8 @@ const SORT_PATHS: Record<HotelBookingSortField, string> = {
 const LAPSED_BATCH = 100;
 
 /**
- * HTL-20 list (SCRUM-79): a traveller's own reservations (grouped Upcoming / Past /
- * Cancelled, filterable and sortable, paginated). The details of one reservation
- * are SCRUM-80.
+ * HTL-20: a traveller's own reservations (grouped Upcoming / Past / Cancelled,
+ * filterable and sortable, paginated) and the full details of one reservation.
  * The owner always comes from the JWT; statuses are reported as they really are
  * now (a lapsed hold is EXPIRED, a stay whose check-out date passed is COMPLETED).
  */
@@ -47,6 +57,8 @@ export class HotelBookingViewService {
     @InjectModel(HotelBooking.name)
     private readonly bookingModel: Model<HotelBooking>,
     @InjectModel(Hotel.name) private readonly hotelModel: Model<Hotel>,
+    @InjectModel(Payment.name) private readonly paymentModel: Model<Payment>,
+    @InjectModel(Refund.name) private readonly refundModel: Model<Refund>,
     private readonly hotelBookingsService: HotelBookingsService,
   ) {}
 
@@ -95,6 +107,83 @@ export class HotelBookingViewService {
     return {
       data: bookings.map((booking) => this.toListItem(booking, hotels, now)),
       meta: meta(total),
+    };
+  }
+
+  async getBooking(
+    user: AuthenticatedUser,
+    id: string,
+  ): Promise<HotelBookingDetails> {
+    if (!isValidObjectId(id) || !isValidObjectId(user.userId)) {
+      throw new NotFoundException('Hotel booking not found');
+    }
+    const booking = (await this.bookingModel
+      .findById(new Types.ObjectId(id))
+      .lean()) as unknown as Stored | null;
+    if (!booking) throw new NotFoundException('Hotel booking not found');
+
+    const isOwner = booking.user.equals(user.userId);
+    const isModerator =
+      user.role === Role.HOTEL_MODERATOR &&
+      user.assignedProviderType === 'hotel' &&
+      !!user.assignedProviderId &&
+      booking.hotel.toString() === user.assignedProviderId;
+    const allowed =
+      user.role === Role.ADMIN ||
+      (user.role === Role.REGISTERED_USER && isOwner) ||
+      isModerator;
+    // Someone else's reservation looks exactly like one that does not exist.
+    if (!allowed) throw new NotFoundException('Hotel booking not found');
+
+    const now = new Date();
+    const hotels = await this.hotelNames([booking.hotel]);
+    // A hotel moderator sees who stays where and when, not the traveller's contact details or any money.
+    const moderatorView = isModerator && !isOwner && user.role !== Role.ADMIN;
+    const status = effectiveHotelStatus(booking, now);
+    return {
+      id: booking._id.toString(),
+      bookingReference: booking.bookingReference,
+      status,
+      group: groupOfStatus(status),
+      hotelId: booking.hotel.toString(),
+      hotelName: hotels.get(booking.hotel.toString()) ?? null,
+      checkInDate: booking.checkInDate,
+      checkOutDate: booking.checkOutDate,
+      nights: booking.nights,
+      holdExpiresAt: booking.holdExpiresAt ?? null,
+      rooms: booking.rooms.map((item) => ({
+        roomId: item.room.toString(),
+        roomName: item.roomName,
+        adults: item.adults ?? 0,
+        childrenAges: [...(item.childrenAges ?? [])],
+        guestCount: item.guestCount ?? 0,
+        nights: item.nights,
+        averagePricePerNight: moderatorView ? null : item.averagePricePerNight,
+        subtotal: moderatorView ? null : item.subtotal,
+      })),
+      guestCount: booking.guestCount,
+      primaryGuestName: booking.primaryGuestName,
+      primaryGuestEmail: moderatorView ? null : booking.primaryGuestEmail,
+      primaryGuestPhone: moderatorView
+        ? null
+        : (booking.primaryGuestPhone ?? null),
+      specialRequests: booking.specialRequests ?? null,
+      totalPrice: moderatorView ? null : booking.totalPrice,
+      currency: booking.currency,
+      policies: moderatorView ? null : (booking.policySnapshot ?? null),
+      policyAcceptedAt: moderatorView
+        ? null
+        : (booking.policyAcceptedAt ?? null),
+      confirmedAt: booking.confirmedAt ?? null,
+      cancelledAt: booking.cancelledAt ?? null,
+      cancellationReason: booking.cancellationReason ?? null,
+      refundAmount: moderatorView ? null : (booking.refundAmount ?? null),
+      payment: moderatorView
+        ? null
+        : await this.paymentSummary(booking.payment),
+      refund: moderatorView ? null : await this.refundSummary(booking._id),
+      createdAt: booking.createdAt,
+      updatedAt: booking.updatedAt,
     };
   }
 
@@ -165,6 +254,42 @@ export class HotelBookingViewService {
       currency: booking.currency,
       holdExpiresAt: booking.holdExpiresAt ?? null,
       createdAt: booking.createdAt,
+    };
+  }
+
+  private async paymentSummary(
+    paymentId: Types.ObjectId | null | undefined,
+  ): Promise<HotelDetailsPayment | null> {
+    if (!paymentId) return null;
+    const payment = (await this.paymentModel
+      .findById(paymentId)
+      .lean()) as unknown as (Payment & { _id: Types.ObjectId }) | null;
+    if (!payment) return null;
+    return {
+      id: payment._id.toString(),
+      status: payment.status,
+      amount: payment.amount,
+      currency: payment.currency,
+      paidAt: payment.paidAt ?? null,
+    };
+  }
+
+  private async refundSummary(
+    bookingId: Types.ObjectId,
+  ): Promise<HotelDetailsRefund | null> {
+    const refund = (await this.refundModel
+      .findOne({ bookingType: BookingType.HOTEL, bookingId })
+      .sort({ createdAt: -1 })
+      .lean()) as unknown as (Refund & { _id: Types.ObjectId }) | null;
+    if (!refund) return null;
+    return {
+      id: refund._id.toString(),
+      status: refund.status,
+      amount: refund.amount,
+      currency: refund.currency,
+      reason: refund.reason ?? null,
+      policyCalculationNotes: refund.policyCalculationNotes ?? null,
+      processedAt: refund.processedAt ?? null,
     };
   }
 }

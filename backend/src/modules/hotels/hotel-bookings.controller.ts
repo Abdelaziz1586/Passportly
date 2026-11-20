@@ -6,9 +6,9 @@ import {
   Delete,
   Get,
   NotImplementedException,
+  Param,
   Patch,
   Post,
-  Param,
   Query,
 } from '@nestjs/common';
 import {
@@ -29,12 +29,19 @@ import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { CreateHotelBookingDto } from './dto/create-hotel-booking.dto';
 import { HotelBookingResponseDto } from './dto/hotel-booking-response.dto';
-import { HotelBookingListResponseDto } from './dto/hotel-booking-view-response.dto';
+import {
+  HotelBookingDetailsResponseDto,
+  HotelBookingListResponseDto,
+} from './dto/hotel-booking-view-response.dto';
+import { HotelBookingIdParamDto } from './dto/hotel-booking-id-param.dto';
 import { ListHotelBookingsQueryDto } from './dto/list-hotel-bookings-query.dto';
 import { HotelBookingsService } from './hotel-bookings.service';
 import type { HotelBookingResponse } from './hotel-bookings.service';
 import { HotelBookingViewService } from './hotel-booking-view.service';
-import type { HotelBookingListResponse } from './hotel-booking-view';
+import type {
+  HotelBookingDetails,
+  HotelBookingListResponse,
+} from './hotel-booking-view';
 import { HotelsService } from './hotels.service';
 import {
   CreateReviewDto,
@@ -113,11 +120,27 @@ export class HotelBookingsController {
 
   @Roles(Role.REGISTERED_USER, Role.ADMIN, Role.HOTEL_MODERATOR)
   @Get('hotel-bookings/:id')
-  @ApiOperation({ summary: 'HTL-20: Get hotel booking details' })
-  getBooking() {
-    throw new NotImplementedException(
-      'GET /api/hotel-bookings/:id not implemented yet',
-    );
+  @ApiOperation({
+    summary: 'HTL-20: Get hotel booking details',
+    description:
+      "Full details of one reservation: hotel, every room with its guests and price, dates, guest contact, the policies captured at booking time, status and timestamps, a payment summary and the refund with its status. Readable by the reservation's owner, an admin, or the moderator of that hotel; for anyone else the reservation looks like it does not exist. A hotel moderator gets the stay facts (guest name, rooms, dates, status) but no contact details, prices, payment, policies or refund.",
+  })
+  @ApiOkResponse({
+    description: 'The reservation',
+    type: HotelBookingDetailsResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid id' })
+  @ApiUnauthorizedResponse({ description: 'Not signed in' })
+  @ApiForbiddenResponse({
+    description:
+      'Only registered users, admins and hotel moderators may call this',
+  })
+  @ApiNotFoundResponse({ description: 'Reservation not found or not yours' })
+  getBooking(
+    @Param() params: HotelBookingIdParamDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<HotelBookingDetails> {
+    return this.hotelBookingViewService.getBooking(user, params.id);
   }
 
   @Roles(Role.REGISTERED_USER)
