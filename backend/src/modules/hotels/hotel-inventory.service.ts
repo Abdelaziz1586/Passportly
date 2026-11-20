@@ -1,0 +1,558 @@
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+} from '@nestjs/common';
+import { InjectConnection, InjectModel } from '@nestjs/mongoose';
+import { ClientSession, Connection, Model, Types } from 'mongoose';
+import { BookingStatus } from '../../common/enums';
+import { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
+import { UploadsService } from '../uploads/uploads.service';
+import {
+  AvailabilityFieldsDto,
+  CreateRoomDto,
+  DateRangeDto,
+  StayQueryDto,
+  UpdateRoomDto,
+} from './dto/hotel.dto';
+import { HotelAccessService } from './hotel-access.service';
+import {
+  dateRange,
+  isDuplicateKey,
+  money,
+  objectId,
+  paged,
+  pagination,
+  todayUtc,
+  utcDate,
+} from './hotel-utils';
+import {
+  HotelBooking,
+  HotelBookingDocument,
+} from './schemas/hotel-booking.schema';
+import { Room, RoomDocument } from './schemas/room.schema';
+import {
+  RoomAvailability,
+  RoomAvailabilityDocument,
+} from './schemas/room-availability.schema';
+
+export interface AvailableRoom extends Room {
+  _id: Types.ObjectId;
+  minimumAvailableUnits: number;
+  nights: number;
+  averagePricePerNight: number;
+  totalStayPrice: number;
+  nightlyPrices: { date: string; price: number }[];
+}
+
+@Injectable()
+export class HotelInventoryService {
+  constructor(
+    @InjectConnection() private readonly connection: Connection,
+    @InjectModel(Room.name) private readonly rooms: Model<RoomDocument>,
+    @InjectModel(RoomAvailability.name)
+    private readonly availability: Model<RoomAvailabilityDocument>,
+    @InjectModel(HotelBooking.name)
+    private readonly bookings: Model<HotelBookingDocument>,
+    private readonly access: HotelAccessService,
+    private readonly uploads: UploadsService,
+  ) {}
+
+  private validateRoomCapacity(
+    room: Pick<Room, 'maxOccupancy' | 'maxAdults' | 'maxChildren'>,
+  ): void {
+    if (
+      (room.maxAdults ?? 1) > room.maxOccupancy ||
+      (room.maxChildren ?? 0) > room.maxOccupancy
+    ) {
+      throw new BadRequestException(
+        'Adult and child capacity cannot exceed maxOccupancy',
+      );
+    }
+  }
+
+  async createRoom(
+    hotelId: string,
+    dto: CreateRoomDto,
+    user: AuthenticatedUser,
+  ) {
+    const hotel = await this.access.managedHotel(hotelId, user);
+    this.validateRoomCapacity(dto);
+    if (dto.currency && dto.currency !== hotel.baseCurrency)
+      throw new BadRequestException(
+        'Room currency must match the hotel currency',
+      );
+    const images = dto.images
+      ? await this.uploads.storedImages(dto.images)
+      : [];
+    try {
+      return await this.rooms.create({
+        ...dto,
+        hotel: hotel._id,
+        currency: hotel.baseCurrency,
+        images,
+      });
+    } catch (error) {
+      if (isDuplicateKey(error))
+        throw new ConflictException(
+          'Room name must be unique within this hotel',
+        );
+      throw error;
+    }
+  }
+
+  /** Booking rows are checked in addition to counters, protecting imported reservations. */
+  private async assertNoReservations(
+    roomId: string,
+    start: Date,
+    end: Date | undefined,
+    session: ClientSession,
+  ): Promise<void> {
+    const reservation = await this.bookings
+      .exists({
+        'rooms.room': objectId(roomId),
+        checkOutDate: { $gt: start },
+        ...(end ? { checkInDate: { $lt: end } } : {}),
+        $or: [
+          { status: BookingStatus.CONFIRMED },
+          {
+            status: {
+              $in: [BookingStatus.HELD, BookingStatus.PENDING_PAYMENT],
+            },
+            $or: [
+              { holdExpiresAt: { $gt: new Date() } },
+              { holdExpiresAt: null },
+            ],
+          },
+        ],
+      })
+      .session(session);
+    if (reservation)
+      throw new ConflictException(
+        'Room has overlapping confirmed reservations or active payment holds',
+      );
+    const allocated = await this.availability
+      .exists({
+        room: objectId(roomId),
+        date: { $gte: start, ...(end ? { $lt: end } : {}) },
+        $or: [{ bookedUnits: { $gt: 0 } }, { heldUnits: { $gt: 0 } }],
+      })
+      .session(session);
+    if (allocated)
+      throw new ConflictException('Room inventory is already booked or held');
+  }
+
+  async updateRoom(
+    hotelId: string,
+    roomId: string,
+    dto: UpdateRoomDto,
+    user: AuthenticatedUser,
+  ) {
+    if (!Object.values(dto).some((value) => value !== undefined))
+      throw new BadRequestException('Provide at least one room field');
+    await this.access.managedHotel(hotelId, user);
+    objectId(roomId, 'roomId');
+    const images = dto.images
+      ? await this.uploads.storedImages(dto.images)
+      : undefined;
+    try {
+      return await this.connection.transaction(async (session) => {
+        const hotel = await this.access.managedHotel(hotelId, user, session);
+        const room = await this.access.room(hotelId, roomId, session);
+        this.validateRoomCapacity({
+          ...room,
+          ...Object.fromEntries(
+            Object.entries(dto).filter(([, value]) => value !== undefined),
+          ),
+        });
+        if (dto.currency && dto.currency !== hotel.baseCurrency)
+          throw new BadRequestException(
+            'Room currency must match the hotel currency',
+          );
+        if (dto.isActive === false) {
+          await this.assertNoReservations(
+            roomId,
+            todayUtc(),
+            undefined,
+            session,
+          );
+          // Writing the same night documents as a booking forces conflicting transactions to retry.
+          await this.availability.updateMany(
+            { room: room._id, date: { $gte: todayUtc() } },
+            { $set: { isBlocked: true, blockReason: 'Room deactivated' } },
+            { session },
+          );
+        }
+        if (dto.totalUnits !== undefined && dto.totalUnits < room.totalUnits) {
+          const overCapacity = await this.availability
+            .exists({
+              room: room._id,
+              date: { $gte: todayUtc() },
+              $expr: {
+                $gt: [{ $add: ['$bookedUnits', '$heldUnits'] }, dto.totalUnits],
+              },
+            })
+            .session(session);
+          if (overCapacity)
+            throw new ConflictException(
+              'Unit count cannot be reduced below booked plus held units',
+            );
+          await this.availability.updateMany(
+            {
+              room: room._id,
+              date: { $gte: todayUtc() },
+              totalUnits: { $gt: dto.totalUnits },
+            },
+            { $set: { totalUnits: dto.totalUnits } },
+            { session },
+          );
+        }
+        return this.rooms
+          .findOneAndUpdate(
+            { _id: room._id, hotel: hotel._id },
+            { $set: { ...dto, ...(images ? { images } : {}) } },
+            { session, returnDocument: 'after', runValidators: true },
+          )
+          .lean();
+      });
+    } catch (error) {
+      if (isDuplicateKey(error))
+        throw new ConflictException(
+          'Room name must be unique within this hotel',
+        );
+      throw error;
+    }
+  }
+
+  async deleteRoom(hotelId: string, roomId: string, user: AuthenticatedUser) {
+    await this.access.managedHotel(hotelId, user);
+    objectId(roomId, 'roomId');
+    return this.connection.transaction(async (session) => {
+      const room = await this.access.room(hotelId, roomId, session);
+      await this.assertNoReservations(roomId, todayUtc(), undefined, session);
+      const used = await this.bookings
+        .exists({ 'rooms.room': room._id })
+        .session(session);
+      const historicalAllocation = await this.availability
+        .exists({
+          room: room._id,
+          $or: [{ bookedUnits: { $gt: 0 } }, { heldUnits: { $gt: 0 } }],
+        })
+        .session(session);
+      if (used || historicalAllocation) {
+        await this.availability.updateMany(
+          { room: room._id, date: { $gte: todayUtc() } },
+          { $set: { isBlocked: true, blockReason: 'Room deactivated' } },
+          { session },
+        );
+        await this.rooms.updateOne(
+          { _id: room._id },
+          { $set: { isActive: false } },
+          { session },
+        );
+        return { roomId, deleted: false, deactivated: true };
+      }
+      await this.availability.deleteMany({ room: room._id }, { session });
+      await this.rooms.deleteOne({ _id: room._id }, { session });
+      return { roomId, deleted: true, deactivated: false };
+    });
+  }
+
+  async setAvailability(
+    hotelId: string,
+    roomId: string,
+    dto: AvailabilityFieldsDto,
+    user: AuthenticatedUser,
+    initialize: boolean,
+  ) {
+    await this.access.managedHotel(hotelId, user);
+    objectId(roomId, 'roomId');
+    const dates = dateRange(dto.startDate, dto.endDate);
+    const changes = Object.fromEntries(
+      Object.entries(dto).filter(
+        ([key, value]) =>
+          key !== 'startDate' && key !== 'endDate' && value !== undefined,
+      ),
+    );
+    if (!initialize && !Object.keys(changes).length)
+      throw new BadRequestException('Provide an availability field to update');
+    try {
+      return await this.connection.transaction(async (session) => {
+        const room = await this.access.room(hotelId, roomId, session);
+        if (!room.isActive)
+          throw new ConflictException(
+            'Reactivate the room before changing availability',
+          );
+        const totalUnits = dto.totalUnits ?? room.totalUnits;
+        if (totalUnits > room.totalUnits)
+          throw new BadRequestException(
+            'Nightly units cannot exceed the room totalUnits',
+          );
+        const filter = {
+          room: room._id,
+          date: { $gte: dates[0], $lt: utcDate(dto.endDate) },
+        };
+        const existing = await this.availability
+          .find(filter)
+          .session(session)
+          .lean();
+        if (initialize && existing.length)
+          throw new ConflictException(
+            'Availability ranges may not overlap; use PATCH to edit existing dates',
+          );
+        if (!initialize && existing.length !== dates.length)
+          throw new ConflictException(
+            'Initialize every requested night before updating it',
+          );
+        if (dto.isBlocked === true || dto.totalUnits === 0)
+          await this.assertNoReservations(
+            roomId,
+            dates[0],
+            utcDate(dto.endDate),
+            session,
+          );
+        for (const night of existing) {
+          if (
+            dto.totalUnits !== undefined &&
+            dto.totalUnits < night.bookedUnits + night.heldUnits
+          )
+            throw new ConflictException(
+              'Nightly units cannot be reduced below booked plus held units',
+            );
+        }
+        if (initialize) {
+          // Unique (room,date) index protects simultaneous initialization of overlapping ranges.
+          await this.availability.bulkWrite(
+            dates.map((date) => ({
+              updateOne: {
+                filter: { room: room._id, date },
+                update: {
+                  $setOnInsert: {
+                    hotel: room.hotel,
+                    room: room._id,
+                    date,
+                    totalUnits,
+                    bookedUnits: 0,
+                    heldUnits: 0,
+                    priceOverride: dto.priceOverride ?? null,
+                    isBlocked: dto.isBlocked ?? false,
+                    ...(dto.isBlocked && dto.blockReason
+                      ? { blockReason: dto.blockReason }
+                      : {}),
+                  },
+                },
+                upsert: true,
+              },
+            })),
+            { session },
+          );
+        } else {
+          await this.availability.updateMany(
+            filter,
+            {
+              $set: {
+                ...changes,
+                ...(dto.isBlocked === false ? { blockReason: '' } : {}),
+              },
+            },
+            { session, runValidators: true },
+          );
+        }
+        return {
+          roomId,
+          startDate: dto.startDate,
+          endDate: dto.endDate,
+          nights: dates.length,
+        };
+      });
+    } catch (error) {
+      if (isDuplicateKey(error))
+        throw new ConflictException(
+          'Availability overlaps another initialized range',
+        );
+      throw error;
+    }
+  }
+
+  /** Missing calendar rows are unavailable; overrides are summed once per stay night. */
+  async availableRooms(
+    hotelIds: Types.ObjectId[],
+    dates: Date[],
+  ): Promise<AvailableRoom[]> {
+    if (!hotelIds.length) return [];
+    const rooms = await this.rooms
+      .find({ hotel: { $in: hotelIds }, isActive: true })
+      .lean();
+    const rows = await this.availability
+      .find({
+        room: { $in: rooms.map((room) => room._id) },
+        date: { $in: dates },
+      })
+      .lean();
+    const byRoom = new Map<string, typeof rows>();
+    for (const row of rows) {
+      const key = row.room.toString();
+      const group = byRoom.get(key) ?? [];
+      group.push(row);
+      byRoom.set(key, group);
+    }
+    const result: AvailableRoom[] = [];
+    for (const room of rooms) {
+      const nights = byRoom.get(room._id.toString()) ?? [];
+      if (
+        nights.length !== dates.length ||
+        nights.some((night) => night.isBlocked)
+      )
+        continue;
+      const minimumAvailableUnits = Math.min(
+        ...nights.map(
+          (night) => night.totalUnits - night.bookedUnits - night.heldUnits,
+        ),
+      );
+      if (minimumAvailableUnits < 1) continue;
+      const nightlyPrices = nights
+        .sort((a, b) => a.date.getTime() - b.date.getTime())
+        .map((night) => ({
+          date: night.date.toISOString().slice(0, 10),
+          price: night.priceOverride ?? room.basePricePerNight,
+        }));
+      const totalStayPrice = money(
+        nightlyPrices.reduce((sum, night) => sum + night.price, 0),
+      );
+      result.push({
+        ...room,
+        minimumAvailableUnits,
+        nights: dates.length,
+        totalStayPrice,
+        averagePricePerNight: money(totalStayPrice / dates.length),
+        nightlyPrices,
+      });
+    }
+    return result;
+  }
+
+  async getAvailableRooms(hotelId: string, query: StayQueryDto) {
+    const hotel = await this.access.hotel(hotelId, true);
+    const dates = dateRange(query.checkInDate, query.checkOutDate, true);
+    const data = await this.availableRooms([hotel._id], dates);
+    data.sort(
+      (a, b) =>
+        a.averagePricePerNight - b.averagePricePerNight ||
+        a._id.toString().localeCompare(b._id.toString()),
+    );
+    const { page, limit, skip } = pagination(query.page, query.limit);
+    // Return every free room, including smaller rooms that can be selected together.
+    return {
+      hotelId,
+      checkInDate: query.checkInDate,
+      checkOutDate: query.checkOutDate,
+      nights: dates.length,
+      guestCount: query.guestCount ?? 1,
+      currency: hotel.baseCurrency,
+      ...paged(data.slice(skip, skip + limit), data.length, page, limit),
+    };
+  }
+
+  async calendar(
+    hotelId: string,
+    query: DateRangeDto,
+    user?: AuthenticatedUser,
+  ) {
+    if (user) await this.access.managedHotel(hotelId, user);
+    else await this.access.hotel(hotelId, true);
+    const dates = dateRange(query.startDate, query.endDate);
+    const rooms = await this.rooms
+      .find({ hotel: objectId(hotelId), ...(user ? {} : { isActive: true }) })
+      .sort({ name: 1, _id: 1 })
+      .lean();
+    const rows = await this.availability
+      .find({ hotel: objectId(hotelId), date: { $in: dates } })
+      .lean();
+    const byKey = new Map(
+      rows.map((row) => [
+        `${row.room.toString()}:${row.date.toISOString()}`,
+        row,
+      ]),
+    );
+    const reservations = user
+      ? await this.bookings
+          .find({
+            hotel: objectId(hotelId),
+            checkInDate: { $lt: utcDate(query.endDate) },
+            checkOutDate: { $gt: dates[0] },
+            status: {
+              $in: [
+                BookingStatus.CONFIRMED,
+                BookingStatus.COMPLETED,
+                BookingStatus.HELD,
+                BookingStatus.PENDING_PAYMENT,
+              ],
+            },
+          })
+          .select(
+            'bookingReference rooms.room checkInDate checkOutDate status holdExpiresAt',
+          )
+          .lean()
+      : [];
+    return {
+      hotelId,
+      startDate: query.startDate,
+      endDate: query.endDate,
+      rooms: rooms.map((room) => ({
+        roomId: room._id,
+        name: room.name,
+        isActive: room.isActive,
+        dates: dates.map((date) => {
+          const row = byKey.get(`${room._id.toString()}:${date.toISOString()}`);
+          const remaining =
+            row && room.isActive && !row.isBlocked
+              ? Math.max(0, row.totalUnits - row.bookedUnits - row.heldUnits)
+              : 0;
+          const status =
+            !room.isActive || row?.isBlocked
+              ? 'Blocked'
+              : !row
+                ? 'Unavailable'
+                : remaining > 0
+                  ? 'Available'
+                  : row.bookedUnits + row.heldUnits > 0
+                    ? 'Booked'
+                    : 'Unavailable';
+          return {
+            date: date.toISOString().slice(0, 10),
+            status,
+            availableUnits: remaining,
+            pricePerNight: row?.priceOverride ?? room.basePricePerNight,
+            currency: room.currency,
+            ...(user
+              ? {
+                  bookedUnits: row?.bookedUnits ?? 0,
+                  heldUnits: row?.heldUnits ?? 0,
+                  blockReason: row?.blockReason,
+                  reservations: reservations
+                    .filter(
+                      (booking) =>
+                        booking.checkInDate <= date &&
+                        booking.checkOutDate > date &&
+                        booking.rooms.some((item) =>
+                          item.room.equals(room._id),
+                        ) &&
+                        (![
+                          BookingStatus.HELD,
+                          BookingStatus.PENDING_PAYMENT,
+                        ].includes(booking.status) ||
+                          !booking.holdExpiresAt ||
+                          booking.holdExpiresAt > new Date()),
+                    )
+                    .map((booking) => ({
+                      bookingReference: booking.bookingReference,
+                      status: booking.status,
+                    })),
+                }
+              : {}),
+          };
+        }),
+      })),
+    };
+  }
+}

@@ -1,29 +1,47 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { Test } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import { AppModule } from './../src/app.module';
+import { AppController } from './../src/app.controller';
+import { AppService } from './../src/app.service';
+import { APP_GUARD } from '@nestjs/core';
+import { JwtAuthGuard } from './../src/common/guards/jwt-auth.guard';
+import { RolesGuard } from './../src/common/guards/roles.guard';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication<App>;
 
-  beforeEach(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
+  beforeAll(async () => {
+    // Standalone public health smoke test; hotel integration tests exercise real database modules.
+    const moduleFixture = await Test.createTestingModule({
+      controllers: [AppController],
+      providers: [
+        AppService,
+        { provide: APP_GUARD, useClass: JwtAuthGuard },
+        { provide: APP_GUARD, useClass: RolesGuard },
+      ],
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    app.setGlobalPrefix('api');
     await app.init();
   });
 
-  it('/ (GET)', () => {
-    return request(app.getHttpServer())
-      .get('/')
-      .expect(200)
-      .expect('Hello World!');
+  it('/api/health is public and returns the actual health payload', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/api/health')
+      .expect(200);
+    const payload = response.body as {
+      status: string;
+      service: string;
+      timestamp: string;
+    };
+    expect(payload.status).toBe('ok');
+    expect(payload.service).toBe('travel-platform-backend');
+    expect(Number.isFinite(Date.parse(payload.timestamp))).toBe(true);
   });
 
-  afterEach(async () => {
+  afterAll(async () => {
     await app.close();
   });
 });
