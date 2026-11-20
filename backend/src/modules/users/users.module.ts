@@ -4,6 +4,7 @@ import {
   UserSession,
   UserSessionSchema,
 } from '../auth/schemas/user-session.schema';
+import { ReferenceDataModule } from '../reference-data/reference-data.module';
 import { User, UserSchema } from './schemas/user.schema';
 import {
   ModeratorAssignment,
@@ -14,6 +15,7 @@ import { UsersService } from './users.service';
 
 @Module({
   imports: [
+    ReferenceDataModule,
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: ModeratorAssignment.name, schema: ModeratorAssignmentSchema },

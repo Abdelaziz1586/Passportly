@@ -1,14 +1,15 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
   HttpCode,
   HttpStatus,
-  NotImplementedException,
   Patch,
   Res,
 } from '@nestjs/common';
 import {
+  ApiBadRequestResponse,
   ApiCookieAuth,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
@@ -23,6 +24,8 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { DeactivateAccountResponseDto } from './dto/deactivate-account-response.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
+import { UserProfileResponseDto } from './dto/user-profile-response.dto';
 import { UsersService } from './users.service';
 
 @ApiTags('Users')
@@ -33,18 +36,37 @@ export class UsersController {
 
   @Get('me')
   @ApiOperation({ summary: 'ACC-11: Get current user profile' })
-  getMyProfile(@CurrentUser() user: AuthenticatedUser) {
-    throw new NotImplementedException(
-      `GET /api/users/me not implemented yet (user: ${user.userId})`,
-    );
+  @ApiOkResponse({
+    description:
+      'Sanitized user profile (plus active moderator assignment when applicable)',
+    type: UserProfileResponseDto,
+  })
+  @ApiUnauthorizedResponse({ description: 'Authentication required' })
+  @ApiNotFoundResponse({ description: 'User account not found' })
+  getMyProfile(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<UserProfileResponseDto> {
+    return this.usersService.getMyProfile(user);
   }
 
   @Patch('me')
   @ApiOperation({ summary: 'ACC-09: Update current user profile' })
-  updateMyProfile(@CurrentUser() user: AuthenticatedUser) {
-    throw new NotImplementedException(
-      `PATCH /api/users/me not implemented yet (user: ${user.userId})`,
-    );
+  @ApiOkResponse({
+    description: 'Profile updated successfully',
+    type: UserProfileResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description:
+      'Invalid payload, unsupported currency, or forbidden property (e.g. role/status)',
+  })
+  @ApiUnauthorizedResponse({ description: 'Authentication required' })
+  @ApiForbiddenResponse({ description: 'Account is not active' })
+  @ApiNotFoundResponse({ description: 'User account not found' })
+  updateMyProfile(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdateProfileDto,
+  ): Promise<UserProfileResponseDto> {
+    return this.usersService.updateMyProfile(user, dto);
   }
 
   @Roles(Role.REGISTERED_USER)
