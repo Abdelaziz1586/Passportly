@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
+import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 import { ProviderType } from '../../../common/enums';
 
 export type ModeratorAssignmentDocument = HydratedDocument<ModeratorAssignment>;
@@ -7,7 +7,7 @@ export type ModeratorAssignmentDocument = HydratedDocument<ModeratorAssignment>;
 @Schema({ timestamps: true, collection: 'moderator_assignments' })
 export class ModeratorAssignment {
   @Prop({
-    type: MongooseSchema.Types.ObjectId,
+    type: SchemaTypes.ObjectId,
     ref: 'User',
     required: true,
     unique: true,
@@ -23,7 +23,7 @@ export class ModeratorAssignment {
   providerType: ProviderType;
 
   @Prop({
-    type: MongooseSchema.Types.ObjectId,
+    type: SchemaTypes.ObjectId,
     ref: 'Airline',
     default: null,
     index: true,
@@ -31,14 +31,14 @@ export class ModeratorAssignment {
   airline?: Types.ObjectId | null;
 
   @Prop({
-    type: MongooseSchema.Types.ObjectId,
+    type: SchemaTypes.ObjectId,
     ref: 'Hotel',
     default: null,
     index: true,
   })
   hotel?: Types.ObjectId | null;
 
-  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'User', required: true })
   assignedBy: Types.ObjectId;
 
   @Prop({ default: true })
