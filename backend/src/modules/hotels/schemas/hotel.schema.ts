@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 import {
   MediaItem,
   MediaItemSchema,
@@ -56,13 +56,18 @@ export class Hotel {
   @Prop({ required: true, trim: true })
   address: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'City', required: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'City',
+    required: true,
+    index: true,
+  })
   city: Types.ObjectId;
 
   @Prop({ trim: true, index: true })
   cityName?: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'Country', index: true })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'Country', index: true })
   country?: Types.ObjectId;
 
   @Prop({ uppercase: true, trim: true })
@@ -95,7 +100,7 @@ export class Hotel {
   @Prop({ type: Date })
   deactivatedAt?: Date;
 
-  @Prop({ type: Types.ObjectId, ref: 'User' })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'User' })
   deactivatedBy?: Types.ObjectId;
 
   @Prop({ type: HotelPolicySchema, default: () => ({}) })

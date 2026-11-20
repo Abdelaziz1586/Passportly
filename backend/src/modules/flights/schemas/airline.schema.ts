@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 
 export type AirlineDocument = HydratedDocument<Airline>;
 
@@ -81,7 +81,7 @@ export class Airline {
   @Prop({ trim: true })
   description?: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'Country' })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'Country' })
   country?: Types.ObjectId;
 
   @Prop({ trim: true })
@@ -99,7 +99,7 @@ export class Airline {
   @Prop({ type: Date })
   deactivatedAt?: Date;
 
-  @Prop({ type: Types.ObjectId, ref: 'User' })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'User' })
   deactivatedBy?: Types.ObjectId;
 
   @Prop({ type: AirlineBaggagePolicySchema, default: () => ({}) })
