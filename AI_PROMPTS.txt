@@ -218,3 +218,20 @@ Details: Set User.status = DEACTIVATED, record deactivatedAt, revoke active User
 How the output was used:
 Implemented DeactivateAccountResponseDto, UsersModule UserSession schema registration, UsersService.deactivateMyAccount (verifies REGISTERED_USER role and ACTIVE status, updates status to DEACTIVATED with deactivatedAt, revokes all active UserSessions, returns cookie-clearing config), UsersController.deactivateMyAccount (@Roles(Role.REGISTERED_USER) and cookie clearing), and unit + HTTP integration tests in users.service.spec.ts and users.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
 ================================================
+
+================================================
+Date: 2026-11-19
+Student: Abdelaziz Mohamed
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: FLT-02 (GET /api/airports, SCRUM-18)
+
+Prompt:
+Requirement: FLT-02
+Endpoint: GET /api/airports
+Controller: backend/src/modules/reference-data/reference-data.controller.ts
+Allowed Roles: Public
+Details: Support query/search by iataCode, name, city, or countryCode with pagination; return Airport records including required IANA timezone.
+
+How the output was used:
+Implemented ListAirportsQueryDto, AirportItemDto, PaginatedAirportsResponseDto, ReferenceDataService.getAirports (filtering by iataCode, name, city name/externalId/ObjectId, countryCode, and search term with sorting and pagination), ReferenceDataController.getAirports Swagger wiring, and unit + HTTP integration tests in reference-data.service.spec.ts and reference-data.controller.spec.ts. Verified with npm run lint, npm run build, and npm test.
+================================================
