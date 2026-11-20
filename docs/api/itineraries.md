@@ -9,6 +9,7 @@ parent lands. Each pull request shows only its own ticket delta.
 | SCRUM-89 | ITN-01 | Create a private itinerary |
 | SCRUM-90 | ITN-03 | List current user itineraries |
 | SCRUM-91 | ITN-03 | Read itinerary details with ownership checks |
+| SCRUM-92 | ITN-01 | Update itinerary metadata and visibility |
 
 Each ticket is checked with `npm run lint`, `npm run build` and `npm test`.
 Database tests use an isolated local MongoDB replica set and never load application environment files.

@@ -21,7 +21,10 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { CreateItineraryDto } from './dto/create-itinerary.dto';
-import { ListItinerariesQueryDto } from './dto/itinerary-endpoints.dto';
+import {
+  ListItinerariesQueryDto,
+  UpdateItineraryDto,
+} from './dto/itinerary-endpoints.dto';
 import { ItinerariesService } from './itineraries.service';
 
 @ApiTags('Itineraries & Budgeting')
@@ -89,10 +92,12 @@ export class ItinerariesController {
   @ApiOperation({
     summary: 'ITN-01, ITN-20: Update itinerary metadata or visibility',
   })
-  updateItinerary() {
-    throw new NotImplementedException(
-      'PATCH /api/itineraries/:id not implemented yet',
-    );
+  updateItinerary(
+    @Param('id') id: string,
+    @Body() dto: UpdateItineraryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.itinerariesService.updateItinerary(id, user.userId, dto);
   }
 
   @ApiCookieAuth()

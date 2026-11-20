@@ -19,7 +19,10 @@ import { ItineraryVisibility, Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
 import { CreateItineraryDto } from './dto/create-itinerary.dto';
-import { ListItinerariesQueryDto } from './dto/itinerary-endpoints.dto';
+import {
+  ListItinerariesQueryDto,
+  UpdateItineraryDto,
+} from './dto/itinerary-endpoints.dto';
 import { Activity, ActivityDocument } from './schemas/activity.schema';
 import {
   BudgetEntry,
@@ -118,6 +121,38 @@ export class ItinerariesService {
     return this.getItineraryDetails(itinerary);
   }
 
+  async updateItinerary(
+    id: string,
+    userId: string,
+    dto: UpdateItineraryDto,
+  ): Promise<ItineraryDocument> {
+    const itinerary = await this.findOwnedItinerary(id, userId);
+
+    if (typeof dto.title === 'string') {
+      const title = dto.title.trim();
+      if (!title) throw new BadRequestException('title must not be empty');
+      itinerary.title = title;
+    }
+    if (typeof dto.description === 'string') {
+      itinerary.description = dto.description.trim() || undefined;
+    }
+    if (Array.isArray(dto.countries)) {
+      itinerary.countries = await this.validateCountryIds(dto.countries);
+    }
+    if (typeof dto.displayCurrency === 'string') {
+      const currency = dto.displayCurrency.trim().toUpperCase();
+      await this.assertSupportedCurrency(currency);
+      itinerary.displayCurrency = currency;
+    }
+    if (typeof dto.startDate === 'string') {
+      itinerary.startDate = this.parseDate(dto.startDate, 'startDate');
+      this.recalculateDayDates(itinerary);
+    }
+    if (dto.visibility) itinerary.visibility = dto.visibility;
+
+    return this.saveItinerary(itinerary);
+  }
+
   private async getItineraryDetails(
     itinerary: ItineraryDocument,
   ): Promise<Record<string, unknown>> {
@@ -155,6 +190,15 @@ export class ItinerariesService {
       .findById(this.objectId(id, 'id'))
       .exec();
     if (!itinerary) throw new NotFoundException('Itinerary not found');
+    return itinerary;
+  }
+
+  private async findOwnedItinerary(
+    id: string,
+    userId: string,
+  ): Promise<ItineraryDocument> {
+    const itinerary = await this.findItineraryById(id);
+    this.assertOwner(itinerary, userId);
     return itinerary;
   }
 
@@ -216,6 +260,20 @@ export class ItinerariesService {
     }
     date.setUTCHours(0, 0, 0, 0);
     return date;
+  }
+
+  private addUtcDays(date: Date, days: number): Date {
+    const result = new Date(date);
+    result.setUTCHours(0, 0, 0, 0);
+    result.setUTCDate(result.getUTCDate() + days);
+    return result;
+  }
+
+  private recalculateDayDates(itinerary: ItineraryDocument): void {
+    for (const [index, day] of itinerary.days.entries()) {
+      day.dayNumber = index + 1;
+      day.date = this.addUtcDays(itinerary.startDate, index);
+    }
   }
 
   private async saveItinerary(
