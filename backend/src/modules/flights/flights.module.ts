@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ReferenceDataModule } from '../reference-data/reference-data.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { FlightEventsService } from './flight-events.service';
 import { MongooseModule } from '@nestjs/mongoose';
@@ -19,6 +20,7 @@ import { Flight, FlightSchema } from './schemas/flight.schema';
 
 @Module({
   imports: [
+    ReferenceDataModule,
     PaymentsModule,
     MongooseModule.forFeature([
       { name: Airline.name, schema: AirlineSchema },
