@@ -13,7 +13,10 @@ import { randomBytes, randomUUID } from 'crypto';
 import type { CookieOptions } from 'express';
 import { Model } from 'mongoose';
 import { AccountStatus, Role } from '../../common/enums';
-import type { JwtPayload } from '../../common/interfaces/jwt-payload.interface';
+import type {
+  AuthenticatedUser,
+  JwtPayload,
+} from '../../common/interfaces/jwt-payload.interface';
 import { MailService } from '../mail/mail.service';
 import { ReferenceDataService } from '../reference-data/reference-data.service';
 import { User, UserDocument } from '../users/schemas/user.schema';
@@ -21,6 +24,7 @@ import { ForgotPasswordResponseDto } from './dto/forgot-password-response.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
 import { LoginDto } from './dto/login.dto';
+import { LogoutResponseDto } from './dto/logout-response.dto';
 import { RegisterDto } from './dto/register.dto';
 import { SafeUserResponseDto } from './dto/safe-user-response.dto';
 import { VerifyEmailQueryDto } from './dto/verify-email-query.dto';
@@ -45,6 +49,12 @@ export interface LoginResult {
   accessToken: string;
   cookieName: string;
   cookieOptions: CookieOptions;
+}
+
+export interface LogoutResult {
+  response: LogoutResponseDto;
+  cookieName: string;
+  clearCookieOptions: CookieOptions;
 }
 
 function isMongoDuplicateKeyError(error: unknown): boolean {
@@ -320,21 +330,11 @@ export class AuthService {
       ...(context.ipAddress ? { ipAddress: context.ipAddress } : {}),
     });
 
-    const cookieName = this.configService.get<string>(
-      'jwt.cookieName',
-      'access_token',
-    );
-    const cookieSecure = this.configService.get<boolean>(
-      'jwt.cookieSecure',
-      false,
-    );
+    const cookieName = this.getCookieName();
     const maxAge = Math.max(0, expiresAt.getTime() - Date.now());
 
     const cookieOptions: CookieOptions = {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: cookieSecure,
-      path: '/',
+      ...this.getBaseCookieOptions(),
       maxAge,
       expires: expiresAt,
     };
@@ -387,6 +387,40 @@ export class AuthService {
     return {
       message:
         'If an active account exists with that email, a password reset link has been sent.',
+    };
+  }
+
+  /**
+   * Revokes the caller's active UserSession by jti and returns cookie-clearing
+   * options matching the auth cookie configuration.
+   */
+  async logout(user: AuthenticatedUser): Promise<LogoutResult> {
+    await this.sessionModel.updateOne(
+      { jti: user.jti, user: user.userId, revokedAt: null },
+      { $set: { revokedAt: new Date() } },
+    );
+
+    return {
+      response: { message: 'Logged out successfully' },
+      cookieName: this.getCookieName(),
+      clearCookieOptions: this.getBaseCookieOptions(),
+    };
+  }
+
+  private getCookieName(): string {
+    return this.configService.get<string>('jwt.cookieName', 'access_token');
+  }
+
+  private getBaseCookieOptions(): CookieOptions {
+    const cookieSecure = this.configService.get<boolean>(
+      'jwt.cookieSecure',
+      false,
+    );
+    return {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: cookieSecure,
+      path: '/',
     };
   }
 

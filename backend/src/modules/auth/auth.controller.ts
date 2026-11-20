@@ -31,6 +31,7 @@ import { ForgotPasswordResponseDto } from './dto/forgot-password-response.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
 import { LoginDto } from './dto/login.dto';
+import { LogoutResponseDto } from './dto/logout-response.dto';
 import { RegisterDto } from './dto/register.dto';
 import { SafeUserResponseDto } from './dto/safe-user-response.dto';
 import { VerifyEmailQueryDto } from './dto/verify-email-query.dto';
@@ -106,11 +107,22 @@ export class AuthController {
 
   @ApiCookieAuth()
   @Post('logout')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'ACC-06: Logout and revoke current session' })
-  logout(@CurrentUser() user: AuthenticatedUser) {
-    throw new NotImplementedException(
-      `POST /api/auth/logout not implemented yet (user: ${user.userId})`,
-    );
+  @ApiOkResponse({
+    description: 'Session revoked and httpOnly auth cookie cleared',
+    type: LogoutResponseDto,
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Authentication required',
+  })
+  async logout(
+    @CurrentUser() user: AuthenticatedUser,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<LogoutResponseDto> {
+    const result = await this.authService.logout(user);
+    res.clearCookie(result.cookieName, result.clearCookieOptions);
+    return result.response;
   }
 
   @Public()
