@@ -100,10 +100,7 @@ export class HotelBookingsController {
     @Param('id') id: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    void [id, user];
-    throw new NotImplementedException(
-      'Implemented by the subsequent SCRUM-68 PR in this stack',
-    );
+    return this.reviews.deleteReview(id, user);
   }
 
   @Roles(Role.HOTEL_MODERATOR, Role.ADMIN)

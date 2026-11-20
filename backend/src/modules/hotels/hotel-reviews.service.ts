@@ -228,6 +228,34 @@ export class HotelReviewsService {
     });
   }
 
+  async deleteReview(id: string, user: AuthenticatedUser) {
+    objectId(id, 'reviewId');
+    return this.connection.transaction(async (session) => {
+      const review = await this.review(id, session);
+      if (
+        user.role !== Role.ADMIN &&
+        (user.role !== Role.REGISTERED_USER ||
+          review.user.toString() !== user.userId)
+      )
+        throw new ForbiddenException('You can delete only your own review');
+      await this.lockHotel(review.hotel, session);
+      await this.reviews.deleteOne({ _id: review._id }, { session });
+      await this.recalculateRating(review.hotel, session);
+      if (user.role === Role.ADMIN)
+        await this.audit.log(
+          {
+            actor: user.userId,
+            actorRole: user.role,
+            action: 'CONTENT_DELETED',
+            targetType: 'Review',
+            targetId: id,
+          },
+          session,
+        );
+      return { reviewId: id, deleted: true };
+    });
+  }
+
   async list(hotelId: string, query: HotelPaginationDto) {
     const hotel = await this.access.hotel(hotelId, true);
     const { page, limit, skip } = pagination(query.page, query.limit);
