@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 import { PostStatus } from '../../../common/enums';
 import {
   MediaItem,
@@ -10,7 +10,12 @@ export type BlogPostDocument = HydratedDocument<BlogPost>;
 
 @Schema({ timestamps: true, collection: 'blog_posts' })
 export class BlogPost {
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  })
   author: Types.ObjectId;
 
   @Prop({ required: true, trim: true })
@@ -39,7 +44,7 @@ export class BlogPost {
   @Prop({ type: [String], default: [], index: true })
   tags: string[];
 
-  @Prop({ type: [{ type: Types.ObjectId, ref: 'Tag' }], default: [] })
+  @Prop({ type: [{ type: SchemaTypes.ObjectId, ref: 'Tag' }], default: [] })
   tagRefs: Types.ObjectId[];
 
   @Prop({ type: [MediaItemSchema], default: [] })
@@ -51,7 +56,7 @@ export class BlogPost {
   @Prop({ type: Number, default: 0, min: 0 })
   commentsCount: number;
 
-  @Prop({ type: Types.ObjectId, ref: 'Itinerary', default: null })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'Itinerary', default: null })
   attachedItinerary?: Types.ObjectId | null;
 
   @Prop({ type: Date, index: true })
