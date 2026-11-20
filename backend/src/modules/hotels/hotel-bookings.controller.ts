@@ -79,10 +79,7 @@ export class HotelBookingsController {
     @Body() dto: CreateReviewDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    void [id, dto, user];
-    throw new NotImplementedException(
-      'Implemented by the subsequent SCRUM-66 PR in this stack',
-    );
+    return this.reviews.createReview(id, dto, user);
   }
 
   @Roles(Role.REGISTERED_USER)
