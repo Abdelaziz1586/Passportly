@@ -1,19 +1,24 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 
 export type CommentDocument = HydratedDocument<Comment>;
 
 @Schema({ timestamps: true, collection: 'comments' })
 export class Comment {
   @Prop({
-    type: Types.ObjectId,
+    type: SchemaTypes.ObjectId,
     ref: 'BlogPost',
     required: true,
     index: true,
   })
   post: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  })
   author: Types.ObjectId;
 
   @Prop({ required: true, trim: true })

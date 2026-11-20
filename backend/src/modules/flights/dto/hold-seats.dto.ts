@@ -7,7 +7,7 @@ import {
   IsEnum,
   IsInt,
   IsMongoId,
-  IsOptional,
+  ValidateIf,
   Max,
   Min,
   ValidateNested,
@@ -51,7 +51,7 @@ export class HoldSeatsDto {
   adults: number;
 
   @ApiPropertyOptional({ minimum: 0, maximum: 9, default: 0 })
-  @IsOptional()
+  @ValidateIf((_object, value: unknown) => value !== undefined)
   @IsInt()
   @Min(0)
   @Max(9)
@@ -64,7 +64,7 @@ export class HoldSeatsDto {
     description:
       'Infants travel on a lap, need no seat and cannot exceed adults',
   })
-  @IsOptional()
+  @ValidateIf((_object, value: unknown) => value !== undefined)
   @IsInt()
   @Min(0)
   @Max(9)
