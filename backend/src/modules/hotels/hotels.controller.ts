@@ -1,5 +1,4 @@
 import {
-  NotImplementedException,
   Body,
   Controller,
   Delete,
@@ -253,9 +252,6 @@ export class HotelsController {
   @Get(':id/reviews')
   @ApiOperation({ summary: 'HTL-24: List reviews for a hotel' })
   getHotelReviews(@Param('id') id: string, @Query() query: HotelPaginationDto) {
-    void [id, query];
-    throw new NotImplementedException(
-      'Implemented by the subsequent SCRUM-65 PR in this stack',
-    );
+    return this.reviews.list(id, query);
   }
 }
