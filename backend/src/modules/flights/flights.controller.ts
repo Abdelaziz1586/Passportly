@@ -1,16 +1,22 @@
 import {
   NotImplementedException,
+  Body,
   Controller,
   Get,
   Param,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiCookieAuth, ApiTags } from '@nestjs/swagger';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/public.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
+import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { FlightsService } from './flights.service';
+import { FlightCreate } from './create-flight.dto';
+import { FlightSearch } from './flight-search.dto';
 
 @ApiTags('Flights')
 @Controller('flights')
@@ -22,22 +28,24 @@ export class FlightsController {
   @ApiOperation({
     summary: 'FLT-11, FLT-12, FLT-15: Search one-way & round-trip flights',
   })
-  searchFlights() {
-    throw new NotImplementedException(
-      'GET /api/flights/search not implemented yet',
-    );
+  searchFlights(@Query() query: FlightSearch) {
+    return this.flightsService.searchFlights(query);
   }
 
   @ApiCookieAuth()
   @Roles(Role.ADMIN, Role.AIRLINE_MODERATOR)
   @Post()
   @ApiOperation({ summary: 'FLT-03: Create a flight' })
-  createFlight() {
-    throw new NotImplementedException('POST /api/flights not implemented yet');
+  createFlight(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() input: FlightCreate,
+  ) {
+    return this.flightsService.createFlight(user, input);
   }
 
   @Public()
   @Get(':id')
+  @ApiOperation({ summary: 'FLT-17: Get flight details & cabin availability' })
   getFlight(@Param('id') id: string) {
     return this.flightsService.getFlight(id);
   }
