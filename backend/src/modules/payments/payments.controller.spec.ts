@@ -8,6 +8,7 @@ import { BookingPoliciesService } from './booking-policies.service';
 import { AcceptPoliciesDto } from './dto/accept-policies.dto';
 import { BookingParamsDto } from './dto/booking-params.dto';
 import { PaymentsController } from './payments.controller';
+import { CreatePaymentDto } from './dto/create-payment.dto';
 import { PaymentsService } from './payments.service';
 
 const handlers = PaymentsController.prototype as unknown as Record<
@@ -80,5 +81,47 @@ describe('PaymentsController PAY-02', () => {
     expect(
       Reflect.getMetadata(PATH_METADATA, handlers.acceptBookingPolicies),
     ).toBe('bookings/:type/:id/accept-policies');
+  });
+});
+
+describe('PaymentsController PAY-01 create (SCRUM-84)', () => {
+  const createPayment = jest.fn();
+  const controller = new PaymentsController(
+    { createPayment } as unknown as PaymentsService,
+    {} as BookingPoliciesService,
+  );
+  const user: AuthenticatedUser = {
+    userId: '665f1c2e8a1b2c3d4e5f6a7b',
+    email: 'a@example.com',
+    role: Role.REGISTERED_USER,
+    jti: 'jti',
+  };
+
+  afterEach(() => jest.clearAllMocks());
+
+  it('creates payments for the JWT user with the DTO the pipe validated', async () => {
+    const dto = Object.assign(new CreatePaymentDto(), {
+      bookingType: BookingType.FLIGHT,
+      bookingId: '665f1c2e8a1b2c3d4e5f6a7c',
+    });
+
+    await controller.createPayment(dto, user);
+
+    expect(createPayment).toHaveBeenCalledWith(user.userId, dto);
+  });
+
+  it('is for registered users only and not public', () => {
+    expect(Reflect.getMetadata(ROLES_KEY, handlers.createPayment)).toEqual([
+      Role.REGISTERED_USER,
+    ]);
+    expect(
+      Reflect.getMetadata(IS_PUBLIC_KEY, handlers.createPayment),
+    ).toBeFalsy();
+  });
+
+  it('keeps the documented route', () => {
+    expect(Reflect.getMetadata(PATH_METADATA, handlers.createPayment)).toBe(
+      'payments',
+    );
   });
 });
