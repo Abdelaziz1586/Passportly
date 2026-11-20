@@ -1,12 +1,12 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, SchemaTypes, Types } from 'mongoose';
 import { BookingStatus } from '../../../common/enums';
 
 export type HotelBookingDocument = HydratedDocument<HotelBooking>;
 
 @Schema({ _id: true })
 export class BookedRoomItem {
-  @Prop({ type: Types.ObjectId, ref: 'Room', required: true })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'Room', required: true })
   room: Types.ObjectId;
 
   @Prop({ required: true, trim: true })
@@ -26,6 +26,14 @@ export class BookedRoomItem {
 
   @Prop({ type: Number, min: 1 })
   guestCount?: number;
+
+  /** HTL-16: the adults assigned to this room. */
+  @Prop({ type: Number, min: 0 })
+  adults?: number;
+
+  /** HTL-16: ages (0-17) of the children assigned to this room. */
+  @Prop({ type: [Number], default: [] })
+  childrenAges?: number[];
 }
 
 export const BookedRoomItemSchema =
@@ -36,10 +44,20 @@ export class HotelBooking {
   @Prop({ required: true, unique: true, uppercase: true, trim: true })
   bookingReference: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true,
+  })
   user: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'Hotel', required: true, index: true })
+  @Prop({
+    type: SchemaTypes.ObjectId,
+    ref: 'Hotel',
+    required: true,
+    index: true,
+  })
   hotel: Types.ObjectId;
 
   @Prop({ type: [BookedRoomItemSchema], required: true })
@@ -89,13 +107,13 @@ export class HotelBooking {
   @Prop({ type: Date })
   policyAcceptedAt?: Date;
 
-  @Prop({ type: Types.ObjectId, ref: 'User' })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'User' })
   policyAcceptedBy?: Types.ObjectId;
 
   @Prop({ type: Object })
   policySnapshot?: Record<string, unknown>;
 
-  @Prop({ type: Types.ObjectId, ref: 'Payment', default: null })
+  @Prop({ type: SchemaTypes.ObjectId, ref: 'Payment', default: null })
   payment?: Types.ObjectId | null;
 
   @Prop({ type: Date })
@@ -113,4 +131,7 @@ export class HotelBooking {
 
 export const HotelBookingSchema = SchemaFactory.createForClass(HotelBooking);
 HotelBookingSchema.index({ status: 1, holdExpiresAt: 1 });
+// HTL-20 listing: one user's reservations, newest first / by check-in.
+HotelBookingSchema.index({ user: 1, createdAt: -1 });
+HotelBookingSchema.index({ user: 1, checkInDate: -1 });
 HotelBookingSchema.index({ hotel: 1, checkInDate: 1, checkOutDate: 1 });
