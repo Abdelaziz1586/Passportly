@@ -115,6 +115,70 @@ export class UploadPostImageResponseDto {
   images: BlogMediaItemDto[];
 }
 
+export class PaginatedBlogPostsResponseDto {
+  @ApiProperty({ type: [BlogPostItemDto] })
+  data: BlogPostItemDto[];
+
+  @ApiProperty({ example: 12 })
+  total: number;
+
+  @ApiProperty({ example: 1 })
+  page: number;
+
+  @ApiProperty({ example: 20 })
+  limit: number;
+
+  @ApiProperty({ example: 1 })
+  totalPages: number;
+}
+
+export class BlogCommentItemDto {
+  @ApiProperty({ example: '673c1f2a9c4b2d001f8a4444' })
+  id: string;
+
+  @ApiProperty({ example: '673c1f2a9c4b2d001f8a3333' })
+  post: string;
+
+  @ApiProperty({ oneOf: [{ type: 'string' }] })
+  author: BlogAuthorSummaryDto | string;
+
+  @ApiProperty({ example: 'Great tips on visiting Luxor!' })
+  content: string;
+
+  @ApiProperty({ example: false })
+  isHidden: boolean;
+
+  @ApiPropertyOptional()
+  createdAt?: Date;
+
+  @ApiPropertyOptional()
+  updatedAt?: Date;
+}
+
+export class BlogPostDetailResponseDto extends BlogPostItemDto {
+  @ApiProperty({ type: [BlogCommentItemDto] })
+  comments: BlogCommentItemDto[];
+}
+
+export class DeleteCommentResponseDto {
+  @ApiProperty({ example: 'Comment deleted successfully' })
+  message: string;
+
+  @ApiProperty({ example: '673c1f2a9c4b2d001f8a4444' })
+  id: string;
+
+  @ApiProperty({ example: '673c1f2a9c4b2d001f8a3333' })
+  postId: string;
+}
+
+export class DeleteBlogPostResponseDto {
+  @ApiProperty({ example: 'Blog post deleted successfully' })
+  message: string;
+
+  @ApiProperty({ example: '673c1f2a9c4b2d001f8a2222' })
+  id: string;
+}
+
 export class DeletePostImageResponseDto {
   @ApiProperty({ example: 'Image deleted successfully' })
   message: string;
