@@ -3,7 +3,10 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   NotImplementedException,
+  Param,
   Patch,
   Post,
   Req,
@@ -15,7 +18,9 @@ import {
   ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
+  ApiOkResponse,
   ApiOperation,
+  ApiParam,
   ApiTags,
 } from '@nestjs/swagger';
 import type { Request } from 'express';
@@ -24,6 +29,10 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { AdminService } from './admin.service';
+import {
+  AdminResetPasswordDto,
+  AdminResetPasswordResponseDto,
+} from './dto/admin-reset-password.dto';
 import {
   CreateModeratorDto,
   ModeratorResponseDto,
@@ -37,11 +46,26 @@ export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
   @Post('users/:id/reset-password')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'ACC-07a: Admin-assisted password reset' })
-  resetUserPassword() {
-    throw new NotImplementedException(
-      'POST /api/admin/users/:id/reset-password not implemented yet',
-    );
+  @ApiParam({ name: 'id', type: String, description: 'Target user ID' })
+  @ApiOkResponse({
+    description: 'Temporary password set and active user sessions revoked',
+    type: AdminResetPasswordResponseDto,
+  })
+  @ApiBadRequestResponse({
+    description:
+      'Invalid user ID, self-reset attempt, or weak temporary password',
+  })
+  @ApiForbiddenResponse({ description: 'Admin role required' })
+  @ApiNotFoundResponse({ description: 'User not found' })
+  resetUserPassword(
+    @Param('id') id: string,
+    @Body() dto: AdminResetPasswordDto,
+    @CurrentUser() admin: AuthenticatedUser,
+    @Req() req: Request,
+  ): Promise<AdminResetPasswordResponseDto> {
+    return this.adminService.resetUserPassword(id, dto, admin, req.ip);
   }
 
   @Post('moderators')
