@@ -1,11 +1,4 @@
-import {
-  Controller,
-  Get,
-  NotImplementedException,
-  Param,
-  Patch,
-  Query,
-} from '@nestjs/common';
+import { Controller, Get, Param, Patch, Query } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiCookieAuth,
@@ -19,6 +12,7 @@ import {
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { ListNotificationsQueryDto } from './dto/list-notifications-query.dto';
+import { MarkAllNotificationsReadResponseDto } from './dto/mark-all-read-response.dto';
 import {
   NotificationItemDto,
   PaginatedNotificationsResponseDto,
@@ -50,11 +44,16 @@ export class NotificationsController {
   }
 
   @Patch('read-all')
-  @ApiOperation({ summary: 'Mark all notifications as read' })
-  markAllAsRead() {
-    throw new NotImplementedException(
-      'PATCH /api/notifications/read-all not implemented yet',
-    );
+  @ApiOperation({ summary: 'GEN-11: Mark all user notifications as read' })
+  @ApiOkResponse({
+    description: 'All unread notifications marked as read',
+    type: MarkAllNotificationsReadResponseDto,
+  })
+  @ApiBadRequestResponse({ description: 'Invalid user ID' })
+  markAllAsRead(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<MarkAllNotificationsReadResponseDto> {
+    return this.notificationsService.markAllAsRead(user.userId);
   }
 
   @Patch(':id/read')

@@ -8,6 +8,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { isValidObjectId, Model, Types } from 'mongoose';
 import { NotificationType } from '../../common/enums';
 import { ListNotificationsQueryDto } from './dto/list-notifications-query.dto';
+import { MarkAllNotificationsReadResponseDto } from './dto/mark-all-read-response.dto';
 import {
   NotificationItemDto,
   PaginatedNotificationsResponseDto,
@@ -168,6 +169,37 @@ export class NotificationsService {
     }
 
     return this.toNotificationDto(finalDoc);
+  }
+
+  /**
+   * Marks all unread notifications belonging to the authenticated user as read.
+   */
+  async markAllAsRead(
+    userId: string,
+  ): Promise<MarkAllNotificationsReadResponseDto> {
+    if (!isValidObjectId(userId)) {
+      throw new BadRequestException('Invalid user ID');
+    }
+
+    const readAt = new Date();
+    const result = await this.notificationModel.updateMany(
+      {
+        recipient: new Types.ObjectId(userId),
+        isRead: false,
+      },
+      {
+        $set: {
+          isRead: true,
+          readAt,
+        },
+      },
+    );
+
+    return {
+      message: 'All unread notifications marked as read',
+      modifiedCount: result.modifiedCount ?? 0,
+      readAt,
+    };
   }
 
   private toNotificationDto(doc: LeanNotification): NotificationItemDto {

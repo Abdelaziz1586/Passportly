@@ -312,3 +312,16 @@ Implement SCRUM-36 (PATCH /api/notifications/:id/read): Verify Notification.reci
 How the output was used:
 Implemented NotificationItemDto, NotificationsService.markAsRead (with ObjectId validation, recipient ownership verification, idempotent already-read handling, and atomic update), and NotificationsController.markAsRead (placing read-all route above :id/read). Added unit tests in notifications.service.spec.ts and notifications.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
 ================================================
+
+================================================
+Date: 2026-11-19
+Student: Youssef Sherif
+Tool: Antigravity (Gemini 4 Hydrogen)
+Related Requirement: GEN-11 (PATCH /api/notifications/read-all, SCRUM-37)
+
+Prompt:
+Implement SCRUM-37 (PATCH /api/notifications/read-all): Update all unread Notification records for CurrentUser.userId to isRead = true and readAt = now, supporting all authenticated roles.
+
+How the output was used:
+Implemented MarkAllNotificationsReadResponseDto, NotificationsService.markAllAsRead (updating unread notifications scoped to CurrentUser.userId), and NotificationsController.markAllAsRead (ordered above :id/read). Added unit tests in notifications.service.spec.ts and notifications.controller.spec.ts, and verified with npm run lint, npm test, and tsc.
+================================================
