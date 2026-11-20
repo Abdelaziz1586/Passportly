@@ -11,16 +11,20 @@ import {
   ApiConflictResponse,
   ApiCookieAuth,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOperation,
   ApiTags,
+  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '../../common/enums';
 import type { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
+import { CreateFlightBookingDto } from './dto/create-flight-booking.dto';
 import { HoldSeatsDto } from './dto/hold-seats.dto';
 import {
+  FlightBookingResponse,
   FlightBookingsService,
   FlightHoldResponse,
 } from './flight-bookings.service';
@@ -36,9 +40,12 @@ export class FlightBookingsController {
   @ApiOperation({
     summary: 'FLT-22: Place concurrency-safe temporary seat hold',
     description:
-      'Reserves seats on every leg and creates a HELD booking that expires automatically. Infants need no seat.',
+      'Reserves seats on every leg and creates a PENDING_PAYMENT booking (no passenger details yet) that expires 10 minutes after creation (the hold is never extended; payment can be retried until it expires). Infants (under 2) take no seat and pay 10% of the cabin fare per leg. There is no passenger cap: availability decides, and a 409 means not enough seats.',
   })
-  @ApiCreatedResponse({ description: 'Seats held; booking is in HELD status' })
+  @ApiCreatedResponse({
+    description:
+      'Seats held; booking is PENDING_PAYMENT without passenger details',
+  })
   @ApiBadRequestResponse({ description: 'Invalid passengers, legs or trip' })
   @ApiNotFoundResponse({ description: 'Flight or cabin not found' })
   @ApiConflictResponse({
@@ -56,11 +63,29 @@ export class FlightBookingsController {
   @ApiOperation({
     summary:
       'FLT-19, FLT-21: Create flight booking with passenger & baggage details',
+    description:
+      'Takes the PENDING_PAYMENT booking created by /flight-bookings/hold (which has no passenger details yet) plus one entry per traveller, prices extra baggage and snapshots the airline policies. The status stays PENDING_PAYMENT: it is never CONFIRMED here, only a verified payment confirms it. A second submit returns 409. The hold is not extended, so pay before holdExpiresAt. Passenger types must match the age on the outbound departure date (Adult 12+, Child 2-11, Infant under 2), and the passenger counts must equal the hold.',
   })
-  createBooking() {
-    throw new NotImplementedException(
-      'POST /api/flight-bookings not implemented yet',
-    );
+  @ApiCreatedResponse({
+    description:
+      'Booking is PENDING_PAYMENT with totals, passengers and the policies to accept',
+  })
+  @ApiBadRequestResponse({
+    description:
+      'Invalid body, or passengers do not match the held adults/children/infants',
+  })
+  @ApiUnauthorizedResponse({ description: 'Not signed in' })
+  @ApiForbiddenResponse({ description: 'Only registered users may book' })
+  @ApiNotFoundResponse({ description: 'Booking not found or not yours' })
+  @ApiConflictResponse({
+    description:
+      'Booking is not PENDING_PAYMENT (confirmed, cancelled, expired), passenger details were already submitted, the hold ran out, or a flight/airline can no longer be booked',
+  })
+  createBooking(
+    @Body() dto: CreateFlightBookingDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<FlightBookingResponse> {
+    return this.flightBookingsService.createBooking(user.userId, dto);
   }
 
   @Roles(Role.REGISTERED_USER, Role.ADMIN)

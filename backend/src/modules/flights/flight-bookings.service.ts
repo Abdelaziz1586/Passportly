@@ -10,28 +10,48 @@ import { ConfigService } from '@nestjs/config';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { randomInt } from 'crypto';
-import { ClientSession, Connection, Model, Types } from 'mongoose';
+import {
+  ClientSession,
+  Connection,
+  isValidObjectId,
+  Model,
+  Types,
+} from 'mongoose';
 import {
   BookingStatus,
   CabinClass,
   FlightStatus,
   NotificationType,
+  PassengerType,
   TripType,
 } from '../../common/enums';
 import { NotificationsService } from '../notifications/notifications.service';
+import { CreateFlightBookingDto } from './dto/create-flight-booking.dto';
 import { HoldSeatsDto } from './dto/hold-seats.dto';
+import {
+  assertExtraBagCounts,
+  assertExtraBagWeights,
+  buildPolicySnapshot,
+  calculateBaggageFees,
+  FlightPolicySnapshot,
+  maskPassport,
+  normalizePassengers,
+  PolicyLegSource,
+  toCents,
+} from './flight-booking-details';
 import { Airline } from './schemas/airline.schema';
 import { CabinInventory } from './schemas/cabin-inventory.schema';
 import {
   FlightBooking,
   FlightBookingDocument,
+  Passenger,
 } from './schemas/flight-booking.schema';
 import { Flight } from './schemas/flight.schema';
 
-/** Hold length used when FLIGHT_HOLD_MINUTES is not set (see the requirements sheet). */
-export const DEFAULT_HOLD_MINUTES = 15;
-/** Most seats one booking may reserve (adults + children). */
-export const MAX_SEATS_PER_BOOKING = 9;
+/** Hold length in minutes (requirements sheet: 10), fixed from hold creation and never extended. */
+export const DEFAULT_HOLD_MINUTES = 10;
+/** Infants take no seat and pay this share of the cabin fare on every leg. */
+export const INFANT_FARE_RATE = 0.1;
 
 const BOOKING_REFERENCE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const BOOKING_REFERENCE_LENGTH = 8;
@@ -72,6 +92,44 @@ export interface FlightHoldResponse {
   currency: string;
 }
 
+export interface FlightBookingPassengerResponse {
+  id: string | null;
+  firstName: string;
+  lastName: string;
+  type: PassengerType;
+  dateOfBirth: Date | null;
+  gender: string | null;
+  /** Masked: only the last 4 characters are returned. */
+  passportNumber: string;
+  passportExpiry: Date | null;
+  nationality: string | null;
+  extraBaggageCount: number;
+  extraBaggageFee: number;
+}
+
+export interface FlightBookingResponse {
+  id: string;
+  bookingReference: string;
+  status: BookingStatus;
+  tripType: TripType;
+  holdExpiresAt: Date;
+  passengerCounts: {
+    adults: number;
+    children: number;
+    infants: number;
+    totalSeatsRequired: number;
+  };
+  passengers: FlightBookingPassengerResponse[];
+  legs: FlightHoldLegResponse[];
+  baseFareTotal: number;
+  extraBaggageTotal: number;
+  taxesAndFees: number;
+  totalPrice: number;
+  currency: string;
+  /** Baggage and cancellation policies the user must accept before paying. */
+  policies: FlightPolicySnapshot;
+}
+
 interface HoldCandidate {
   flight: Flight & { _id: Types.ObjectId };
   cabin: CabinInventory & { _id: Types.ObjectId };
@@ -97,7 +155,7 @@ export class FlightBookingsService {
   /**
    * FLT-22: temporarily reserve seats on every leg of a trip.
    *
-   * All legs and the HELD booking are written in one transaction, and each
+   * All legs and the PENDING_PAYMENT booking are written in one transaction, and each
    * seat decrement is a conditional update (availableSeats >= seatsRequired),
    * so concurrent requests can never oversell a cabin.
    */
@@ -106,7 +164,7 @@ export class FlightBookingsService {
     dto: HoldSeatsDto,
   ): Promise<FlightHoldResponse> {
     const seatsRequired = dto.adults + dto.children;
-    this.assertValidRequest(dto, seatsRequired);
+    this.assertValidRequest(dto);
     const holdMinutes = this.getHoldMinutes();
 
     for (let attempt = 1; attempt <= MAX_REFERENCE_ATTEMPTS; attempt++) {
@@ -129,6 +187,211 @@ export class FlightBookingsService {
     throw new InternalServerErrorException(
       'Could not generate a unique booking reference',
     );
+  }
+
+  /**
+   * FLT-19, FLT-21: attach passenger and baggage details to the PENDING_PAYMENT
+   * booking created by the hold and price the extras. Its status does not change
+   * (GEN-11: Pending Payment -> Confirmed only after a verified payment), and
+   * holdExpiresAt is left untouched.
+   *
+   * The write is one conditional update (owner + PENDING_PAYMENT + hold not yet
+   * expired + no passengers yet), so it cannot race with the expiry cron, and a
+   * double submit is detected by the passengers already being there.
+   */
+  async createBooking(
+    userId: string,
+    dto: CreateFlightBookingDto,
+  ): Promise<FlightBookingResponse> {
+    if (!isValidObjectId(dto.bookingId) || !isValidObjectId(userId)) {
+      throw new NotFoundException('Flight booking not found');
+    }
+    const now = new Date();
+    const bookingId = new Types.ObjectId(dto.bookingId);
+    const owner = new Types.ObjectId(userId);
+
+    // Ownership: someone else's booking looks exactly like a missing one.
+    const booking = await this.bookingModel.findOne({
+      _id: bookingId,
+      user: owner,
+    });
+    if (!booking) throw new NotFoundException('Flight booking not found');
+    this.assertAwaitingDetails(booking, now);
+
+    const lastLeg = booking.legs[booking.legs.length - 1];
+    const passengers = normalizePassengers(
+      dto.passengers,
+      booking.passengerCounts,
+      booking.legs[0].departureTime,
+      lastLeg.arrivalTime,
+      now,
+    );
+
+    const legSources = await this.loadPolicySources(booking, now);
+    assertExtraBagCounts(passengers, legSources);
+    assertExtraBagWeights(passengers, legSources);
+    const fees = calculateBaggageFees(
+      passengers,
+      legSources.map(({ airline }) => airline.baggagePolicy),
+      booking.currency,
+    );
+    const snapshot = buildPolicySnapshot(legSources, now);
+
+    const baseCents = toCents(booking.baseFareTotal);
+    const taxesCents = toCents(booking.taxesAndFees ?? 0);
+    const extraBaggageTotal = fees.totalCents / 100;
+    const totalPrice = (baseCents + fees.totalCents + taxesCents) / 100;
+
+    const updated = await this.bookingModel.findOneAndUpdate(
+      {
+        _id: bookingId,
+        user: owner,
+        status: BookingStatus.PENDING_PAYMENT,
+        holdExpiresAt: { $gt: now },
+        'passengers.0': { $exists: false },
+      },
+      {
+        $set: {
+          passengers: passengers.map((passenger, index) => ({
+            ...passenger,
+            extraBaggageFee: fees.perPassengerCents[index] / 100,
+          })),
+          extraBaggageTotal,
+          taxesAndFees: taxesCents / 100,
+          totalPrice,
+          policySnapshot: snapshot,
+        },
+      },
+      { returnDocument: 'after' },
+    );
+    if (!updated) {
+      // Another request submitted first, or the hold ran out in the meantime.
+      throw new ConflictException(
+        'This booking can no longer receive passenger details (already submitted or the seat hold expired)',
+      );
+    }
+    return this.toBookingResponse(updated, snapshot);
+  }
+
+  private assertAwaitingDetails(booking: FlightBookingDocument, now: Date) {
+    if (booking.status !== BookingStatus.PENDING_PAYMENT) {
+      throw new ConflictException(
+        `A ${booking.status} booking cannot receive passenger details`,
+      );
+    }
+    if (booking.passengers.length > 0) {
+      throw new ConflictException(
+        'Passenger details were already submitted for this booking',
+      );
+    }
+    if (
+      !booking.holdExpiresAt ||
+      booking.holdExpiresAt.getTime() <= now.getTime()
+    ) {
+      throw new ConflictException(
+        'The seat hold has expired; place a new hold to continue',
+      );
+    }
+  }
+
+  /** Loads flight, airline and cabin of every leg and re-checks they are still bookable. */
+  private async loadPolicySources(
+    booking: FlightBookingDocument,
+    now: Date,
+  ): Promise<PolicyLegSource[]> {
+    const flights = await this.flightModel.find({
+      _id: { $in: booking.legs.map((leg) => leg.flight) },
+    });
+    const airlines = await this.airlineModel.find({
+      _id: { $in: flights.map((flight) => flight.airline) },
+    });
+    const cabins = await this.cabinModel.find({
+      _id: { $in: booking.legs.map((leg) => leg.cabin) },
+    });
+    const flightById = new Map(flights.map((f) => [f._id.toString(), f]));
+    const airlineById = new Map(airlines.map((a) => [a._id.toString(), a]));
+    const cabinById = new Map(cabins.map((c) => [c._id.toString(), c]));
+
+    return booking.legs.map((leg) => {
+      const flight = flightById.get(leg.flight.toString());
+      const airline = flight && airlineById.get(flight.airline.toString());
+      const cabin = cabinById.get(leg.cabin.toString());
+      if (!flight || !airline || !cabin) {
+        throw new ConflictException(
+          'A flight in this booking is no longer available',
+        );
+      }
+      if (
+        !BOOKABLE_FLIGHT_STATUSES.includes(flight.status) ||
+        flight.departureTime.getTime() <= now.getTime()
+      ) {
+        throw new ConflictException(
+          `Flight ${flight.flightNumber} can no longer be booked (${flight.status})`,
+        );
+      }
+      if (!airline.isActive) {
+        throw new ConflictException(
+          `The airline for flight ${flight.flightNumber} is not accepting bookings`,
+        );
+      }
+      return { flightId: flight._id.toString(), airline, cabin };
+    });
+  }
+
+  private toBookingResponse(
+    booking: FlightBookingDocument,
+    snapshot: FlightPolicySnapshot,
+  ): FlightBookingResponse {
+    // Built field by field on purpose: spreading a Mongoose subdocument leaks
+    // internals (even the transaction session) into the JSON response.
+    return {
+      id: booking._id.toString(),
+      bookingReference: booking.bookingReference,
+      status: booking.status,
+      tripType: booking.tripType,
+      holdExpiresAt: booking.holdExpiresAt as Date,
+      passengerCounts: {
+        adults: booking.passengerCounts.adults,
+        children: booking.passengerCounts.children,
+        infants: booking.passengerCounts.infants,
+        totalSeatsRequired: booking.passengerCounts.totalSeatsRequired,
+      },
+      passengers: booking.passengers.map((passenger) =>
+        this.toPassengerResponse(passenger),
+      ),
+      legs: booking.legs.map((leg) => ({
+        flightId: leg.flight.toString(),
+        cabinClass: leg.cabinClass,
+        departureTime: leg.departureTime,
+        arrivalTime: leg.arrivalTime,
+        unitPrice: leg.unitPrice,
+      })),
+      baseFareTotal: booking.baseFareTotal,
+      extraBaggageTotal: booking.extraBaggageTotal,
+      taxesAndFees: booking.taxesAndFees,
+      totalPrice: booking.totalPrice,
+      currency: booking.currency,
+      policies: snapshot,
+    };
+  }
+
+  private toPassengerResponse(
+    passenger: Passenger,
+  ): FlightBookingPassengerResponse {
+    const { _id } = passenger as Passenger & { _id?: Types.ObjectId };
+    return {
+      id: _id ? _id.toString() : null,
+      firstName: passenger.firstName,
+      lastName: passenger.lastName,
+      type: passenger.type,
+      dateOfBirth: passenger.dateOfBirth ?? null,
+      gender: passenger.gender ?? null,
+      passportNumber: maskPassport(passenger.passportNumber),
+      passportExpiry: passenger.passportExpiry ?? null,
+      nationality: passenger.nationality ?? null,
+      extraBaggageCount: passenger.extraBaggageCount,
+      extraBaggageFee: passenger.extraBaggageFee,
+    };
   }
 
   /**
@@ -206,7 +469,7 @@ export class FlightBookingsService {
     return true;
   }
 
-  private assertValidRequest(dto: HoldSeatsDto, seatsRequired: number): void {
+  private assertValidRequest(dto: HoldSeatsDto): void {
     const expectedLegs = dto.tripType === TripType.ROUND_TRIP ? 2 : 1;
     if (dto.legs.length !== expectedLegs) {
       throw new BadRequestException(
@@ -216,11 +479,6 @@ export class FlightBookingsService {
     if (dto.infants > dto.adults) {
       throw new BadRequestException(
         'Each infant must travel with an adult (infants cannot exceed adults)',
-      );
-    }
-    if (seatsRequired > MAX_SEATS_PER_BOOKING) {
-      throw new BadRequestException(
-        `A booking can hold at most ${MAX_SEATS_PER_BOOKING} seats`,
       );
     }
     const flightIds = new Set(dto.legs.map((leg) => leg.flightId));
@@ -307,7 +565,7 @@ export class FlightBookingsService {
           taxesAndFees: 0,
           totalPrice: baseFareTotal,
           currency,
-          status: BookingStatus.HELD,
+          status: BookingStatus.PENDING_PAYMENT,
           holdExpiresAt: new Date(now.getTime() + holdMinutes * 60_000),
         },
       ],
@@ -382,7 +640,8 @@ export class FlightBookingsService {
   private calculateLegFare(cabin: CabinInventory, dto: HoldSeatsDto): number {
     const adultFare = cabin.basePrice;
     const childFare = cabin.childPrice ?? cabin.basePrice;
-    const infantFare = cabin.infantPrice ?? 0;
+    // Infants pay 10% of the cabin fare per leg (they take no seat).
+    const infantFare = this.round2(cabin.basePrice * INFANT_FARE_RATE);
     return (
       dto.adults * adultFare +
       dto.children * childFare +

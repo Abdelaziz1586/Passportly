@@ -7,12 +7,18 @@ import {
   IsEnum,
   IsInt,
   IsMongoId,
-  ValidateIf,
   Max,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { CabinClass, TripType } from '../../../common/enums';
+
+/**
+ * Sanity bound per passenger type, NOT a business rule: the real limit is the
+ * seats left in the cabin (a hold fails with 409 when there are not enough).
+ */
+export const MAX_PASSENGERS_PER_TYPE = 500;
 
 export class HoldLegDto {
   @ApiProperty({
@@ -44,29 +50,35 @@ export class HoldSeatsDto {
   @Type(() => HoldLegDto)
   legs: HoldLegDto[];
 
-  @ApiProperty({ minimum: 1, maximum: 9, example: 1 })
+  @ApiProperty({ minimum: 1, maximum: MAX_PASSENGERS_PER_TYPE, example: 1 })
   @IsInt()
   @Min(1)
-  @Max(9)
+  @Max(MAX_PASSENGERS_PER_TYPE)
   adults: number;
 
-  @ApiPropertyOptional({ minimum: 0, maximum: 9, default: 0 })
-  @ValidateIf((_object, value: unknown) => value !== undefined)
+  @ApiPropertyOptional({
+    minimum: 0,
+    maximum: MAX_PASSENGERS_PER_TYPE,
+    default: 0,
+  })
+  // Omitted means 0 (the initializer), but an explicit null is rejected: IsOptional would let it
+  // through and it would be stored as null, which no passenger list can ever match.
+  @ValidateIf((_object, value) => value !== undefined)
   @IsInt()
   @Min(0)
-  @Max(9)
+  @Max(MAX_PASSENGERS_PER_TYPE)
   children: number = 0;
 
   @ApiPropertyOptional({
     minimum: 0,
-    maximum: 9,
+    maximum: MAX_PASSENGERS_PER_TYPE,
     default: 0,
     description:
-      'Infants travel on a lap, need no seat and cannot exceed adults',
+      'Infants (under 2) take no seat, pay 10% of the cabin fare per leg and cannot exceed adults',
   })
-  @ValidateIf((_object, value: unknown) => value !== undefined)
+  @ValidateIf((_object, value) => value !== undefined)
   @IsInt()
   @Min(0)
-  @Max(9)
+  @Max(MAX_PASSENGERS_PER_TYPE)
   infants: number = 0;
 }
