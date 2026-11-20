@@ -75,6 +75,13 @@ describe('CreateHotelBookingDto', () => {
     ['a room with a bad id', { rooms: [{ roomId: 'x', adults: 1 }] }],
     ['negative adults', { rooms: [{ roomId: id, adults: -1 }] }],
     ['fractional adults', { rooms: [{ roomId: id, adults: 1.5 }] }],
+    ['null adults', { rooms: [{ roomId: id, adults: null }] }],
+    [
+      'null childrenAges',
+      { rooms: [{ roomId: id, adults: 1, childrenAges: null }] },
+    ],
+    ['null primaryGuestPhone', { primaryGuestPhone: null }],
+    ['null specialRequests', { specialRequests: null }],
     [
       'a child aged 18',
       { rooms: [{ roomId: id, adults: 1, childrenAges: [18] }] },
